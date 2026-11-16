@@ -697,7 +697,8 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
  * pool is the hypothetical airdrop pool (8% of implied value, a stated
  * assumption); share is the farmer's slice of it, diluted by TVL; cost is
  * the steps' gas plus the opportunity cost of the capital. FARM needs a
- * net EV of at least $75 and at least 1.5x the cost; THIN needs a net EV
+ * net EV of at least $40 (build-time retune from $75; see MODEL.farmThreshold)
+ * and at least 1.5x the cost; THIN needs a net EV
  * of at least $0; anything else is SKIP.
  */
 export function verdictFor(
