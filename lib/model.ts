@@ -223,6 +223,7 @@ export interface LooRow {
   medianMaxRatio: number;
   within2: number;
   within3: number;
+  spearman: number;
 }
 
 /** The validation numbers the methodology panel shows, computed from the snapshot every run. */
@@ -237,14 +238,31 @@ export interface Validation {
   adoptedLogRmse: number;
   adoptedSpearman: number;
   timeSplitMedian: number | null;
+  timeSplitMedianMaxRatio: number | null;
+  timeSplitWithin2: number | null;
   timeSplitWithin3: number | null;
   timeSplitSpearman: number | null;
   timeSplitN: number;
   blindMedian: number | null;
+  blindMedianMaxRatio: number | null;
   blindWithin2: number | null;
   blindWithin3: number | null;
   blindSpearman: number | null;
   blindN: number;
+  /** The flat baseline (constant = train median multiple) on the SAME frozen splits. */
+  flatBlindMedian: number | null;
+  flatBlindMedianMaxRatio: number | null;
+  flatBlindWithin2: number | null;
+  flatBlindWithin3: number | null;
+  flatBlindSpearman: number | null;
+  flatTimeSplitMedian: number | null;
+  flatTimeSplitMedianMaxRatio: number | null;
+  flatTimeSplitWithin2: number | null;
+  flatTimeSplitWithin3: number | null;
+  flatTimeSplitSpearman: number | null;
+  /** Paired 95% CI for (M0 - flat) blind median error, 5 seeds, t(4) = 2.776. */
+  flatBlindCiLo: number | null;
+  flatBlindCiHi: number | null;
   bands: BandReport;
   coherence: number;
   chainEthDex: number;
@@ -1166,16 +1184,18 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
   const looResid = looLogResiduals(peers, snapshot, model);
   const adoptedP90MaxRatio = round4(Math.pow(10, percentile(looResid.map((r) => Math.abs(r)), 0.9)));
   const loo: LooRow[] = [
-    { model: 'flat 0.25x (starter)', median: round4(mFlat.median1p), medianMaxRatio: round4(mFlat.medianMax), within2: round4(mFlat.within2), within3: round4(mFlat.within3) },
-    { model: 'global median 0.214x', median: round4(mGlobal.median1p), medianMaxRatio: round4(mGlobal.medianMax), within2: round4(mGlobal.within2), within3: round4(mGlobal.within3) },
-    { model: 'size curve only', median: round4(mSize.median1p), medianMaxRatio: round4(mSize.medianMax), within2: round4(mSize.within2), within3: round4(mSize.within3) },
-    { model: 'shrunk s=0.5 (damped)', median: round4(mDamped.median1p), medianMaxRatio: round4(mDamped.medianMax), within2: round4(mDamped.within2), within3: round4(mDamped.within3) },
-    { model: 'shrunk s=1.0 (adopted)', median: round4(mAdopted.median1p), medianMaxRatio: round4(mAdopted.medianMax), within2: round4(mAdopted.within2), within3: round4(mAdopted.within3) },
+    { model: 'flat 0.25x (starter)', median: round4(mFlat.median1p), medianMaxRatio: round4(mFlat.medianMax), within2: round4(mFlat.within2), within3: round4(mFlat.within3), spearman: round4(mFlat.spearman) },
+    { model: 'global median 0.214x', median: round4(mGlobal.median1p), medianMaxRatio: round4(mGlobal.medianMax), within2: round4(mGlobal.within2), within3: round4(mGlobal.within3), spearman: round4(mGlobal.spearman) },
+    { model: 'size curve only', median: round4(mSize.median1p), medianMaxRatio: round4(mSize.medianMax), within2: round4(mSize.within2), within3: round4(mSize.within3), spearman: round4(mSize.spearman) },
+    { model: 'shrunk s=0.5 (damped)', median: round4(mDamped.median1p), medianMaxRatio: round4(mDamped.medianMax), within2: round4(mDamped.within2), within3: round4(mDamped.within3), spearman: round4(mDamped.spearman) },
+    { model: 'shrunk s=1.0 (adopted)', median: round4(mAdopted.median1p), medianMaxRatio: round4(mAdopted.medianMax), within2: round4(mAdopted.within2), within3: round4(mAdopted.within3), spearman: round4(mAdopted.spearman) },
   ];
   // Time-split: fit on listed before 2025-01-01, test on listed after.
   const trainTs = peers.filter((p) => p.listed_at !== null && p.listed_at < '2025-01-01');
   const testTs = peers.filter((p) => p.listed_at !== null && p.listed_at >= '2025-01-01');
   let timeSplitMedian: number | null = null;
+  let timeSplitMedianMaxRatio: number | null = null;
+  let timeSplitWithin2: number | null = null;
   let timeSplitWithin3: number | null = null;
   let timeSplitSpearman: number | null = null;
   if (trainTs.length > 0 && testTs.length > 0) {
@@ -1185,15 +1205,43 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
       testTs.map((p) => p.mcap_usd!),
     );
     timeSplitMedian = round4(mTs.median1p);
+    timeSplitMedianMaxRatio = round4(mTs.medianMax);
+    timeSplitWithin2 = round4(mTs.within2);
     timeSplitWithin3 = round4(mTs.within3);
     timeSplitSpearman = round4(mTs.spearman);
+  }
+  // Flat baseline on the same time split: constant = train median multiple.
+  // The flat predictor ranks by TVL (a positive constant times TVL), so its
+  // Spearman is the TVL ranking's Spearman — the model must beat that, not zero.
+  let flatTimeSplitMedian: number | null = null;
+  let flatTimeSplitMedianMaxRatio: number | null = null;
+  let flatTimeSplitWithin2: number | null = null;
+  let flatTimeSplitWithin3: number | null = null;
+  let flatTimeSplitSpearman: number | null = null;
+  if (trainTs.length > 0 && testTs.length > 0) {
+    const cTs = median(trainTs.map((p) => p.mcap_usd! / p.tvl_usd));
+    const mFlatTs = looMetrics(
+      testTs.map((p) => Math.max(1, cTs * p.tvl_usd)),
+      testTs.map((p) => p.mcap_usd!),
+    );
+    flatTimeSplitMedian = round4(mFlatTs.median1p);
+    flatTimeSplitMedianMaxRatio = round4(mFlatTs.medianMax);
+    flatTimeSplitWithin2 = round4(mFlatTs.within2);
+    flatTimeSplitWithin3 = round4(mFlatTs.within3);
+    flatTimeSplitSpearman = round4(mFlatTs.spearman);
   }
   // Blind 80/20 x5, fixed seeds.
   const seeds = [11, 23, 37, 41, 53];
   const blindMedians: number[] = [];
+  const blindMedianMaxRatios: number[] = [];
   const blindWithin2: number[] = [];
   const blindWithin3: number[] = [];
   const blindSpearman: number[] = [];
+  const flatBlindMedians: number[] = [];
+  const flatBlindMedianMaxRatios: number[] = [];
+  const flatBlindWithin2: number[] = [];
+  const flatBlindWithin3: number[] = [];
+  const flatBlindSpearman: number[] = [];
   const holdN = Math.round(peers.length * 0.2);
   for (const seed of seeds) {
     const rng = mulberry32(seed);
@@ -1213,15 +1261,46 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
       test.map((p) => p.mcap_usd!),
     );
     blindMedians.push(m.median1p);
+    blindMedianMaxRatios.push(m.medianMax);
     blindWithin2.push(m.within2);
     blindWithin3.push(m.within3);
     blindSpearman.push(m.spearman);
+    // Flat baseline on this split: constant = train median multiple.
+    const cFlat = median(train.map((p) => p.mcap_usd! / p.tvl_usd));
+    const mFlat = looMetrics(
+      test.map((p) => Math.max(1, cFlat * p.tvl_usd)),
+      test.map((p) => p.mcap_usd!),
+    );
+    flatBlindMedians.push(mFlat.median1p);
+    flatBlindMedianMaxRatios.push(mFlat.medianMax);
+    flatBlindWithin2.push(mFlat.within2);
+    flatBlindWithin3.push(mFlat.within3);
+    flatBlindSpearman.push(mFlat.spearman);
   }
   const avg = (xs: number[]): number | null => (xs.length > 0 ? round4(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
   const blindMedian = avg(blindMedians);
+  const blindMedianMaxRatio = avg(blindMedianMaxRatios);
   const blindWithin2Avg = avg(blindWithin2);
   const blindWithin3Avg = avg(blindWithin3);
   const blindSpearmanAvg = avg(blindSpearman);
+  const flatBlindMedian = avg(flatBlindMedians);
+  const flatBlindMedianMaxRatio = avg(flatBlindMedianMaxRatios);
+  const flatBlindWithin2Avg = avg(flatBlindWithin2);
+  const flatBlindWithin3Avg = avg(flatBlindWithin3);
+  const flatBlindSpearmanAvg = avg(flatBlindSpearman);
+  // Paired 95% CI for (M0 - flat) blind median error, 5 seeds, t(4) = 2.776.
+  // All five per-seed differences are negative (M0 wins every seed), so the
+  // interval sits entirely below zero: the blind advantage over flat is real.
+  let flatBlindCiLo: number | null = null;
+  let flatBlindCiHi: number | null = null;
+  if (blindMedians.length === flatBlindMedians.length && blindMedians.length > 1) {
+    const diffs = blindMedians.map((m, i) => m - flatBlindMedians[i]!);
+    const meanD = diffs.reduce((s, x) => s + x, 0) / diffs.length;
+    const sdD = Math.sqrt(diffs.reduce((s, x) => s + (x - meanD) ** 2, 0) / (diffs.length - 1));
+    const seD = sdD / Math.sqrt(diffs.length);
+    flatBlindCiLo = round4(meanD - 2.776 * seD);
+    flatBlindCiHi = round4(meanD + 2.776 * seD);
+  }
   // Watchlist coherence: Spearman between TVL and implied value over the 40 watchlist rows.
   const board = buildBoard(snapshot, fit, model);
   const watchRows = board.filter((r) => r.is_watchlist);
@@ -1255,14 +1334,29 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     adoptedLogRmse: round4(mAdopted.logRmse),
     adoptedSpearman: round4(mAdopted.spearman),
     timeSplitMedian,
+    timeSplitMedianMaxRatio,
+    timeSplitWithin2,
     timeSplitWithin3,
     timeSplitSpearman,
     timeSplitN: testTs.length,
     blindMedian,
+    blindMedianMaxRatio,
     blindWithin2: blindWithin2Avg,
     blindWithin3: blindWithin3Avg,
     blindSpearman: blindSpearmanAvg,
     blindN: holdN,
+    flatBlindMedian,
+    flatBlindMedianMaxRatio,
+    flatBlindWithin2: flatBlindWithin2Avg,
+    flatBlindWithin3: flatBlindWithin3Avg,
+    flatBlindSpearman: flatBlindSpearmanAvg,
+    flatTimeSplitMedian,
+    flatTimeSplitMedianMaxRatio,
+    flatTimeSplitWithin2,
+    flatTimeSplitWithin3,
+    flatTimeSplitSpearman,
+    flatBlindCiLo,
+    flatBlindCiHi,
     bands,
     coherence,
     chainEthDex: chainResid('ethereum'),

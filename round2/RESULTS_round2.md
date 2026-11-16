@@ -64,6 +64,18 @@ Per-category pooled blind median (n>=5, M0): Basis Trading n=6 x1.58, Bridge n=6
 
 M1 and M2 satisfy the LETTER of the ship rule (beat M0 on blind median AND blind Spearman) but by ~1 SE, with mixed secondary metrics (M0 is best on blind within3 38.5% and time-split median x1.8401) and board regressions (M1 is TVL-monotone; M2 needs clipped wild slopes; all variants inflate values ~1.5–2x and roughly triple FARM counts). The rule as written is a necessary condition ("ship ONLY if"), not a compulsion, and the round-1 precedent (variant 2b: a median-only win with a degenerate board = "Do not adopt") supports falling back. **Stage B proceeds on the FALLBACK: bands + reframe on M0.** The parent/user can overrule with the table above.
 
+### Ship rule, codified ex ante (fix round)
+
+The round-2 audits (Superbot High, Qwen) flagged that the rule as written was invoked post hoc: M1/M2 satisfied its letter and were rejected anyway. The rule is now codified, before any future experiment, as a **necessary condition, not a compulsion**. A variant ships only if ALL of these hold:
+
+1. It beats M0 on blind median error AND blind Spearman **with significance** — the paired 95% interval (5 seeds, t(4) = 2.776) excludes zero.
+2. It does **not regress the time-split median** (M0 x1.8401).
+3. It does **not drop blind within-3x** (M0 38.5%).
+4. It keeps **Spearman(pred, TVL) below 0.95** — the board must not collapse to a TVL ranking.
+5. It keeps the **watchlist total within 25% of M0's $0.637B** (valuation-drift bound).
+
+A variant that passes all five still has to keep a sane board; the rule is necessary, not sufficient. M1 failed (4) and (5) outright (Spearman 1.000, watchlist x2.0 to $1.273B, FARM 15→43) and its wins were noise (t = 0.99, p ≈ 0.36). M2 failed (5) (watchlist $1.133B) and its wins were noise too (t = 0.62, p ≈ 0.55), and it needs clipped superlinear slopes. M3 failed (1) outright. The same rule is stated in the dashboard's methodology page.
+
 ## Stage B — rebuild on M0 (bands + reframe)
 
 Model: **M0 unchanged** (128 peers, winsor p5 0.0070 / p95 9.70, global median 0.214x, category shrinkage w = n/(n+5), size curve log10(mcap) = 3.0247 + 0.5223·log10(tvl), R² = 0.194, growth clamp −60..+120 weight 0.5, maturity 0.6–1.0 over 1095d, full slope s = 1.0). Model version label bumped to `radar-3-bands` (the entry changed; the model did not).
@@ -113,7 +125,7 @@ The bands are **well-calibrated on blind** (83.8% vs 80% nominal, 46.2% vs 50%) 
 
 ### Proposed title (not submitted)
 
-"Token launch radar: blind-tested x1.89, 200 rows, 40/40 watchlist, P10–P90 bands on every row"
+"Tidegauge — token launch radar: blind-tested x1.89 vs x1.92 flat, 200 rows, 40/40 watchlist, P10–P90 bands on every row" (entry name Tidegauge; the round-2 proposed title was the same without the name and without the flat comparison).
 
 ### Files changed (branch `round2`)
 

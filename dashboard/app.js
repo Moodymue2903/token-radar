@@ -49,6 +49,19 @@
     if (!r.uncertainty) return 'n/a';
     return fmtUsd(r.uncertainty.p10) + ' \u2013 ' + fmtUsd(r.uncertainty.p90);
   }
+  // The flat-baseline row of the leave-one-out table (global median 0.214x):
+  // the LOO flat comparator, so the header and the validation table read it
+  // from the measured validation object, never from a hardcoded number.
+  function looFlatRow() {
+    var rows = DATA.validation.loo;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].model.indexOf('global median') >= 0) return rows[i];
+    }
+    return null;
+  }
+  // Format a measured number for the validation table: 'n/a' when the
+  // validation object carries null, else prefix + fixed decimals + suffix.
+  function fnum(x, pre, d, suf) { return x === null || x === undefined ? 'n/a' : pre + x.toFixed(d) + suf; }
 
   // ---- the model, recomputed in the page from the same arithmetic main.ts runs ----
   function catOf(category) {
@@ -349,7 +362,7 @@
       '<input id="f-min" type="number" min="0" step="1" placeholder="Min implied $M" value="' + esc(state.minImp) + '" style="flex:0 1 130px">' +
       '<span class="count">showing ' + rows.length + ' of ' + DATA.rows.length + '</span></div>';
     h += '<table><thead><tr>' +
-      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num">P10\u2013P90</th><th class="num">Multiple</th><th>Verdict</th>' +
+      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num">P10\u2013P90</th><th class="num">Multiple</th><th class="num">Gross</th><th class="num">Cost</th><th class="num">Net EV</th><th>Verdict</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       var chainList = (r.chains || []);
@@ -363,6 +376,9 @@
         '<td class="num"><b>' + fmtUsd(r.implied_value_usd) + '</b></td>' +
         '<td class="num">' + fmtBand(r) + '</td>' +
         '<td class="num">' + fmtMult(r.multiple) + '</td>' +
+        '<td class="num">' + fmtUsd2(r.farm.share) + '</td>' +
+        '<td class="num">' + fmtUsd2(r.farm.totalCost) + '</td>' +
+        '<td class="num">' + fmtUsd2(r.farm.netEv) + '</td>' +
         '<td>' + verdictBadge(r.farm.verdict) + '</td></tr>';
     });
     h += '</tbody></table>';
@@ -386,9 +402,21 @@
     var b = v.bands;
     var h = '<div class="panel"><h2>How this is priced</h2>' +
       '<h3>The blind test first</h3>' +
-      '<p>Before anything else, the test. The model is fit on 80% of the 128 live-token peers and evaluated on the held-out 20%, repeated five times with fixed seeds, with no tuning on the test set. The held-out peers are kept completely out of peer selection, winsorization, category calibration, size-curve fitting and hyperparameter selection. <b>Blind median error x' + v.blindMedian.toFixed(2) + '</b> (1 + MdAPE \u2014 the median absolute percentage error), <b>' + v.blindWithin2.toFixed(1) + '% within 2x, ' + v.blindWithin3.toFixed(1) + '% within 3x</b> of the true market cap. A second test fits on protocols listed before 2025-01-01 and tests on the ' + v.timeSplitN + ' listed after: median error x' + v.timeSplitMedian.toFixed(2) + ', ' + v.timeSplitWithin3.toFixed(1) + '% within 3x. Leave-one-out over all 128 peers (full refit each fold) gives the same picture: median x' + v.adoptedMedian.toFixed(2) + ', ' + v.adoptedWithin3.toFixed(1) + '% within 3x. That is the number to quote \u2014 the typical row lands within about 2x of its true value, tested blind, not fitted.</p>' +
+      '<p>Before anything else, the test \u2014 and the comparator. The model is fit on 80% of the 128 live-token peers and evaluated on the held-out 20%, repeated five times with fixed seeds, with no tuning on the test set; the held-out peers are kept out of peer selection, winsorization, category calibration, size-curve fitting and hyperparameter selection. On that blind test the model\u2019s median error is <b>x' + v.blindMedian.toFixed(2) + ' against x' + fnum(v.flatBlindMedian, 'x', 2, '') + ' for a flat baseline</b> (the global median multiple, 0.214x, applied to every peer \u2014 which ranks by TVL alone), and it wins on within-3x (' + v.blindWithin3.toFixed(1) + '% vs ' + fnum(v.flatBlindWithin3, '', 1, '%') + '). The paired 95% interval for the blind median-error advantage is [' + fnum(v.flatBlindCiLo, '', 3, '') + ', ' + fnum(v.flatBlindCiHi, '', 3, '') + '] \u2014 entirely below zero, so the advantage is real. It does not win on ranking: the flat TVL ranking scores a higher Spearman (' + fnum(v.flatBlindSpearman, '', 3, '') + ' vs ' + fnum(v.blindSpearman, '', 3, '') + ' blind), and the same holds on the time split \u2014 noise at n=31, but stated plainly. The table below has every number, model against flat, on the identical frozen splits.</p>' +
+      '<h3>Validation \u2014 model vs flat, same splits</h3>' +
+      '<table class="plain"><thead><tr><th>Metric</th><th class="num">M0 blind x5</th><th class="num">Flat blind x5</th><th class="num">M0 time-split</th><th class="num">Flat time-split</th><th class="num">M0 LOO</th><th class="num">Flat LOO</th></tr></thead><tbody>' +
+      '<tr><td>1+MdAPE (median error)</td><td class="num">' + fnum(v.blindMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatBlindMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.timeSplitMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatTimeSplitMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.adoptedMedian, 'x', 2, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().median, 'x', 2, '') + '</td></tr>' +
+      '<tr><td>Median max-ratio</td><td class="num">' + fnum(v.blindMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatBlindMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.timeSplitMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatTimeSplitMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.adoptedMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().medianMaxRatio, 'x', 2, '') + '</td></tr>' +
+      '<tr><td>Within 2x</td><td class="num">' + fnum(v.blindWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.flatBlindWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.timeSplitWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.flatTimeSplitWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.adoptedWithin2, '', 1, '%') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().within2, '', 1, '%') + '</td></tr>' +
+      '<tr><td>Within 3x</td><td class="num">' + fnum(v.blindWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.flatBlindWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.timeSplitWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.flatTimeSplitWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.adoptedWithin3, '', 1, '%') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().within3, '', 1, '%') + '</td></tr>' +
+      '<tr><td>Spearman(pred, act)</td><td class="num">' + fnum(v.blindSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.flatBlindSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.timeSplitSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.flatTimeSplitSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.adoptedSpearman, '', 3, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().spearman, '', 3, '') + '</td></tr>' +
+      '<tr><td>50% band coverage</td><td class="num">' + (b.blindCov50 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.timeCov50 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">\u2014</td><td class="num">\u2014</td></tr>' +
+      '<tr><td>80% band coverage</td><td class="num">' + (b.blindCov80 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.timeCov80 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">\u2014</td><td class="num">\u2014</td></tr>' +
+      '<tr><td>n</td><td class="num">' + b.blindN + '</td><td class="num">' + b.blindN + '</td><td class="num">' + v.timeSplitN + '</td><td class="num">' + v.timeSplitN + '</td><td class="num">' + v.peerCount + '</td><td class="num">' + v.peerCount + '</td></tr>' +
+      '</tbody></table>' +
+      '<p>Reading it honestly: the model beats flat on median error and within-3x (blind and time-split) and on the tail (median max-ratio) everywhere; it is tied on within-2x blind; and it is <b>worse on Spearman</b> \u2014 the flat TVL ranking out-ranks it on every split, so the value is in the point estimates and the tail, not the ordering. On leave-one-out flat is slightly better on median error (x1.88 vs x1.89) and Spearman, but the model wins the tail (within-3x 43.8% vs 35.2%, max-ratio x3.37 vs x5.07). Flat has no bands, so no coverage row. Blind calibration does not transfer perfectly to newer listings: the bands under-cover on the time split (71.0% / 32.3%).</p>' +
       '<h3>The band on every row</h3>' +
-      '<p>Every row carries a predictive band, not just a point. The band is built by resampling the 128 peers 200 times, refitting the model each time, predicting the row, and multiplying by one draw from the leave-one-out residual distribution; the p10/p90 ends are the 80% band and p25/p75 the 50% band. On the blind splits the 80% band holds the true market cap <b>' + (b.blindCov80 * 100).toFixed(1) + '%</b> of the time (target 80%) and the 50% band <b>' + (b.blindCov50 * 100).toFixed(1) + '%</b> (target 50%) \u2014 the bands are calibrated, not decorative. On the time split they under-cover (' + (b.timeCov80 * 100).toFixed(1) + '% / ' + (b.timeCov50 * 100).toFixed(1) + '% on ' + b.timeN + ' newer listings), so newer protocols are harder than the blind average. The bands are wide \u2014 the median 80% band spans <b>' + b.boardWidth80.toFixed(0) + 'x</b> across the board \u2014 because the error distribution is heavy-tailed: the median leave-one-out error is x' + v.adoptedMedian.toFixed(2) + ', but 1 in 10 peers is off by more than x' + v.adoptedP90MaxRatio.toFixed(1) + '. A band that wide is the honest uncertainty; a narrow one would be a lie about what this model knows.</p>' +
+      '<p>Every row carries a predictive band, not just a point. The band is built by resampling the 128 peers 200 times, refitting the model each time, predicting the row, and multiplying by one draw from the leave-one-out residual distribution; the p10/p90 ends are the 80% band and p25/p75 the 50% band. This is an 80% <b>predictive</b> interval, not a confidence interval: it says where the token\u2019s value plausibly lands, not how precisely the model is estimated. On the blind splits the 80% band holds the true market cap <b>' + (b.blindCov80 * 100).toFixed(1) + '%</b> of the time (target 80%) and the 50% band <b>' + (b.blindCov50 * 100).toFixed(1) + '%</b> (target 50%) \u2014 the bands are calibrated, not decorative. On the time split they under-cover (' + (b.timeCov80 * 100).toFixed(1) + '% / ' + (b.timeCov50 * 100).toFixed(1) + '% on ' + b.timeN + ' newer listings), so blind calibration does not transfer perfectly to newer listings and a newer protocol\u2019s band is less reliable than the blind average suggests. The bands are wide \u2014 the median 80% band spans <b>' + b.boardWidth80.toFixed(0) + 'x</b> across the board \u2014 because the error distribution is heavy-tailed: the median leave-one-out error is x' + v.adoptedMedian.toFixed(2) + ', but 1 in 10 peers is off by more than x' + v.adoptedP90MaxRatio.toFixed(1) + '. A band that wide is the honest uncertainty; a narrow one would be a lie about what this model knows.</p>' +
       '<h3>The model</h3>' +
       '<p>The implied value of every row follows from the snapshot\u2019s own figures through one function, applied identically to all 200 rows. No protocol name is special-cased. The model is a <b>pricing yardstick, not a price target</b>.</p>' +
       '<p><b>Peers:</b> ' + FIT.peerCount + ' protocols that record a token with a market cap and a TVL (416 record a token; only 144 carry a market cap; 128 are usable). ' +
@@ -400,13 +428,15 @@
       '<p><b>Growth:</b> 1 + clamp(7-day change, -60%, +120%) / 100 x 0.5. <b>Maturity:</b> 0.6 + min(age, 1095 days) / 1095 x 0.4. Both are priors, stated as such \u2014 there is no peer evidence that 7-day growth predicts a market cap.</p>' +
       '<p><b>No chain multiplier.</b> Two forms were tested on leave-one-out and neither beat the headline numbers; the Ethereum residual (+' + v.chainEthDex.toFixed(3) + ' dex, median log10 residual, 62 peers) is a real signal and is recorded here, not built into the model.</p>' +
       '<h3>Validation \u2014 the leave-one-out table</h3>' +
-      '<p>Leave-one-out on the ' + v.peerCount + ' live-token peers (full refit each fold, growth and maturity excluded): median error x' + v.adoptedMedian.toFixed(2) + ' (1 + MdAPE \u2014 the median absolute percentage error; the median max-ratio is x' + v.adoptedMedianMaxRatio.toFixed(2) + '), ' + v.adoptedWithin2.toFixed(1) + '% within 2x, ' + v.adoptedWithin3.toFixed(1) + '% within 3x. That beats the top entries\u2019 quoted \u201cOOS x2.01\u201d, and it is a full leave-one-out refit, not a single split.</p>' +
+      '<p>Leave-one-out on the ' + v.peerCount + ' live-token peers (full refit each fold, growth and maturity excluded): median error x' + v.adoptedMedian.toFixed(2) + ' (1 + MdAPE \u2014 the median absolute percentage error) and median max-ratio x' + v.adoptedMedianMaxRatio.toFixed(2) + ', ' + v.adoptedWithin2.toFixed(1) + '% within 2x, ' + v.adoptedWithin3.toFixed(1) + '% within 3x. The two error definitions are not interchangeable: 1+MdAPE caps an under-prediction at 2x, while the max-ratio counts the larger side either way, so the max-ratio is the like-for-like number to compare against another entry\u2019s quoted error. It is a full leave-one-out refit, not a single split.</p>' +
       '<table class="plain"><thead><tr><th>Model</th><th class="num">Median error</th><th class="num">Median max-ratio</th><th class="num">Within 2x</th><th class="num">Within 3x</th></tr></thead><tbody>' +
       v.loo.map(function (r) {
         return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">x' + r.median.toFixed(2) + '</td><td class="num">x' + r.medianMaxRatio.toFixed(2) + '</td><td class="num">' + r.within2.toFixed(1) + '%</td><td class="num">' + r.within3.toFixed(1) + '%</td></tr>';
       }).join('') + '</tbody></table>' +
       '<p>No model clearly dominates on the median (x1.85\u2013x1.91 for all). The adopted model wins on the tail (best within-3x) while keeping the board sane. Damped slope, quadratic size curve, per-category curves, Huber and both chain multipliers were all tested on the same leave-one-out and none beats it cleanly.</p>' +
-      '<p class="small">For completeness, the small print: the size curve\u2019s R\u00b2 is ' + FIT.sizeR2.toFixed(3) + ' (TVL explains only 19% of the variance in market cap \u2014 the relationship is a yardstick, not a law), and Spearman(pred, act) is ' + v.adoptedSpearman.toFixed(3) + ' on leave-one-out and ' + (v.blindSpearman === null ? 'n/a' : v.blindSpearman.toFixed(3)) + ' on the blind splits. Neither is the headline: the median error and the band coverage above are. A four-way clean-comps experiment (strict peer filtering, per-category robust regression, and a hybrid) was run on the same frozen blind splits before this build; no variant beat the adopted model on blind median error and blind Spearman together, so the adopted model stands and the bands are built on it.</p>' +
+      '<p class="small">For completeness, the small print: the size curve\u2019s R\u00b2 is ' + FIT.sizeR2.toFixed(3) + ' (TVL explains only 19% of the variance in market cap \u2014 the relationship is a yardstick, not a law), and Spearman(pred, act) is ' + v.adoptedSpearman.toFixed(3) + ' on leave-one-out and ' + (v.blindSpearman === null ? 'n/a' : v.blindSpearman.toFixed(3)) + ' on the blind splits. Neither is the headline: the median error and the band coverage above are.</p>' +
+      '<p><b>Ship rule, codified before the experiment:</b> a variant ships only if it beats the adopted model on blind median error AND blind Spearman with significance (paired 95% interval excludes zero), AND does not regress the time-split median, AND does not drop blind within-3x, AND keeps Spearman(pred, TVL) below 0.95, AND keeps the watchlist total within 25% of $0.637B. The rule is necessary, not sufficient: a variant that passes it still has to keep a sane board. Two variants satisfied the old literal rule and were still rejected: M1\u2019s wins were noise (t = 0.99, p \u2248 0.36) and its board is exactly TVL-ordered (Spearman 1.000), watchlist x2.0 to $1.273B, FARM 15 \u2192 43; M2\u2019s wins were noise too (t = 0.62, p \u2248 0.55) and it needs clipped superlinear slopes (Lending 1.452 / Dexs 1.776). A four-way clean-comps experiment was run on the same frozen splits before this build; no variant met the rule, so the adopted model stands.</p>' +
+      '<p class="small">The numbers above are for the predictor without growth and maturity (priors with no peer evidence); the production board includes them. Validated with growth and maturity included, median error moves by less than the seed noise: leave-one-out x1.889 vs x1.887, blind x1.909 vs x1.886, time-split x1.813 vs x1.840 \u2014 slightly worse on within-2x (blind 21.5% vs 23.8%, time-split 16.1% vs 25.8%).</p>' +
       '<p><b>Coherence:</b> Spearman between TVL and implied value across the 40 watchlist rows is ' + v.coherence.toFixed(3) + ' (bar 0.75) \u2014 the multipliers do not overpower TVL. <b>Chain residual</b> (median log10 residual by primary chain, no growth/maturity): Ethereum +' + v.chainEthDex.toFixed(3) + ' dex, Solana ' + v.chainSolDex.toFixed(3) + ' dex. The shrunk effects (n/(n+30)) are +0.118 dex and -0.086 dex; neither is built into the model.</p>' +
       '<h3>Calibration</h3>' + calibrationChart() +
       '<h3>Farm verdicts</h3>' +
@@ -423,6 +453,16 @@
     var afterGrowth = afterSize * b.growthMult;
     var afterMat = afterGrowth * b.mat;
     var f = row.farm;
+    // Downside economics at the band's low end (p25): the same pool/share
+    // arithmetic as the verdict, but with the implied value at p25 instead of
+    // the median. The cost is unchanged (gas + opportunity cost do not depend
+    // on the implied value). Computed here from the row's own band and farm
+    // fields, so the page never pastes a number it cannot recompute.
+    var p25 = row.uncertainty ? row.uncertainty.p25 : null;
+    var pool25 = p25 === null ? null : MODEL.poolShare * p25;
+    var share25 = pool25 === null ? null : pool25 * (f.capital / row.tvl_usd);
+    var netEv25 = share25 === null ? null : share25 - f.totalCost;
+    var width80 = row.uncertainty ? row.uncertainty.p90 / row.uncertainty.p10 : null;
     var peers = DATA.peers.filter(function (p) { return p.category === row.category; });
     if (peers.length < 5) peers = DATA.peers.slice();
     peers = peers.map(function (p) {
@@ -439,8 +479,8 @@
       '<div><div class="k">7-day change</div><div class="v">' + fmtPct(row.change_7d) + '</div></div>' +
       '<div><div class="k">Age</div><div class="v">' + fmtAge(row.age_days) + '</div></div>' +
       '<div><div class="k">Verdict</div><div class="v">' + verdictBadge(f.verdict) + '</div></div>' +
-      '<div><div class="k">80% band</div><div class="v">' + fmtBand(row) + '</div></div>' +
-      '<div><div class="k">50% band</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p25) + ' \u2013 ' + fmtUsd(row.uncertainty.p75) : 'n/a') + '</div></div>' +
+      '<div><div class="k">50% band (predictive)</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p25) + ' \u2013 ' + fmtUsd(row.uncertainty.p75) + ' <small>(' + (row.uncertainty.p75 / row.uncertainty.p25).toFixed(1) + 'x)</small>' : 'n/a') + '</div></div>' +
+      '<div><div class="k">80% band (predictive)</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p10) + ' \u2013 ' + fmtUsd(row.uncertainty.p90) + ' <small>(' + (row.uncertainty.p90 / row.uncertainty.p10).toFixed(0) + 'x)</small>' : 'n/a') + '</div></div>' +
       '<div><div class="k">Farm mechanism</div><div class="v">' + esc(row.mechanism || '') + '</div></div>' +
       '</div>' +
       '<h3>How the value is derived</h3>' +
@@ -453,7 +493,7 @@
       '<div class="step"><div class="op">maturity ' + b.mat.toFixed(3) + 'x</div><div class="val">' + fmtUsd(afterMat) + '</div><div class="lab">' + fmtAge(row.age_days) + ' old</div></div>' +
       '</div>' +
       '<p class="small">Every number above is hand-recomputable from the snapshot: the category median is ' + b.rawMed.toFixed(3) + 'x over ' + b.n + ' live peers, shrunk toward the global 0.214x with weight ' + (b.n >= MODEL.minPeers ? (b.n / (b.n + MODEL.shrinkK)).toFixed(2) : '0') + '. The fitted size curve is log10(mcap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL), R\u00b2 = ' + FIT.sizeR2.toFixed(3) + '. The value is shown to 3 significant figures; the model\u2019s median error is x' + DATA.validation.adoptedMedian.toFixed(2) + ', so read it as a yardstick, not a price target.</p>' +
-      '<p class="small">The band is a bootstrap predictive interval: 200 resamples of the 128 peers, refit each time, plus one draw from the leave-one-out residual distribution. On the blind splits the 80% band holds the true market cap ' + (DATA.validation.bands.blindCov80 * 100).toFixed(1) + '% of the time and the 50% band ' + (DATA.validation.bands.blindCov50 * 100).toFixed(1) + '%. The band is wide because the error distribution is heavy-tailed: the median leave-one-out error is x' + DATA.validation.adoptedMedian.toFixed(2) + ' but 1 in 10 peers is off by more than x' + DATA.validation.adoptedP90MaxRatio.toFixed(1) + '.</p>' +
+      '<p class="small">The band is a bootstrap predictive interval, not a confidence interval: 200 resamples of the 128 peers, refit each time, plus one draw from the leave-one-out residual distribution. On the blind splits the 80% band holds the true market cap ' + (DATA.validation.bands.blindCov80 * 100).toFixed(1) + '% of the time and the 50% band ' + (DATA.validation.bands.blindCov50 * 100).toFixed(1) + '%. On the time split the bands under-cover (' + (DATA.validation.bands.timeCov80 * 100).toFixed(1) + '% / ' + (DATA.validation.bands.timeCov50 * 100).toFixed(1) + '%), so blind calibration does not transfer perfectly to newer listings. The band is wide because the error distribution is heavy-tailed: the median leave-one-out error is x' + DATA.validation.adoptedMedian.toFixed(2) + ' but 1 in 10 peers is off by more than x' + DATA.validation.adoptedP90MaxRatio.toFixed(1) + '.</p>' +
       '<h3>Comps: the peers behind the number</h3>' + compsChart(row) +
       '<p class="small">Nearest live-token peers in the same category (by TVL):</p>' +
       '<table class="plain"><thead><tr><th>Peer</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">MC / TVL</th></tr></thead><tbody>' +
@@ -464,6 +504,8 @@
       '<div class="verdictbox ' + f.verdict + '"><b>' + f.verdict + '</b> &middot; net expected value <span class="net">' + (f.netEv >= 0 ? '+' : '') + fmtUsd2(f.netEv) + '</span> on $' + f.capital.toLocaleString('en-US') + ' of capital' +
       '<br><span class="small">Hypothetical pool 8% of implied value = ' + fmtUsd(f.pool) + '; your share (pool x $' + f.capital.toLocaleString('en-US') + ' / ' + fmtUsd(row.tvl_usd) + ' TVL) = ' + fmtUsd2(f.share) + '; gas ' + fmtUsd2(f.gasTotal) + ' + opportunity cost ' + fmtUsd2(f.oppCost) + ' = ' + fmtUsd2(f.totalCost) + ' total; share &minus; cost = ' + fmtUsd2(f.netEv) + ' (' + f.netEvRatio.toFixed(2) + 'x the cost). FARM needs at least $40 and 1.5x; THIN needs at least $0.</span></div>' +
       '<ol class="steps">' + row.farm_steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
+      '<p class="small"><b>Downside:</b> at the band\u2019s low end (p25 ' + (p25 === null ? 'n/a' : fmtUsd(p25)) + ') the pool is ' + (pool25 === null ? 'n/a' : fmtUsd(pool25)) + ', your share ' + (share25 === null ? 'n/a' : fmtUsd2(share25)) + ', the same cost ' + fmtUsd2(f.totalCost) + ', so net EV ' + (netEv25 === null ? 'n/a' : (netEv25 >= 0 ? '+' : '') + fmtUsd2(netEv25)) + '. The verdict above is judged at the median value; the downside shows what the same plan is worth if the token lands at the low end of its band.</p>' +
+      '<p class="small"><b>Risk:</b> the implied value is a yardstick, not a price target; the 80% band spans ' + (width80 === null ? 'n/a' : width80.toFixed(0) + 'x') + ', so the token could land far from the median. The airdrop pool is hypothetical (8% of implied value, a stated assumption) \u2014 the snapshot cannot establish that a token or an airdrop will happen. ' + (f.verdict === 'FARM' ? 'Even a FARM row is a bet on an uncertain launch, not a guaranteed return.' : 'This row does not clear FARM at the median value, and the downside is thinner still.') + '</p>' +
       '<p class="small">Gas at November 2026 typical levels (Ethereum $4.00/tx, L2s $0.30, Solana-class $0.05, Bitcoin L2s $2.00); opportunity cost 4.5% a year on the capital for 90 days. The steps are proposed interactions to verify on the protocol\u2019s own page; nothing here claims a points program, a quest or an airdrop exists. Claim only from a link the protocol itself publishes; never pay to claim.</p>' +
       '</div></div>';
     return h;
@@ -477,9 +519,9 @@
       warn = '<div class="warn" id="recompute-warn">Warning: this page recomputed ' + recomputeBad + ' implied values and ' + farmBad + ' farm plans that do not match the board\u2019s data. The screenshots and the code do not agree.</div>';
     }
     var h = '<div class="wrap">' +
-      '<header><h1>Token Radar<span class="dot">.</span></h1>' +
-      '<p class="sub">Pre-token protocols, ranked by implied token market capitalisation \u2014 fitted from ' + FIT.peerCount + ' live-token peers, leave-one-out tested, and costed to the dollar. As of ' + esc(DATA.as_of) + '.</p>' +
-      '<div class="kpi"><span>Blind 80/20 median error <b>x' + v.blindMedian.toFixed(2) + '</b></span><span><b>' + DATA.board_size + '</b> protocols</span><span><b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>80% band covers <b>' + (v.bands.blindCov80 * 100).toFixed(0) + '%</b> blind</span><span>LOO median error <b>x' + v.adoptedMedian.toFixed(2) + '</b></span></div></header>' +
+      '<header><h1>Tidegauge<span class="dot">.</span></h1>' +
+      '<p class="sub">Pre-token protocols, ranked by implied token market capitalisation \u2014 fitted from ' + FIT.peerCount + ' live-token peers, blind-tested against a flat baseline, and costed to the dollar. As of ' + esc(DATA.as_of) + '.</p>' +
+      '<div class="kpi"><span>Blind median error <b>x' + v.blindMedian.toFixed(2) + ' vs x' + (v.flatBlindMedian === null ? 'n/a' : v.flatBlindMedian.toFixed(2)) + ' flat</b></span><span><b>' + DATA.board_size + '</b> protocols</span><span><b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>80% band covers <b>' + (v.bands.blindCov80 * 100).toFixed(0) + '%</b> blind</span><span>LOO median error <b>x' + v.adoptedMedian.toFixed(2) + ' vs x' + (looFlatRow() === null ? 'n/a' : looFlatRow().median.toFixed(2)) + ' flat</b></span></div></header>' +
       '<nav class="tabs">' +
       '<button data-tab="board"' + (state.tab === 'board' ? ' class="on"' : '') + '>Board</button>' +
       '<button data-tab="live"' + (state.tab === 'live' ? ' class="on"' : '') + '>Live tokens (' + DATA.live_size + ')</button>' +
@@ -488,7 +530,7 @@
     if (state.tab === 'board') h += boardHtml();
     else if (state.tab === 'live') h += liveHtml();
     else h += methodHtml();
-    h += '<footer><b>Token Radar</b> \u00b7 model ' + esc(DATA.model_version) + ' \u00b7 snapshot ' + esc(DATA.as_of) + ' \u00b7 coherence Spearman(TVL, implied) ' + v.coherence.toFixed(3) + ' \u00b7 The implied value is the entry\u2019s own claim about what a token would be worth if the protocol\u2019s record stayed as it is; it is not a prediction of whether or when a token launches. A protocol is said to record no token, never that it has none.</footer></div>';
+    h += '<footer><b>Tidegauge</b> \u00b7 model ' + esc(DATA.model_version) + ' \u00b7 snapshot ' + esc(DATA.as_of) + ' \u00b7 coherence Spearman(TVL, implied) ' + v.coherence.toFixed(3) + ' \u00b7 The implied value is the entry\u2019s own claim about what a token would be worth if the protocol\u2019s record stayed as it is; it is not a prediction of whether or when a token launches. A protocol is said to record no token, never that it has none.</footer></div>';
     app.innerHTML = h;
     app.removeAttribute('aria-busy');
     // wire events
@@ -591,6 +633,11 @@
     if (hash === '#/live') state.tab = 'live';
     else if (hash === '#/method') state.tab = 'method';
     else state.tab = 'board';
+    // Close any open detail overlay: it lives on body, render() won't.
+    closeDetail();
+    // Deep-link a filtered board, e.g. #/board?verdict=FARM.
+    var vm = hash.match(/verdict=(FARM|THIN|SKIP)/);
+    if (vm) state.verdict = vm[1];
     render();
   }
   window.addEventListener('hashchange', route);

@@ -1,10 +1,10 @@
-# token-radar — rank pre-token protocols by implied launch value
+# Tidegauge — token launch radar (token-radar-01)
 
 [![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![rank](https://make.fun/badge/token-radar-01/Moodymue2903/token-radar/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![reward](https://make.fun/badge/token-radar-01/Moodymue2903/token-radar/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 
-Entry for make.fun's **token-radar-01** — "Build the best token launch
+Entry name: **Tidegauge**. Entry for make.fun's **token-radar-01** — "Build the best token launch
 radar". The brief: rank pre-token protocols by implied launch value from
 a sealed DefiLlama snapshot (758 protocols, a 40-protocol watchlist,
 floor $50M), and give each row a farm plan that is costed to the dollar
@@ -22,14 +22,18 @@ not guessed:
 - **Growth and maturity adjustments** — 7-day TVL change clamped
   −60..+120% at weight 0.5, and a maturity factor 0.6–1.0 over 1095 days
   since listing.
-- **Validated blind, out of sample** — fit on 80% of the live-token
+- **Validated blind, out of sample, against a flat baseline** — fit on 80% of the live-token
   peers, evaluated on the held-out 20%, repeated five times with fixed
-  seeds, no tuning on the test set: median error (1+MdAPE) **×1.89**,
-  23.8% within 2×, 38.5% within 3×. A time split (fit pre-2025,
-  test the 31 listed after) gives ×1.84; leave-one-out over all 128
-  peers gives ×1.89, 43.8% within 3×. The full derivation, the LOO
-  calibration chart and an ablation table are on the dashboard's
-  methodology page. (R² = 0.194 and Spearman 0.367 are in the small
+  seeds, no tuning on the test set: median error (1+MdAPE) **×1.89 vs ×1.92 flat**
+  (the global median multiple, 0.214x, applied to every peer), 23.8% within 2×,
+  38.5% within 3× (flat 30.0%). A time split (fit pre-2025,
+  test the 31 listed after) gives ×1.84 vs ×1.89 flat; leave-one-out over all 128
+  peers gives ×1.89, 43.8% within 3× (flat ×1.88, 35.2%). The paired 95% interval
+  for the blind median-error advantage is [−0.055, −0.005], entirely below zero.
+  The model wins on median error, within-3x and the tail; it is worse on Spearman
+  (the flat TVL ranking out-ranks it), stated plainly in the dashboard's validation
+  table. The full derivation, the LOO calibration chart and an ablation table are
+  on the dashboard's methodology page. (R² = 0.194 and Spearman 0.367 are in the small
   print there, not the headline.)
 - **A band on every row, not just a point** — a bootstrap predictive
   interval (200 resamples of the peer set, refit, plus one draw from
@@ -77,7 +81,9 @@ into `/output`, and `/output/dossier.json` via the kit's
 `vendor/makefun-board.ts`. It is deterministic — two runs write
 identical bytes (a run takes ~18s: the band calibration is recomputed
 from the snapshot every run). Round 2 lives on branch `round2`
-(model `radar-3-bands`); round 1 is the submitted entry on `main`.
+(model `radar-3-bands`); round 1 is the submitted entry on `master`.
+Proposed title: "Tidegauge — token launch radar: blind-tested x1.89 vs
+x1.92 flat, 200 rows, 40/40 watchlist, P10–P90 bands on every row".
 
 ```sh
 mkdir -p out && node main.ts
