@@ -44,14 +44,17 @@ not guessed:
   206× — because the error distribution is heavy-tailed (1 in 10
   peers is off by more than ×36.3). Each row also names its farm
   mechanism, derived from its category.
-- **Top-10 scalar (round 3)** — the top 10 rows by implied value are
-  lifted by 1.15× after the model runs, to close the gap to the
-  reference top values. The scalar is applied in `buildBoard` and
-  mirrored in the dashboard's `impliedOf` recomputation; the bands
-  are scaled by the same factor, so each scaled point keeps its place
-  in its band. The watchlist total and top values are reported from
-  the production build (see the Stage C verification in
-  `round3/RESULTS_round3.md`); the tier counts stay 15/78/107.
+- **Top-10 scalar: dropped (post-audit round)** — round 3 lifted the top
+  10 rows by 1.15× after the model runs, to close the gap to the
+  reference top values. Gemini, DeepSeek and GLM all called it an
+  unjustified post-hoc patch (no derivation, a 15% cliff between ranks
+  10 and 11, watchlist total pushed to $0.678B, 0.25% from the $0.68B
+  ceiling), so it was dropped to 1.00x: no lift, no cliff, and the
+  watchlist total returns to the model's own ~$0.637B. The scalar hook
+  (`topScalar` in `buildBoard` / `attachBands` / the dashboard's
+  `impliedOf`) is kept at 1.00 so the structure is unchanged. The
+  watchlist total and top values are reported from the production build
+  (see `round3/RESULTS_round3_noscalar.md`).
 - **The biggest rows look cheap on purpose** — the sub-linear size curve
   (β = 0.522) compresses multiples on multi-billion-dollar TVL:
   Steakhouse ($2.75B TVL) is priced at 0.020x, Gauntlet at 0.028x and
@@ -78,10 +81,9 @@ arithmetic on those steps. Round 3 adds a Fees-Hold column (Net EV ×
 (1 − fee drag), fee drag = gas/capital clamped 0.5–1.5%) and a P10
 playbook on FARM rows (P10 Net EV at the band's low end, with a trigger);
 the P10 Net EV is display-only and does not change the verdict, and the
-farm steps were not restructured in this round. The top-10 rows'
-implied values are lifted by a 1.15× scalar (see the model section),
-which raises the watchlist total and the top values; the tier counts
-stay 15/78/107.
+farm steps were not restructured in this round. The top-10 scalar was
+dropped to 1.00x in the post-audit round (see the model section), so the
+board carries the model's own values with no lift.
 
 ## The dashboard
 
@@ -99,7 +101,8 @@ into `/output`, and `/output/dossier.json` via the kit's
 `vendor/makefun-board.ts`. It is deterministic — two runs write
 identical bytes (a run takes ~18s: the band calibration is recomputed
 from the snapshot every run). Round 3 lives on branch `round3`
-(model `radar-3-bands` + top-10 scalar 1.15); round 1 is the submitted entry on `master`.
+(model `radar-3-bands`; the 1.15x top-10 scalar was dropped to 1.00 in
+the post-audit round); round 1 is the submitted entry on `master`.
 Proposed title: "Tidegauge — token launch radar: blind-tested x1.89 vs
 x1.92 flat, 200 rows, 40/40 watchlist, P10–P90 bands on every row".
 

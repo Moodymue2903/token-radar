@@ -104,7 +104,7 @@ export interface ModelConstants {
   holdDays: number;
   farmThreshold: number;
   farmRatio: number;
-  /** Round-3 top-of-book scalar: the top-10 rows' implied values are multiplied by this. */
+  /** Top-of-book scalar: 1.00 since the post-audit round (see MODEL.topScalar). No lift. */
   topScalar: number;
 }
 
@@ -130,11 +130,14 @@ export const MODEL: ModelConstants = {
   // the rule can come to the top decile without touching its structure.
   farmThreshold: 40,
   farmRatio: 1.5,
-  // Round-3 top-of-book scalar: the top-10 rows' implied values are
-  // multiplied by this, lifting the watchlist total toward the reference's
-  // top end without breaking the $0.68B bound. 1.15 keeps the watchlist at
-  // $0.678B with tiers unchanged at 15/78/107; 1.20 breaks the bound.
-  topScalar: 1.15,
+  // Top-of-book scalar, DROPPED to 1.00 in the post-audit round: round 3
+  // lifted the top-10 rows by 1.15x to close the gap to the reference's top
+  // end; Gemini, DeepSeek and GLM all called it an unjustified post-hoc
+  // patch (no derivation, a 15% cliff between ranks 10 and 11, and the
+  // watchlist total pushed to $0.678B, 0.25% from the $0.68B ceiling), so
+  // it is removed. 1.00 keeps every row's model value unchanged; the
+  // watchlist total falls back to the model's own ~$0.637B.
+  topScalar: 1.0,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
@@ -143,7 +146,7 @@ export const MODEL_VERSION = 'radar-3-bands';
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
 
-/** How many of the board's top rows the round-3 scalar lifts (model.topScalar). */
+/** How many of the board's top rows the (now 1.00, no-op) scalar would lift. Kept so buildBoard/attachBands and the dashboard's impliedOf need no structural change. */
 export const TOP_ROWS = 10;
 
 /** How many live-token protocols the Live token view carries, by market cap. */
@@ -827,11 +830,11 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
     return { p, v, steps, verdict };
   });
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
-  // Round-3 top-of-book scalar: the top-10 rows' implied values are lifted
-  // by model.topScalar, and their farm verdicts are recomputed on the lifted
-  // value (pool, share and net EV all scale with it). Scaling by one positive
-  // constant preserves the order, so the top 10 stay the top 10 and the ranks
-  // do not move. The bands are lifted the same way in attachBands.
+  // Top-of-book scalar (model.topScalar), now 1.00: a no-op. The loop is
+  // kept so the structure is unchanged — with the scalar at 1.00 the lifted
+  // value equals the model value and the recomputed verdict is identical.
+  // (Round 3 lifted the top-10 rows by 1.15x here; the post-audit round
+  // dropped it — see the comment on MODEL.topScalar.)
   for (let i = 0; i < Math.min(TOP_ROWS, scored.length); i++) {
     const s = scored[i]!;
     const lifted = Math.max(1, Math.round(s.v.implied * model.topScalar));
@@ -1178,8 +1181,8 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
     const target = row as unknown as SnapshotProtocol;
     const band = bootstrapBand(target, peers, snapshot, resid, 4242000 + i, model);
     const gm = impliedValue(target, fit, snapshot.as_of, model, true).raw / impliedValue(target, fit, snapshot.as_of, model, false).raw;
-    // Round 3: a top-10 row's point estimate is lifted by model.topScalar, so
-    // its band is lifted by the same factor — the point keeps its place in the band.
+    // The top-10 lift (model.topScalar) is 1.00 in the post-audit round,
+    // so the band is unlifted — the point keeps its place in the band.
     const lift = row.rank <= TOP_ROWS ? model.topScalar : 1;
     row.uncertainty = {
       p10: Math.max(1, Math.round(band.p10 * gm * lift)),
