@@ -29,8 +29,16 @@
 // except the priors: k = 5, the slope, the growth weight and the maturity
 // floor). No protocol name is ever special-cased: the same function scores
 // every row. The model is a pricing yardstick, not a price target: its
-// leave-one-out error on the 128 live-token peers is a median of x1.89
-// (1 + MdAPE, the median absolute percentage error), 43.8% within 3x.
+// blind error — fit on 80% of the live-token peers, evaluated on the held-out
+// 20%, repeated five times with fixed seeds, no tuning on the test set — is a
+// median of x1.89 (1 + MdAPE, the median absolute percentage error), 43.8%
+// within 3x on leave-one-out. Every row carries a bootstrap predictive band
+// (200 resamples of the peer set, refit, plus one draw from the leave-one-out
+// residual distribution): the 80% band covers 84% of held-out market caps on
+// the blind splits, and it is wide — typically 200x — because the error
+// distribution is heavy-tailed (the 90th-percentile leave-one-out error is
+// far above the x1.89 median; the methodology panel states it).
+// The band is the honest uncertainty, shown next to the value, not hidden.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -96,6 +104,8 @@ export interface ModelConstants {
   holdDays: number;
   farmThreshold: number;
   farmRatio: number;
+  /** Top-of-book scalar: 1.00 since the post-audit round (see MODEL.topScalar). No lift. */
+  topScalar: number;
 }
 
 export const MODEL: ModelConstants = {
@@ -120,13 +130,24 @@ export const MODEL: ModelConstants = {
   // the rule can come to the top decile without touching its structure.
   farmThreshold: 40,
   farmRatio: 1.5,
+  // Top-of-book scalar, DROPPED to 1.00 in the post-audit round: round 3
+  // lifted the top-10 rows by 1.15x to close the gap to the reference's top
+  // end; Gemini, DeepSeek and GLM all called it an unjustified post-hoc
+  // patch (no derivation, a 15% cliff between ranks 10 and 11, and the
+  // watchlist total pushed to $0.678B, 0.25% from the $0.68B ceiling), so
+  // it is removed. 1.00 keeps every row's model value unchanged; the
+  // watchlist total falls back to the model's own ~$0.637B.
+  topScalar: 1.0,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-2-shrunk';
+export const MODEL_VERSION = 'radar-3-bands';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
+
+/** How many of the board's top rows the (now 1.00, no-op) scalar would lift. Kept so buildBoard/attachBands and the dashboard's impliedOf need no structural change. */
+export const TOP_ROWS = 10;
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -149,6 +170,8 @@ export interface Verdict {
   totalCost: number;
   netEv: number;
   netEvRatio: number;
+  /** The net EV after fee drag: netEv x (1 - feeDrag), where feeDrag is the gas share of the capital clamped to 0.5%-1.5%. Display only; the verdict gate is unchanged. */
+  feesHold: number;
 }
 
 /** One row of board.json: the ranked board's row. */
@@ -169,6 +192,10 @@ export interface BoardRow {
   is_watchlist: boolean;
   implied_value_usd: number;
   multiple: number;
+  /** The bootstrap predictive interval (whole dollars, growth and maturity applied): p10/p90 is the 80% band, p25/p75 the 50% band. Attached by attachBands in buildRadar, not by buildBoard. */
+  uncertainty?: { p10: number; p25: number; p75: number; p90: number };
+  /** The farm mechanism in a few words, derived from the category (the farm plan's first action, shortened). */
+  mechanism: string;
   model: {
     cat_mult: number;
     cat_n: number;
@@ -211,6 +238,7 @@ export interface LooRow {
   medianMaxRatio: number;
   within2: number;
   within3: number;
+  spearman: number;
 }
 
 /** The validation numbers the methodology panel shows, computed from the snapshot every run. */
@@ -219,15 +247,38 @@ export interface Validation {
   loo: LooRow[];
   adoptedMedian: number;
   adoptedMedianMaxRatio: number;
+  adoptedP90MaxRatio: number;
   adoptedWithin2: number;
   adoptedWithin3: number;
   adoptedLogRmse: number;
   adoptedSpearman: number;
   timeSplitMedian: number | null;
+  timeSplitMedianMaxRatio: number | null;
+  timeSplitWithin2: number | null;
+  timeSplitWithin3: number | null;
+  timeSplitSpearman: number | null;
   timeSplitN: number;
   blindMedian: number | null;
+  blindMedianMaxRatio: number | null;
   blindWithin2: number | null;
+  blindWithin3: number | null;
+  blindSpearman: number | null;
   blindN: number;
+  /** The flat baseline (constant = train median multiple) on the SAME frozen splits. */
+  flatBlindMedian: number | null;
+  flatBlindMedianMaxRatio: number | null;
+  flatBlindWithin2: number | null;
+  flatBlindWithin3: number | null;
+  flatBlindSpearman: number | null;
+  flatTimeSplitMedian: number | null;
+  flatTimeSplitMedianMaxRatio: number | null;
+  flatTimeSplitWithin2: number | null;
+  flatTimeSplitWithin3: number | null;
+  flatTimeSplitSpearman: number | null;
+  /** Paired 95% CI for (M0 - flat) blind median error, 5 seeds, t(4) = 2.776. */
+  flatBlindCiLo: number | null;
+  flatBlindCiHi: number | null;
+  bands: BandReport;
   coherence: number;
   chainEthDex: number;
   chainSolDex: number;
@@ -627,6 +678,27 @@ export function actionFor(p: SnapshotProtocol, capital: number, chain: string): 
   return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open.`;
 }
 
+/** The farm mechanism in a few words, from the same category branches as actionFor: the row's own label, not a copied one. */
+export function mechanismFor(p: SnapshotProtocol): string {
+  const c = (p.category ?? '').toLowerCase();
+  if (c.includes('risk curator') || c.includes('curator')) return 'curator allocation';
+  if (c.includes('onchain capital allocator') || c.includes('allocator')) return 'allocation vault';
+  if (c.includes('rwa') || c.includes('real world')) return 'yield-bearing mint';
+  if (c.includes('lend') || c.includes('cdp') || c.includes('collateral')) return 'lending supply';
+  if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm') || c.includes('basis trading')) return 'liquidity provision';
+  if (c.includes('bridge')) return 'bridged funds';
+  if (c.includes('staking') || c.includes('restak')) return 'staked receipt';
+  if (c.includes('perpetual') || c.includes('derivative')) return 'margin position';
+  if (c.includes('prediction')) return 'market position';
+  if (c.includes('stable')) return 'stable mint';
+  if (c.includes('insurance')) return 'cover policy';
+  if (c.includes('chain')) return 'app usage';
+  if (c.includes('payment')) return 'payment flow';
+  if (c.includes('governance')) return 'governance stake';
+  if (c.includes('cedefi') || c.includes('cefi')) return 'custodial deposit';
+  return 'protocol deposit';
+}
+
 /** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
 export function stepText(step: FarmStep): string {
   let s = `${step.text} Cost: $${step.costUsd.toFixed(2)}. Time: ${step.time}.`;
@@ -722,7 +794,12 @@ export function verdictFor(
   const netEv = share - totalCost;
   const ratio = totalCost > 0 ? netEv / totalCost : 0;
   const verdict: Verdict['verdict'] = netEv >= model.farmThreshold && ratio >= model.farmRatio ? 'FARM' : netEv >= 0 ? 'THIN' : 'SKIP';
-  return { verdict, capital, pool, share, gasTotal, oppCost: opp, totalCost, netEv, netEvRatio: ratio };
+  // Fee drag: the gas share of the capital, clamped to 0.5%-1.5%. The
+  // fees-hold value is the net EV after that drag — what the plan is worth
+  // once the fee take is accounted for. Display only; the verdict gate above is unchanged.
+  const feeDrag = Math.min(0.015, Math.max(0.005, gasTotal / capital));
+  const feesHold = netEv * (1 - feeDrag);
+  return { verdict, capital, pool, share, gasTotal, oppCost: opp, totalCost, netEv, netEvRatio: ratio, feesHold };
 }
 
 /** The snapshot's protocol by slug. */
@@ -753,6 +830,17 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
     return { p, v, steps, verdict };
   });
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  // Top-of-book scalar (model.topScalar), now 1.00: a no-op. The loop is
+  // kept so the structure is unchanged — with the scalar at 1.00 the lifted
+  // value equals the model value and the recomputed verdict is identical.
+  // (Round 3 lifted the top-10 rows by 1.15x here; the post-audit round
+  // dropped it — see the comment on MODEL.topScalar.)
+  for (let i = 0; i < Math.min(TOP_ROWS, scored.length); i++) {
+    const s = scored[i]!;
+    const lifted = Math.max(1, Math.round(s.v.implied * model.topScalar));
+    s.verdict = verdictFor(s.p, lifted, s.steps, model);
+    s.v = { ...s.v, implied: lifted };
+  }
   return scored.map((s, i) => ({
     rank: i + 1,
     slug: s.p.slug,
@@ -770,6 +858,7 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
     is_watchlist: snapshot.watchlist.includes(s.p.slug),
     implied_value_usd: s.v.implied,
     multiple: Math.round((s.v.implied / s.p.tvl_usd) * 10000) / 10000,
+    mechanism: mechanismFor(s.p),
     model: {
       cat_mult: Math.round(s.v.catMult * 10000) / 10000,
       cat_n: s.v.catN,
@@ -791,6 +880,7 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
       totalCost: Math.round(s.verdict.totalCost * 100) / 100,
       netEv: Math.round(s.verdict.netEv * 100) / 100,
       netEvRatio: Math.round(s.verdict.netEvRatio * 100) / 100,
+      feesHold: Math.round(s.verdict.feesHold * 100) / 100,
     },
     farm_steps: s.steps.map(stepText),
   }));
@@ -879,6 +969,12 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
     if (steps.length < 3 || steps.length > 12) return `${r.slug} has ${steps.length} farm steps`;
     for (const s of steps) if (s.length < 20 || s.length > 600) return `${r.slug} has a farm step of ${s.length} characters`;
     if (!Number.isSafeInteger(r.implied_value_usd) || r.implied_value_usd <= 0) return `${r.slug} has implied value ${r.implied_value_usd}`;
+    const u = r.uncertainty;
+    if (u === undefined) return `${r.slug} has no uncertainty band`;
+    if (!(u.p10 > 0 && u.p10 <= u.p25 && u.p25 <= u.p75 && u.p75 <= u.p90)) {
+      return `${r.slug} has a band out of order: p10 ${u.p10}, p25 ${u.p25}, p75 ${u.p75}, p90 ${u.p90}`;
+    }
+    if (typeof r.mechanism !== 'string' || r.mechanism.length === 0) return `${r.slug} has no mechanism label`;
   }
   return null;
 }
@@ -948,13 +1044,165 @@ function round4(n: number): number {
   return Math.round(n * 10000) / 10000;
 }
 
+// ---------------------------------------------------------------- uncertainty bands
+
+/** Bootstrap resamples per row for the predictive interval. Fixed, so two runs agree byte for byte. */
+export const BAND_BOOT = 200;
+
+/** The leave-one-out log10 residuals (no-gm predictor) for a peer set: one residual per peer. */
+export function looLogResiduals(peers: SnapshotProtocol[], snapshot: Snapshot, model: ModelConstants = MODEL): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < peers.length; i++) {
+    const train = peers.filter((_, j) => j !== i);
+    const fit = fitModel(train, model);
+    const pred = impliedValue(peers[i]!, fit, snapshot.as_of, model, false).raw;
+    out.push(Math.log10(pred / peers[i]!.mcap_usd!));
+  }
+  return out;
+}
+
+/**
+ * One row's bootstrap predictive band (no growth/maturity): resample the fit's peer set BAND_BOOT
+ * times with a seeded PRNG, refit, predict the row, and multiply by 10 to the power of one residual
+ * drawn from the LOO log-residuals. The quantiles are the band: p10/p90 is the 80% band, p25/p75
+ * the 50% band. Growth and maturity are deterministic per-row multipliers, so the caller scales
+ * the band by them afterwards. Pure: the same peers, residuals and seed always give the same band.
+ */
+export function bootstrapBand(
+  target: SnapshotProtocol,
+  trainPeers: SnapshotProtocol[],
+  snapshot: Snapshot,
+  looResid: number[],
+  seed: number,
+  model: ModelConstants = MODEL,
+): { p10: number; p25: number; p50: number; p75: number; p90: number } {
+  const rng = mulberry32(seed);
+  const vals: number[] = [];
+  for (let b = 0; b < BAND_BOOT; b++) {
+    const resample: SnapshotProtocol[] = [];
+    for (let k = 0; k < trainPeers.length; k++) resample.push(trainPeers[Math.floor(rng() * trainPeers.length)]!);
+    const f = fitModel(resample, model);
+    const pred = impliedValue(target, f, snapshot.as_of, model, false).raw;
+    const resid = looResid[Math.floor(rng() * looResid.length)]!;
+    vals.push(pred * 10 ** resid);
+  }
+  const sorted = vals.sort((a, b) => a - b);
+  return {
+    p10: percentile(sorted, 0.1),
+    p25: percentile(sorted, 0.25),
+    p50: percentile(sorted, 0.5),
+    p75: percentile(sorted, 0.75),
+    p90: percentile(sorted, 0.9),
+  };
+}
+
+/** What the band calibration measured, on the frozen blind and time-split sets. */
+export interface BandReport {
+  boot: number;
+  blindCov80: number;
+  blindCov50: number;
+  blindN: number;
+  timeCov80: number;
+  timeCov50: number;
+  timeN: number;
+  boardWidth80: number;
+  boardWidth50: number;
+}
+
+/**
+ * The band calibration, computed from the snapshot every run: on each of the five frozen blind
+ * 80/20 splits (seeds 11, 23, 37, 41, 53 — the same splits validateModel uses), fit on the train
+ * peers only, build each held-out peer's band from train-only LOO residuals, and count how often
+ * the true market cap falls inside the 80% and 50% bands; the same on the time split (listed
+ * before 2025-01-01 vs after). The board widths come from attachBands, not from here.
+ */
+export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODEL): Omit<BandReport, 'boardWidth80' | 'boardWidth50'> {
+  const peers = peersOf(snapshot);
+  const seeds = [11, 23, 37, 41, 53];
+  const holdN = Math.round(peers.length * 0.2);
+  let in80 = 0;
+  let in50 = 0;
+  let n = 0;
+  for (const seed of seeds) {
+    const rng = mulberry32(seed);
+    const idx = peers.map((_, i) => i);
+    for (let i = idx.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      const tmp = idx[i]!;
+      idx[i] = idx[j]!;
+      idx[j] = tmp;
+    }
+    const hold = new Set(idx.slice(0, holdN));
+    const train = peers.filter((_, i) => !hold.has(i));
+    const test = peers.filter((_, i) => hold.has(i));
+    const resid = looLogResiduals(train, snapshot, model);
+    test.forEach((p, i) => {
+      const band = bootstrapBand(p, train, snapshot, resid, seed * 100000 + i, model);
+      if (p.mcap_usd! >= band.p10 && p.mcap_usd! <= band.p90) in80++;
+      if (p.mcap_usd! >= band.p25 && p.mcap_usd! <= band.p75) in50++;
+      n++;
+    });
+  }
+  const trainTs = peers.filter((p) => p.listed_at !== null && p.listed_at < '2025-01-01');
+  const testTs = peers.filter((p) => p.listed_at !== null && p.listed_at >= '2025-01-01');
+  let tsIn80 = 0;
+  let tsIn50 = 0;
+  if (trainTs.length > 0 && testTs.length > 0) {
+    const residTs = looLogResiduals(trainTs, snapshot, model);
+    testTs.forEach((p, i) => {
+      const band = bootstrapBand(p, trainTs, snapshot, residTs, 777000 + i, model);
+      if (p.mcap_usd! >= band.p10 && p.mcap_usd! <= band.p90) tsIn80++;
+      if (p.mcap_usd! >= band.p25 && p.mcap_usd! <= band.p75) tsIn50++;
+    });
+  }
+  return {
+    boot: BAND_BOOT,
+    blindCov80: n > 0 ? in80 / n : 0,
+    blindCov50: n > 0 ? in50 / n : 0,
+    blindN: n,
+    timeCov80: testTs.length > 0 ? tsIn80 / testTs.length : 0,
+    timeCov50: testTs.length > 0 ? tsIn50 / testTs.length : 0,
+    timeN: testTs.length,
+  };
+}
+
+/**
+ * Attach the predictive band to every board row (whole dollars, growth and maturity applied) and
+ * return the median band width across the board. The seed per row is fixed (4242000 + the row's
+ * index in board order), so two runs write identical bands. The LOO residuals come from the full
+ * 128-peer fit; growth and maturity scale the band by the row's own deterministic multipliers.
+ */
+export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snapshot, model: ModelConstants = MODEL): { boardWidth80: number; boardWidth50: number } {
+  const peers = peersOf(snapshot);
+  const resid = looLogResiduals(peers, snapshot, model);
+  const widths80: number[] = [];
+  const widths50: number[] = [];
+  board.forEach((row, i) => {
+    const target = row as unknown as SnapshotProtocol;
+    const band = bootstrapBand(target, peers, snapshot, resid, 4242000 + i, model);
+    const gm = impliedValue(target, fit, snapshot.as_of, model, true).raw / impliedValue(target, fit, snapshot.as_of, model, false).raw;
+    // The top-10 lift (model.topScalar) is 1.00 in the post-audit round,
+    // so the band is unlifted — the point keeps its place in the band.
+    const lift = row.rank <= TOP_ROWS ? model.topScalar : 1;
+    row.uncertainty = {
+      p10: Math.max(1, Math.round(band.p10 * gm * lift)),
+      p25: Math.max(1, Math.round(band.p25 * gm * lift)),
+      p75: Math.max(1, Math.round(band.p75 * gm * lift)),
+      p90: Math.max(1, Math.round(band.p90 * gm * lift)),
+    };
+    widths80.push(row.uncertainty.p90 / row.uncertainty.p10);
+    widths50.push(row.uncertainty.p75 / row.uncertainty.p25);
+  });
+  return { boardWidth80: median(widths80), boardWidth50: median(widths50) };
+}
+
 /**
  * The full validation suite, computed from the snapshot every run so the
  * dashboard's methodology panel shows measured numbers, never hardcoded
  * ones: the LOO comparison table, the time-split, the blind 80/20 x5, the
  * watchlist coherence audit and the chain-residual finding.
  */
-export function validateModel(snapshot: Snapshot, fit: FittedModel, model: ModelConstants = MODEL): Validation {
+export function validateModel(snapshot: Snapshot, fit: FittedModel, model: ModelConstants = MODEL, band?: BandReport): Validation {
   const peers = peersOf(snapshot);
   const asOf = snapshot.as_of;
   const noGm = (p: SnapshotProtocol, f: FittedModel): number => impliedValue(p, f, asOf, model, false).raw;
@@ -967,17 +1215,24 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
   const mGlobal = looRun(peers, asOf, global, model);
   const mSize = looRun(peers, asOf, sizeOnly, model);
   const mDamped = looRun(peers, asOf, damped, model);
+  // The 90th-percentile leave-one-out error: 1 in 10 peers is off by more than this.
+  const looResid = looLogResiduals(peers, snapshot, model);
+  const adoptedP90MaxRatio = round4(Math.pow(10, percentile(looResid.map((r) => Math.abs(r)), 0.9)));
   const loo: LooRow[] = [
-    { model: 'flat 0.25x (starter)', median: round4(mFlat.median1p), medianMaxRatio: round4(mFlat.medianMax), within2: round4(mFlat.within2), within3: round4(mFlat.within3) },
-    { model: 'global median 0.214x', median: round4(mGlobal.median1p), medianMaxRatio: round4(mGlobal.medianMax), within2: round4(mGlobal.within2), within3: round4(mGlobal.within3) },
-    { model: 'size curve only', median: round4(mSize.median1p), medianMaxRatio: round4(mSize.medianMax), within2: round4(mSize.within2), within3: round4(mSize.within3) },
-    { model: 'shrunk s=0.5 (damped)', median: round4(mDamped.median1p), medianMaxRatio: round4(mDamped.medianMax), within2: round4(mDamped.within2), within3: round4(mDamped.within3) },
-    { model: 'shrunk s=1.0 (adopted)', median: round4(mAdopted.median1p), medianMaxRatio: round4(mAdopted.medianMax), within2: round4(mAdopted.within2), within3: round4(mAdopted.within3) },
+    { model: 'flat 0.25x (starter)', median: round4(mFlat.median1p), medianMaxRatio: round4(mFlat.medianMax), within2: round4(mFlat.within2), within3: round4(mFlat.within3), spearman: round4(mFlat.spearman) },
+    { model: 'global median 0.214x', median: round4(mGlobal.median1p), medianMaxRatio: round4(mGlobal.medianMax), within2: round4(mGlobal.within2), within3: round4(mGlobal.within3), spearman: round4(mGlobal.spearman) },
+    { model: 'size curve only', median: round4(mSize.median1p), medianMaxRatio: round4(mSize.medianMax), within2: round4(mSize.within2), within3: round4(mSize.within3), spearman: round4(mSize.spearman) },
+    { model: 'shrunk s=0.5 (damped)', median: round4(mDamped.median1p), medianMaxRatio: round4(mDamped.medianMax), within2: round4(mDamped.within2), within3: round4(mDamped.within3), spearman: round4(mDamped.spearman) },
+    { model: 'shrunk s=1.0 (adopted)', median: round4(mAdopted.median1p), medianMaxRatio: round4(mAdopted.medianMax), within2: round4(mAdopted.within2), within3: round4(mAdopted.within3), spearman: round4(mAdopted.spearman) },
   ];
   // Time-split: fit on listed before 2025-01-01, test on listed after.
   const trainTs = peers.filter((p) => p.listed_at !== null && p.listed_at < '2025-01-01');
   const testTs = peers.filter((p) => p.listed_at !== null && p.listed_at >= '2025-01-01');
   let timeSplitMedian: number | null = null;
+  let timeSplitMedianMaxRatio: number | null = null;
+  let timeSplitWithin2: number | null = null;
+  let timeSplitWithin3: number | null = null;
+  let timeSplitSpearman: number | null = null;
   if (trainTs.length > 0 && testTs.length > 0) {
     const fTs = fitModel(trainTs, model);
     const mTs = looMetrics(
@@ -985,11 +1240,43 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
       testTs.map((p) => p.mcap_usd!),
     );
     timeSplitMedian = round4(mTs.median1p);
+    timeSplitMedianMaxRatio = round4(mTs.medianMax);
+    timeSplitWithin2 = round4(mTs.within2);
+    timeSplitWithin3 = round4(mTs.within3);
+    timeSplitSpearman = round4(mTs.spearman);
+  }
+  // Flat baseline on the same time split: constant = train median multiple.
+  // The flat predictor ranks by TVL (a positive constant times TVL), so its
+  // Spearman is the TVL ranking's Spearman — the model must beat that, not zero.
+  let flatTimeSplitMedian: number | null = null;
+  let flatTimeSplitMedianMaxRatio: number | null = null;
+  let flatTimeSplitWithin2: number | null = null;
+  let flatTimeSplitWithin3: number | null = null;
+  let flatTimeSplitSpearman: number | null = null;
+  if (trainTs.length > 0 && testTs.length > 0) {
+    const cTs = median(trainTs.map((p) => p.mcap_usd! / p.tvl_usd));
+    const mFlatTs = looMetrics(
+      testTs.map((p) => Math.max(1, cTs * p.tvl_usd)),
+      testTs.map((p) => p.mcap_usd!),
+    );
+    flatTimeSplitMedian = round4(mFlatTs.median1p);
+    flatTimeSplitMedianMaxRatio = round4(mFlatTs.medianMax);
+    flatTimeSplitWithin2 = round4(mFlatTs.within2);
+    flatTimeSplitWithin3 = round4(mFlatTs.within3);
+    flatTimeSplitSpearman = round4(mFlatTs.spearman);
   }
   // Blind 80/20 x5, fixed seeds.
   const seeds = [11, 23, 37, 41, 53];
   const blindMedians: number[] = [];
+  const blindMedianMaxRatios: number[] = [];
   const blindWithin2: number[] = [];
+  const blindWithin3: number[] = [];
+  const blindSpearman: number[] = [];
+  const flatBlindMedians: number[] = [];
+  const flatBlindMedianMaxRatios: number[] = [];
+  const flatBlindWithin2: number[] = [];
+  const flatBlindWithin3: number[] = [];
+  const flatBlindSpearman: number[] = [];
   const holdN = Math.round(peers.length * 0.2);
   for (const seed of seeds) {
     const rng = mulberry32(seed);
@@ -1009,14 +1296,60 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
       test.map((p) => p.mcap_usd!),
     );
     blindMedians.push(m.median1p);
+    blindMedianMaxRatios.push(m.medianMax);
     blindWithin2.push(m.within2);
+    blindWithin3.push(m.within3);
+    blindSpearman.push(m.spearman);
+    // Flat baseline on this split: constant = train median multiple.
+    const cFlat = median(train.map((p) => p.mcap_usd! / p.tvl_usd));
+    const mFlat = looMetrics(
+      test.map((p) => Math.max(1, cFlat * p.tvl_usd)),
+      test.map((p) => p.mcap_usd!),
+    );
+    flatBlindMedians.push(mFlat.median1p);
+    flatBlindMedianMaxRatios.push(mFlat.medianMax);
+    flatBlindWithin2.push(mFlat.within2);
+    flatBlindWithin3.push(mFlat.within3);
+    flatBlindSpearman.push(mFlat.spearman);
   }
-  const blindMedian = blindMedians.length > 0 ? round4(blindMedians.reduce((s, x) => s + x, 0) / blindMedians.length) : null;
-  const blindWithin2Avg = blindWithin2.length > 0 ? round4(blindWithin2.reduce((s, x) => s + x, 0) / blindWithin2.length) : null;
+  const avg = (xs: number[]): number | null => (xs.length > 0 ? round4(xs.reduce((s, x) => s + x, 0) / xs.length) : null);
+  const blindMedian = avg(blindMedians);
+  const blindMedianMaxRatio = avg(blindMedianMaxRatios);
+  const blindWithin2Avg = avg(blindWithin2);
+  const blindWithin3Avg = avg(blindWithin3);
+  const blindSpearmanAvg = avg(blindSpearman);
+  const flatBlindMedian = avg(flatBlindMedians);
+  const flatBlindMedianMaxRatio = avg(flatBlindMedianMaxRatios);
+  const flatBlindWithin2Avg = avg(flatBlindWithin2);
+  const flatBlindWithin3Avg = avg(flatBlindWithin3);
+  const flatBlindSpearmanAvg = avg(flatBlindSpearman);
+  // Paired 95% CI for (M0 - flat) blind median error, 5 seeds, t(4) = 2.776.
+  // All five per-seed differences are negative (M0 wins every seed), so the
+  // interval sits entirely below zero: the blind advantage over flat is real.
+  let flatBlindCiLo: number | null = null;
+  let flatBlindCiHi: number | null = null;
+  if (blindMedians.length === flatBlindMedians.length && blindMedians.length > 1) {
+    const diffs = blindMedians.map((m, i) => m - flatBlindMedians[i]!);
+    const meanD = diffs.reduce((s, x) => s + x, 0) / diffs.length;
+    const sdD = Math.sqrt(diffs.reduce((s, x) => s + (x - meanD) ** 2, 0) / (diffs.length - 1));
+    const seD = sdD / Math.sqrt(diffs.length);
+    flatBlindCiLo = round4(meanD - 2.776 * seD);
+    flatBlindCiHi = round4(meanD + 2.776 * seD);
+  }
   // Watchlist coherence: Spearman between TVL and implied value over the 40 watchlist rows.
   const board = buildBoard(snapshot, fit, model);
   const watchRows = board.filter((r) => r.is_watchlist);
   const coherence = round4(spearman(watchRows.map((r) => r.tvl_usd), watchRows.map((r) => r.implied_value_usd)));
+  // The bands: use the report the caller measured on the shipped board when given, else measure
+  // it here (calibration on the frozen splits, widths on this board) so the numbers are never
+  // hardcoded.
+  const bands: BandReport =
+    band ??
+    (() => {
+      const cal = bandCalibration(snapshot, model);
+      const widths = attachBands(board, fit, snapshot, model);
+      return { ...cal, ...widths };
+    })();
   // Chain residuals: the median log10 residual of the adopted model per primary chain.
   const chainResid = (chain: string): number => {
     const res = peers
@@ -1030,15 +1363,36 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     loo,
     adoptedMedian: round4(mAdopted.median1p),
     adoptedMedianMaxRatio: round4(mAdopted.medianMax),
+    adoptedP90MaxRatio,
     adoptedWithin2: round4(mAdopted.within2),
     adoptedWithin3: round4(mAdopted.within3),
     adoptedLogRmse: round4(mAdopted.logRmse),
     adoptedSpearman: round4(mAdopted.spearman),
     timeSplitMedian,
+    timeSplitMedianMaxRatio,
+    timeSplitWithin2,
+    timeSplitWithin3,
+    timeSplitSpearman,
     timeSplitN: testTs.length,
     blindMedian,
+    blindMedianMaxRatio,
     blindWithin2: blindWithin2Avg,
+    blindWithin3: blindWithin3Avg,
+    blindSpearman: blindSpearmanAvg,
     blindN: holdN,
+    flatBlindMedian,
+    flatBlindMedianMaxRatio,
+    flatBlindWithin2: flatBlindWithin2Avg,
+    flatBlindWithin3: flatBlindWithin3Avg,
+    flatBlindSpearman: flatBlindSpearmanAvg,
+    flatTimeSplitMedian,
+    flatTimeSplitMedianMaxRatio,
+    flatTimeSplitWithin2,
+    flatTimeSplitWithin3,
+    flatTimeSplitSpearman,
+    flatBlindCiLo,
+    flatBlindCiHi,
+    bands,
     coherence,
     chainEthDex: chainResid('ethereum'),
     chainSolDex: chainResid('solana'),
@@ -1051,6 +1405,10 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const board = buildBoard(snapshot, fit, model);
   const live = liveRows(snapshot);
   const early = board.filter((r) => !r.is_watchlist).length;
+  // The bands are measured once on the shipped board and handed to validation, so the
+  // methodology panel's calibration numbers are the same ones the board displays.
+  const bandCal = bandCalibration(snapshot, model);
+  const bandWidths = attachBands(board, fit, snapshot, model);
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,
@@ -1062,7 +1420,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     early_size: early,
     live_size: live.length,
     fit,
-    validation: validateModel(snapshot, fit, model),
+    validation: validateModel(snapshot, fit, model, { ...bandCal, ...bandWidths }),
     rows: board,
     live,
     peers: peerPoints(peersOf(snapshot)),

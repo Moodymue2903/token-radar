@@ -1,0 +1,49 @@
+Stage A: 128 peers, blind 80/20 x5 seeds 11,23,37,41,53, time-split cut 2025-01-01
+clean-comps filter on the full peer set: 104/128 kept; removed 24: CEX 9, versioned 1, ratio outside [0.01,10] 17 (overlaps counted in each bucket)
+removed slugs: aave-v2, anvil, backpack, biconomy.com, bitkan, bitkub, bitway-earn, concentrator, flokifi-locker, gate, gravity-bridge, grove-finance, kava-lend, mantle-bridge, meth-protocol, mexc, nexo, obol, okx, rain, reservoir-protocol, ssv-network, swissborg, xdai-stake-bridge
+blind: 102 train / 26 test per seed; time-split: 64 train / 31 test
+
+=== M0 ===
+BLIND x5 (mean of 5 seeds): median x1.8859 | medMax x5.1619 | within2 23.8% | within3 38.5% | logRMSE 0.8729 | Spearman 0.409
+  per-seed medians: x1.867 x1.851 x1.900 x1.922 x1.889 | per-seed Spearman: 0.305 0.478 0.415 0.321 0.529
+  BLIND pooled (130 preds): median x1.8916 | within2 23.8% | within3 38.5% | Spearman 0.400 | worst max-ratio x255.1 (aave-v2)
+  worst-5 pooled: aave-v2 x255.1, gravity-bridge x154.1, mantle-bridge x106.4, concentrator x73.8, nexo x62.2
+  per-category pooled blind median (n>=5): Basis Trading n=6 med-x1.58 | Bridge n=6 med-x1.63 | CEX n=8 med-x1.78 | Canonical Bridge n=8 med-x2.16 | Dexs n=16 med-x1.88 | Lending n=10 med-x1.98 | Liquid Staking n=8 med-x5.18 | Privacy n=5 med-x1.50 | RWA n=9 med-x1.50 | Yield n=10 med-x4.47
+TIME-SPLIT (n=31): median x1.8401 | medMax x3.4929 | within2 25.8% | within3 41.9% | logRMSE 1.0344 | Spearman 0.180
+LOO (n=128): median x1.8865 | medMax x3.3672 | within2 30.5% | within3 43.8% | logRMSE 0.9416 | Spearman 0.367
+
+=== M1 ===
+BLIND x5 (mean of 5 seeds): median x1.8686 | medMax x4.6592 | within2 24.6% | within3 34.6% | logRMSE 0.8651 | Spearman 0.453
+  per-seed medians: x1.868 x1.791 x1.933 x1.914 x1.837 | per-seed Spearman: 0.461 0.604 0.261 0.314 0.623
+  BLIND pooled (130 preds): median x1.8781 | within2 24.6% | within3 34.6% | Spearman 0.460 | worst max-ratio x179.5 (nexo)
+  worst-5 pooled: nexo x179.5, nexo x178.7, concentrator x173.6, aave-v2 x103.3, mantle-bridge x82.7
+  per-category pooled blind median (n>=5): Basis Trading n=6 med-x1.68 | Bridge n=6 med-x1.57 | CEX n=8 med-x1.78 | Canonical Bridge n=8 med-x1.56 | Dexs n=16 med-x1.86 | Lending n=10 med-x2.52 | Liquid Staking n=8 med-x6.32 | Privacy n=5 med-x2.55 | RWA n=9 med-x1.45 | Yield n=10 med-x3.17
+TIME-SPLIT (n=31): median x1.8870 | medMax x2.7926 | within2 32.3% | within3 51.6% | logRMSE 0.9638 | Spearman 0.244
+LOO (n=128): median x1.8745 | medMax x3.5436 | within2 25.8% | within3 42.2% | logRMSE 0.9133 | Spearman 0.421
+
+=== M2 ===
+BLIND x5 (mean of 5 seeds): median x1.8723 | medMax x4.6500 | within2 26.9% | within3 37.7% | logRMSE 0.8786 | Spearman 0.447
+  per-seed medians: x1.857 x1.760 x1.914 x1.905 x1.926 | per-seed Spearman: 0.471 0.621 0.234 0.301 0.609
+  BLIND pooled (130 preds): median x1.8768 | within2 26.9% | within3 37.7% | Spearman 0.417 | worst max-ratio x348.7 (nexo)
+  worst-5 pooled: nexo x348.7, aave-v2 x176.3, nexo x170.5, concentrator x164.3, mantle-bridge x98.7
+  per-category pooled blind median (n>=5): Basis Trading n=6 med-x1.70 | Bridge n=6 med-x1.58 | CEX n=8 med-x1.93 | Canonical Bridge n=8 med-x1.60 | Dexs n=16 med-x1.91 | Lending n=10 med-x1.98 | Liquid Staking n=8 med-x4.48 | Privacy n=5 med-x1.90 | RWA n=9 med-x1.43 | Yield n=10 med-x3.89
+TIME-SPLIT (n=31): median x1.8929 | medMax x3.0397 | within2 29.0% | within3 48.4% | logRMSE 0.9824 | Spearman 0.229
+LOO (n=128): median x1.8683 | medMax x3.6145 | within2 27.3% | within3 39.8% | logRMSE 0.9410 | Spearman 0.379
+
+=== M3 ===
+BLIND x5 (mean of 5 seeds): median x1.9387 | medMax x4.6038 | within2 20.0% | within3 34.6% | logRMSE 0.8748 | Spearman 0.421
+  per-seed medians: x1.886 x2.091 x1.892 x1.922 x1.903 | per-seed Spearman: 0.374 0.506 0.394 0.294 0.536
+  BLIND pooled (130 preds): median x1.8975 | within2 20.0% | within3 34.6% | Spearman 0.422 | worst max-ratio x192.9 (nexo)
+  worst-5 pooled: nexo x192.9, nexo x190.6, aave-v2 x189.1, gravity-bridge x133.7, concentrator x109.4
+  per-category pooled blind median (n>=5): Basis Trading n=6 med-x1.68 | Bridge n=6 med-x1.87 | CEX n=8 med-x1.81 | Canonical Bridge n=8 med-x1.98 | Dexs n=16 med-x1.88 | Lending n=10 med-x1.98 | Liquid Staking n=8 med-x3.46 | Privacy n=5 med-x2.40 | RWA n=9 med-x1.53 | Yield n=10 med-x4.14
+TIME-SPLIT (n=31): median x1.8415 | medMax x2.9708 | within2 29.0% | within3 51.6% | logRMSE 0.9998 | Spearman 0.236
+LOO (n=128): median x1.8916 | medMax x3.4276 | within2 28.1% | within3 45.3% | logRMSE 0.9235 | Spearman 0.413
+
+M2 internals (full 128 peers): global Huber a=2.8066 b=0.5517 (OLS b=0.5223)
+  Lending: n=15 raw Huber b=1.452 w=0.60 shrunk b=0.800 (CLIPPED)
+  Dexs: n=11 raw Huber b=1.776 w=0.52 shrunk b=0.800 (CLIPPED)
+  Liquid Staking: n=9 raw Huber b=0.603 w=0.47 shrunk b=0.576
+  Yield: n=9 raw Huber b=0.830 w=0.47 shrunk b=0.684
+  CEX: n=9 raw Huber b=0.739 w=0.47 shrunk b=0.641
+  RWA: n=9 raw Huber b=0.386 w=0.47 shrunk b=0.473
+  Canonical Bridge: n=8 raw Huber b=0.808 w=0.44 shrunk b=0.666

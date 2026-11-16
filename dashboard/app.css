@@ -40,6 +40,7 @@ td .slug{color:var(--dim);font-size:12px}
 .badge.THIN{background:#3d2f14;color:#e8c478}
 .badge.SKIP{background:#26292f;color:#9a978c}
 .wl{font-size:11px;color:var(--amber);border:1px solid #4a3d22;border-radius:4px;padding:0 5px;margin-left:6px;white-space:nowrap}
+.mech{font-size:11px;color:var(--blue);border:1px solid #2b3d4d;border-radius:4px;padding:0 5px;margin-left:6px;white-space:nowrap}
 .mapwrap{overflow:hidden}
 .mapwrap svg{display:block;width:100%;height:auto}
 .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:6px 0 0}

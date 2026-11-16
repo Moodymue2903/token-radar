@@ -1,0 +1,51 @@
+{
+  "method": "parametric bootstrap predictive interval: 200 resamples of the fit peer set, refit M0, predict (no-gm), multiply by 10^(one residual drawn from the train-only LOO log-residuals), quantiles p10/p25/p50/p75/p90; gm applied deterministically after (band scales by gm)",
+  "boot": 200,
+  "blind": {
+    "n": 130,
+    "cov80": 0.8384615384615385,
+    "cov50": 0.46153846153846156,
+    "medianP90overP10": 217.06416514874553,
+    "medianP75overP25": 12.688692166032016,
+    "medianP50overPoint": 0.94870729026558,
+    "perSeed": [
+      {
+        "seed": 11,
+        "cov80": 0.9230769230769231,
+        "cov50": 0.5769230769230769
+      },
+      {
+        "seed": 23,
+        "cov80": 0.8076923076923077,
+        "cov50": 0.38461538461538464
+      },
+      {
+        "seed": 37,
+        "cov80": 0.7307692307692307,
+        "cov50": 0.46153846153846156
+      },
+      {
+        "seed": 41,
+        "cov80": 0.8076923076923077,
+        "cov50": 0.38461538461538464
+      },
+      {
+        "seed": 53,
+        "cov80": 0.9230769230769231,
+        "cov50": 0.5
+      }
+    ]
+  },
+  "timeSplit": {
+    "n": 31,
+    "cov80": 0.7096774193548387,
+    "cov50": 0.3225806451612903
+  },
+  "boardFullData": {
+    "n": 200,
+    "medianP90overP10": 206.24555519954544,
+    "medianP75overP25": 15.529037935777822,
+    "medianP50overPoint": 1.0535646947978776
+  },
+  "wallMs": 35133
+}
