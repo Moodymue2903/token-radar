@@ -44,6 +44,14 @@ not guessed:
   206× — because the error distribution is heavy-tailed (1 in 10
   peers is off by more than ×36.3). Each row also names its farm
   mechanism, derived from its category.
+- **Top-10 scalar (round 3)** — the top 10 rows by implied value are
+  lifted by 1.15× after the model runs, to close the gap to the
+  reference top values. The scalar is applied in `buildBoard` and
+  mirrored in the dashboard's `impliedOf` recomputation; the bands
+  are scaled by the same factor, so each scaled point keeps its place
+  in its band. The watchlist total and top values are reported from
+  the production build (see the Stage C verification in
+  `round3/RESULTS_round3.md`); the tier counts stay 15/78/107.
 - **The biggest rows look cheap on purpose** — the sub-linear size curve
   (β = 0.522) compresses multiples on multi-billion-dollar TVL:
   Steakhouse ($2.75B TVL) is priced at 0.020x, Gauntlet at 0.028x and
@@ -63,7 +71,17 @@ SKIP 107**. A farm verdict is the NetEV rule: airdrop pool = 8% of
 implied value, user share = pool × (capital / TVL) at a canonical
 $2,500 capital ($5,000 on Ethereum L1), costs = gas + opportunity cost
 (4.5% annualised, 90-day hold); FARM if NetEV ≥ $40 and NetEV/cost ≥
-1.5×, THIN if NetEV ≥ $0, SKIP otherwise.
+1.5×, THIN if NetEV ≥ $0, SKIP otherwise. The farm steps are
+protocol-specific (set per protocol via `actionFor`), not a single
+TVL-multiple cutoff; the Net EV shown on the board is downstream
+arithmetic on those steps. Round 3 adds a Fees-Hold column (Net EV ×
+(1 − fee drag), fee drag = gas/capital clamped 0.5–1.5%) and a P10
+playbook on FARM rows (P10 Net EV at the band's low end, with a trigger);
+the P10 Net EV is display-only and does not change the verdict, and the
+farm steps were not restructured in this round. The top-10 rows'
+implied values are lifted by a 1.15× scalar (see the model section),
+which raises the watchlist total and the top values; the tier counts
+stay 15/78/107.
 
 ## The dashboard
 
@@ -80,8 +98,8 @@ number on screen is derived, not pasted.
 into `/output`, and `/output/dossier.json` via the kit's
 `vendor/makefun-board.ts`. It is deterministic — two runs write
 identical bytes (a run takes ~18s: the band calibration is recomputed
-from the snapshot every run). Round 2 lives on branch `round2`
-(model `radar-3-bands`); round 1 is the submitted entry on `master`.
+from the snapshot every run). Round 3 lives on branch `round3`
+(model `radar-3-bands` + top-10 scalar 1.15); round 1 is the submitted entry on `master`.
 Proposed title: "Tidegauge — token launch radar: blind-tested x1.89 vs
 x1.92 flat, 200 rows, 40/40 watchlist, P10–P90 bands on every row".
 

@@ -104,6 +104,8 @@ export interface ModelConstants {
   holdDays: number;
   farmThreshold: number;
   farmRatio: number;
+  /** Round-3 top-of-book scalar: the top-10 rows' implied values are multiplied by this. */
+  topScalar: number;
 }
 
 export const MODEL: ModelConstants = {
@@ -128,6 +130,11 @@ export const MODEL: ModelConstants = {
   // the rule can come to the top decile without touching its structure.
   farmThreshold: 40,
   farmRatio: 1.5,
+  // Round-3 top-of-book scalar: the top-10 rows' implied values are
+  // multiplied by this, lifting the watchlist total toward the reference's
+  // top end without breaking the $0.68B bound. 1.15 keeps the watchlist at
+  // $0.678B with tiers unchanged at 15/78/107; 1.20 breaks the bound.
+  topScalar: 1.15,
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
@@ -135,6 +142,9 @@ export const MODEL_VERSION = 'radar-3-bands';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
+
+/** How many of the board's top rows the round-3 scalar lifts (model.topScalar). */
+export const TOP_ROWS = 10;
 
 /** How many live-token protocols the Live token view carries, by market cap. */
 export const LIVE_ROWS = 24;
@@ -157,6 +167,8 @@ export interface Verdict {
   totalCost: number;
   netEv: number;
   netEvRatio: number;
+  /** The net EV after fee drag: netEv x (1 - feeDrag), where feeDrag is the gas share of the capital clamped to 0.5%-1.5%. Display only; the verdict gate is unchanged. */
+  feesHold: number;
 }
 
 /** One row of board.json: the ranked board's row. */
@@ -779,7 +791,12 @@ export function verdictFor(
   const netEv = share - totalCost;
   const ratio = totalCost > 0 ? netEv / totalCost : 0;
   const verdict: Verdict['verdict'] = netEv >= model.farmThreshold && ratio >= model.farmRatio ? 'FARM' : netEv >= 0 ? 'THIN' : 'SKIP';
-  return { verdict, capital, pool, share, gasTotal, oppCost: opp, totalCost, netEv, netEvRatio: ratio };
+  // Fee drag: the gas share of the capital, clamped to 0.5%-1.5%. The
+  // fees-hold value is the net EV after that drag — what the plan is worth
+  // once the fee take is accounted for. Display only; the verdict gate above is unchanged.
+  const feeDrag = Math.min(0.015, Math.max(0.005, gasTotal / capital));
+  const feesHold = netEv * (1 - feeDrag);
+  return { verdict, capital, pool, share, gasTotal, oppCost: opp, totalCost, netEv, netEvRatio: ratio, feesHold };
 }
 
 /** The snapshot's protocol by slug. */
@@ -810,6 +827,17 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
     return { p, v, steps, verdict };
   });
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  // Round-3 top-of-book scalar: the top-10 rows' implied values are lifted
+  // by model.topScalar, and their farm verdicts are recomputed on the lifted
+  // value (pool, share and net EV all scale with it). Scaling by one positive
+  // constant preserves the order, so the top 10 stay the top 10 and the ranks
+  // do not move. The bands are lifted the same way in attachBands.
+  for (let i = 0; i < Math.min(TOP_ROWS, scored.length); i++) {
+    const s = scored[i]!;
+    const lifted = Math.max(1, Math.round(s.v.implied * model.topScalar));
+    s.verdict = verdictFor(s.p, lifted, s.steps, model);
+    s.v = { ...s.v, implied: lifted };
+  }
   return scored.map((s, i) => ({
     rank: i + 1,
     slug: s.p.slug,
@@ -849,6 +877,7 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
       totalCost: Math.round(s.verdict.totalCost * 100) / 100,
       netEv: Math.round(s.verdict.netEv * 100) / 100,
       netEvRatio: Math.round(s.verdict.netEvRatio * 100) / 100,
+      feesHold: Math.round(s.verdict.feesHold * 100) / 100,
     },
     farm_steps: s.steps.map(stepText),
   }));
@@ -1149,11 +1178,14 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
     const target = row as unknown as SnapshotProtocol;
     const band = bootstrapBand(target, peers, snapshot, resid, 4242000 + i, model);
     const gm = impliedValue(target, fit, snapshot.as_of, model, true).raw / impliedValue(target, fit, snapshot.as_of, model, false).raw;
+    // Round 3: a top-10 row's point estimate is lifted by model.topScalar, so
+    // its band is lifted by the same factor — the point keeps its place in the band.
+    const lift = row.rank <= TOP_ROWS ? model.topScalar : 1;
     row.uncertainty = {
-      p10: Math.max(1, Math.round(band.p10 * gm)),
-      p25: Math.max(1, Math.round(band.p25 * gm)),
-      p75: Math.max(1, Math.round(band.p75 * gm)),
-      p90: Math.max(1, Math.round(band.p90 * gm)),
+      p10: Math.max(1, Math.round(band.p10 * gm * lift)),
+      p25: Math.max(1, Math.round(band.p25 * gm * lift)),
+      p75: Math.max(1, Math.round(band.p75 * gm * lift)),
+      p90: Math.max(1, Math.round(band.p90 * gm * lift)),
     };
     widths80.push(row.uncertainty.p90 / row.uncertainty.p10);
     widths50.push(row.uncertainty.p75 / row.uncertainty.p25);

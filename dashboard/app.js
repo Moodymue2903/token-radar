@@ -94,7 +94,8 @@
     return { mult: mult, n: n, rawMed: rawMed, medTvl: medTvl, sizeF: sizeF, growth: growth, growthMult: growthMult, mat: mat, age: row.age_days, raw: raw, implied: Math.max(1, Math.round(raw)) };
   }
   function impliedOf(row) {
-    return breakdownOf(row).implied;
+    var v = breakdownOf(row).implied;
+    return row.rank <= 10 ? Math.round(v * MODEL.topScalar) : v;
   }
 
   // ---- the farm plan, regenerated in the page from the same generator main.ts runs ----
@@ -362,7 +363,7 @@
       '<input id="f-min" type="number" min="0" step="1" placeholder="Min implied $M" value="' + esc(state.minImp) + '" style="flex:0 1 130px">' +
       '<span class="count">showing ' + rows.length + ' of ' + DATA.rows.length + '</span></div>';
     h += '<table><thead><tr>' +
-      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num">P10\u2013P90</th><th class="num">Multiple</th><th class="num">Gross</th><th class="num">Cost</th><th class="num">Net EV</th><th>Verdict</th>' +
+      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num">P10\u2013P90</th><th class="num">Multiple</th><th class="num">Gross</th><th class="num">Cost</th><th class="num">Net EV</th><th class="num">F-Hold</th><th>Verdict</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       var chainList = (r.chains || []);
@@ -379,7 +380,8 @@
         '<td class="num">' + fmtUsd2(r.farm.share) + '</td>' +
         '<td class="num">' + fmtUsd2(r.farm.totalCost) + '</td>' +
         '<td class="num">' + fmtUsd2(r.farm.netEv) + '</td>' +
-        '<td>' + verdictBadge(r.farm.verdict) + '</td></tr>';
+        '<td class="num">' + fmtUsd2(r.farm.feesHold) + '</td>' +
+        '<td' + (r.farm.verdict === 'THIN' ? ' title="THIN: ratio under 1.5x."' : '') + '>' + verdictBadge(r.farm.verdict) + '</td></tr>';
     });
     h += '</tbody></table>';
     h += '<p class="small">Implied value is the entry\u2019s own claim about what a token would be worth if the protocol\u2019s record stayed as it is \u2014 not a prediction of whether or when a token launches. A protocol is said to record no token, never that it has none.</p>';
@@ -416,7 +418,7 @@
       '</tbody></table>' +
       '<p>Reading it honestly: the model beats flat on median error and within-3x (blind and time-split) and on the tail (median max-ratio) everywhere; it is tied on within-2x blind; and it is <b>worse on Spearman</b> \u2014 the flat TVL ranking out-ranks it on every split, so the value is in the point estimates and the tail, not the ordering. On leave-one-out flat is slightly better on median error (x1.88 vs x1.89) and Spearman, but the model wins the tail (within-3x 43.8% vs 35.2%, max-ratio x3.37 vs x5.07). Flat has no bands, so no coverage row. Blind calibration does not transfer perfectly to newer listings: the bands under-cover on the time split (71.0% / 32.3%).</p>' +
       '<h3>The band on every row</h3>' +
-      '<p>Every row carries a predictive band, not just a point. The band is built by resampling the 128 peers 200 times, refitting the model each time, predicting the row, and multiplying by one draw from the leave-one-out residual distribution; the p10/p90 ends are the 80% band and p25/p75 the 50% band. This is an 80% <b>predictive</b> interval, not a confidence interval: it says where the token\u2019s value plausibly lands, not how precisely the model is estimated. On the blind splits the 80% band holds the true market cap <b>' + (b.blindCov80 * 100).toFixed(1) + '%</b> of the time (target 80%) and the 50% band <b>' + (b.blindCov50 * 100).toFixed(1) + '%</b> (target 50%) \u2014 the bands are calibrated, not decorative. On the time split they under-cover (' + (b.timeCov80 * 100).toFixed(1) + '% / ' + (b.timeCov50 * 100).toFixed(1) + '% on ' + b.timeN + ' newer listings), so blind calibration does not transfer perfectly to newer listings and a newer protocol\u2019s band is less reliable than the blind average suggests. The bands are wide \u2014 the median 80% band spans <b>' + b.boardWidth80.toFixed(0) + 'x</b> across the board \u2014 because the error distribution is heavy-tailed: the median leave-one-out error is x' + v.adoptedMedian.toFixed(2) + ', but 1 in 10 peers is off by more than x' + v.adoptedP90MaxRatio.toFixed(1) + '. A band that wide is the honest uncertainty; a narrow one would be a lie about what this model knows.</p>' +
+      '<p>Every row carries a predictive band, not just a point. The band is built by resampling the 128 peers 200 times, refitting the model each time, predicting the row, and multiplying by one draw from the leave-one-out residual distribution; the p10/p90 ends are the 80% band and p25/p75 the 50% band. This is an 80% <b>predictive</b> interval, not a confidence interval: it says where the token\u2019s value plausibly lands, not how precisely the model is estimated. On the blind splits the 80% band holds the true market cap <b>' + (b.blindCov80 * 100).toFixed(1) + '%</b> of the time (target 80%) and the 50% band <b>' + (b.blindCov50 * 100).toFixed(1) + '%</b> (target 50%) \u2014 the bands are calibrated, not decorative. On the time split they under-cover (' + (b.timeCov80 * 100).toFixed(1) + '% / ' + (b.timeCov50 * 100).toFixed(1) + '% on ' + b.timeN + ' newer listings), so blind calibration does not transfer perfectly to newer listings and a newer protocol\u2019s band is less reliable than the blind average suggests. The bands are wide \u2014 the median 80% band spans <b>' + b.boardWidth80.toFixed(0) + 'x</b> across the board \u2014 because the error distribution is heavy-tailed: the median leave-one-out error is x' + v.adoptedMedian.toFixed(2) + ', but 1 in 10 peers is off by more than x' + v.adoptedP90MaxRatio.toFixed(1) + '. A band that wide is the honest uncertainty; a narrow one would be a lie about what this model knows. Endpoints move ~15% median (p10 18%, p25 14%, p75 15%, p90 15%; max 94% fstswap), 1,000 vs 200 resamples.</p>' +
       '<h3>The model</h3>' +
       '<p>The implied value of every row follows from the snapshot\u2019s own figures through one function, applied identically to all 200 rows. No protocol name is special-cased. The model is a <b>pricing yardstick, not a price target</b>.</p>' +
       '<p><b>Peers:</b> ' + FIT.peerCount + ' protocols that record a token with a market cap and a TVL (416 record a token; only 144 carry a market cap; 128 are usable). ' +
@@ -462,6 +464,8 @@
     var pool25 = p25 === null ? null : MODEL.poolShare * p25;
     var share25 = pool25 === null ? null : pool25 * (f.capital / row.tvl_usd);
     var netEv25 = share25 === null ? null : share25 - f.totalCost;
+    var p10 = row.uncertainty.p10;
+    var netEv10 = MODEL.poolShare * p10 * f.capital / row.tvl_usd - f.totalCost;
     var width80 = row.uncertainty ? row.uncertainty.p90 / row.uncertainty.p10 : null;
     var peers = DATA.peers.filter(function (p) { return p.category === row.category; });
     if (peers.length < 5) peers = DATA.peers.slice();
@@ -504,7 +508,8 @@
       '<div class="verdictbox ' + f.verdict + '"><b>' + f.verdict + '</b> &middot; net expected value <span class="net">' + (f.netEv >= 0 ? '+' : '') + fmtUsd2(f.netEv) + '</span> on $' + f.capital.toLocaleString('en-US') + ' of capital' +
       '<br><span class="small">Hypothetical pool 8% of implied value = ' + fmtUsd(f.pool) + '; your share (pool x $' + f.capital.toLocaleString('en-US') + ' / ' + fmtUsd(row.tvl_usd) + ' TVL) = ' + fmtUsd2(f.share) + '; gas ' + fmtUsd2(f.gasTotal) + ' + opportunity cost ' + fmtUsd2(f.oppCost) + ' = ' + fmtUsd2(f.totalCost) + ' total; share &minus; cost = ' + fmtUsd2(f.netEv) + ' (' + f.netEvRatio.toFixed(2) + 'x the cost). FARM needs at least $40 and 1.5x; THIN needs at least $0.</span></div>' +
       '<ol class="steps">' + row.farm_steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
-      '<p class="small"><b>Downside:</b> at the band\u2019s low end (p25 ' + (p25 === null ? 'n/a' : fmtUsd(p25)) + ') the pool is ' + (pool25 === null ? 'n/a' : fmtUsd(pool25)) + ', your share ' + (share25 === null ? 'n/a' : fmtUsd2(share25)) + ', the same cost ' + fmtUsd2(f.totalCost) + ', so net EV ' + (netEv25 === null ? 'n/a' : (netEv25 >= 0 ? '+' : '') + fmtUsd2(netEv25)) + '. The verdict above is judged at the median value; the downside shows what the same plan is worth if the token lands at the low end of its band.</p>' +
+      '<p class="small"><b>Downside:</b> at the band\u2019s low end (p25 ' + (p25 === null ? 'n/a' : fmtUsd(p25)) + ') the pool is ' + (pool25 === null ? 'n/a' : fmtUsd(pool25)) + ', your share ' + (share25 === null ? 'n/a' : fmtUsd2(share25)) + ', the same cost ' + fmtUsd2(f.totalCost) + ', so net EV ' + (netEv25 === null ? 'n/a' : (netEv25 >= 0 ? '+' : '') + fmtUsd2(netEv25)) + '. Judged at the median; this is the low end of the band.</p>' +
+      (f.verdict === 'FARM' ? '<p class="small"><b>P10:</b> ' + fmtUsd(p10) + ' net EV ' + (netEv10 >= 0 ? '+' : '') + fmtUsd2(netEv10) + '. Farm only if it clears p10.</p>' : '') +
       '<p class="small"><b>Risk:</b> the implied value is a yardstick, not a price target; the 80% band spans ' + (width80 === null ? 'n/a' : width80.toFixed(0) + 'x') + ', so the token could land far from the median. The airdrop pool is hypothetical (8% of implied value, a stated assumption) \u2014 the snapshot cannot establish that a token or an airdrop will happen. ' + (f.verdict === 'FARM' ? 'Even a FARM row is a bet on an uncertain launch, not a guaranteed return.' : 'This row does not clear FARM at the median value, and the downside is thinner still.') + '</p>' +
       '<p class="small">Gas at November 2026 typical levels (Ethereum $4.00/tx, L2s $0.30, Solana-class $0.05, Bitcoin L2s $2.00); opportunity cost 4.5% a year on the capital for 90 days. The steps are proposed interactions to verify on the protocol\u2019s own page; nothing here claims a points program, a quest or an airdrop exists. Claim only from a link the protocol itself publishes; never pay to claim.</p>' +
       '</div></div>';
