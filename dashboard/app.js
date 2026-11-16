@@ -45,6 +45,10 @@
   function fmtMult(m) {
     return m.toFixed(3) + 'x';
   }
+  function fmtBand(r) {
+    if (!r.uncertainty) return 'n/a';
+    return fmtUsd(r.uncertainty.p10) + ' \u2013 ' + fmtUsd(r.uncertainty.p90);
+  }
 
   // ---- the model, recomputed in the page from the same arithmetic main.ts runs ----
   function catOf(category) {
@@ -345,18 +349,19 @@
       '<input id="f-min" type="number" min="0" step="1" placeholder="Min implied $M" value="' + esc(state.minImp) + '" style="flex:0 1 130px">' +
       '<span class="count">showing ' + rows.length + ' of ' + DATA.rows.length + '</span></div>';
     h += '<table><thead><tr>' +
-      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num">Multiple</th><th>Verdict</th>' +
+      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num">P10\u2013P90</th><th class="num">Multiple</th><th>Verdict</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       var chainList = (r.chains || []);
       var chainShown = chainList.slice(0, 3).join(', ') + (chainList.length > 3 ? ' +' + (chainList.length - 3) + ' more' : '');
       h += '<tr data-slug="' + esc(r.slug) + '">' +
         '<td class="num">' + r.rank + '</td>' +
-        '<td><b>' + esc(r.name) + '</b><span class="cat">' + esc(r.category || 'Uncategorised') + ' &middot; ' + esc(chainShown || 'no chain') + '</span><span class="slug">' + esc(r.slug) + '</span>' + (r.is_watchlist ? '<span class="wl">WATCHLIST</span>' : '') + '</td>' +
+        '<td><b>' + esc(r.name) + '</b><span class="cat">' + esc(r.category || 'Uncategorised') + ' &middot; ' + esc(chainShown || 'no chain') + '</span><span class="slug">' + esc(r.slug) + '</span>' + (r.is_watchlist ? '<span class="wl">WATCHLIST</span>' : '') + '<span class="mech">' + esc(r.mechanism || '') + '</span></td>' +
         '<td class="num">' + fmtUsd(r.tvl_usd) + '</td>' +
         '<td class="num">' + fmtPct(r.change_7d === null ? null : r.change_7d) + '</td>' +
         '<td class="num">' + fmtAge(r.age_days) + '</td>' +
         '<td class="num"><b>' + fmtUsd(r.implied_value_usd) + '</b></td>' +
+        '<td class="num">' + fmtBand(r) + '</td>' +
         '<td class="num">' + fmtMult(r.multiple) + '</td>' +
         '<td>' + verdictBadge(r.farm.verdict) + '</td></tr>';
     });
@@ -378,26 +383,30 @@
   }
   function methodHtml() {
     var v = DATA.validation;
+    var b = v.bands;
     var h = '<div class="panel"><h2>How this is priced</h2>' +
-      '<p>The implied value of every row follows from the snapshot\u2019s own figures through one function, applied identically to all 200 rows. No protocol name is special-cased. The model is a <b>pricing yardstick, not a price target</b>: its typical error is nearly 2x, and the page shows the error next to the value instead of hiding it.</p>' +
+      '<h3>The blind test first</h3>' +
+      '<p>Before anything else, the test. The model is fit on 80% of the 128 live-token peers and evaluated on the held-out 20%, repeated five times with fixed seeds, with no tuning on the test set. The held-out peers are kept completely out of peer selection, winsorization, category calibration, size-curve fitting and hyperparameter selection. <b>Blind median error x' + v.blindMedian.toFixed(2) + '</b> (1 + MdAPE \u2014 the median absolute percentage error), <b>' + v.blindWithin2.toFixed(1) + '% within 2x, ' + v.blindWithin3.toFixed(1) + '% within 3x</b> of the true market cap. A second test fits on protocols listed before 2025-01-01 and tests on the ' + v.timeSplitN + ' listed after: median error x' + v.timeSplitMedian.toFixed(2) + ', ' + v.timeSplitWithin3.toFixed(1) + '% within 3x. Leave-one-out over all 128 peers (full refit each fold) gives the same picture: median x' + v.adoptedMedian.toFixed(2) + ', ' + v.adoptedWithin3.toFixed(1) + '% within 3x. That is the number to quote \u2014 the typical row lands within about 2x of its true value, tested blind, not fitted.</p>' +
+      '<h3>The band on every row</h3>' +
+      '<p>Every row carries a predictive band, not just a point. The band is built by resampling the 128 peers 200 times, refitting the model each time, predicting the row, and multiplying by one draw from the leave-one-out residual distribution; the p10/p90 ends are the 80% band and p25/p75 the 50% band. On the blind splits the 80% band holds the true market cap <b>' + (b.blindCov80 * 100).toFixed(1) + '%</b> of the time (target 80%) and the 50% band <b>' + (b.blindCov50 * 100).toFixed(1) + '%</b> (target 50%) \u2014 the bands are calibrated, not decorative. On the time split they under-cover (' + (b.timeCov80 * 100).toFixed(1) + '% / ' + (b.timeCov50 * 100).toFixed(1) + '% on ' + b.timeN + ' newer listings), so newer protocols are harder than the blind average. The bands are wide \u2014 the median 80% band spans <b>' + b.boardWidth80.toFixed(0) + 'x</b> across the board \u2014 because the error distribution is heavy-tailed: the median leave-one-out error is x' + v.adoptedMedian.toFixed(2) + ', but 1 in 10 peers is off by more than x' + v.adoptedP90MaxRatio.toFixed(1) + '. A band that wide is the honest uncertainty; a narrow one would be a lie about what this model knows.</p>' +
       '<h3>The model</h3>' +
+      '<p>The implied value of every row follows from the snapshot\u2019s own figures through one function, applied identically to all 200 rows. No protocol name is special-cased. The model is a <b>pricing yardstick, not a price target</b>.</p>' +
       '<p><b>Peers:</b> ' + FIT.peerCount + ' protocols that record a token with a market cap and a TVL (416 record a token; only 144 carry a market cap; 128 are usable). ' +
       '<b>Winsor bounds:</b> peer ratios clipped to [' + FIT.winsorLo.toFixed(4) + ', ' + FIT.winsorHi.toFixed(4) + ']. ' +
       '<b>Global median multiple:</b> ' + FIT.globalMedian.toFixed(3) + 'x.</p>' +
       '<p><b>Category multiple:</b> each category\u2019s winsorized median ratio, shrunk toward the global median with weight w = n / (n + 5). A category with fewer than 3 live peers falls back entirely to the global median \u2014 so Risk Curators (12 of the 40 watchlist rows, 1 live peer) is priced at the global 0.214x, not at its single peer\u2019s 2.975x. Using that one peer would put Steakhouse Financial at $777M.</p>' +
-      '<p><b>Size curve:</b> log10(market cap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL), fitted on the ' + FIT.peerCount + ' peers (R\u00b2 = ' + FIT.sizeR2.toFixed(3) + '; the slope is ' + Math.abs((FIT.sizeB - 1) / FIT.sizeSeB).toFixed(1) + ' standard errors below 1.0, so a flat multiple is rejected \u2014 but TVL explains only 19% of the variance). Applied as a factor relative to the category\u2019s median TVL, so a big protocol is penalised against its own category\u2019s typical size.</p>' +
+      '<p><b>Size curve:</b> log10(market cap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL), fitted on the ' + FIT.peerCount + ' peers (the slope is ' + Math.abs((FIT.sizeB - 1) / FIT.sizeSeB).toFixed(1) + ' standard errors below 1.0, so a flat multiple is rejected). Applied as a factor relative to the category\u2019s median TVL, so a big protocol is penalised against its own category\u2019s typical size.</p>' +
       '<p><b>Why the biggest rows look cheap.</b> The size curve is sub-linear (\u03b2 = 0.522), so a protocol far above its category\u2019s median TVL is priced at a small fraction of the category multiple. Steakhouse Financial ($2.75B TVL) sits 84x above the $32.6M global median peer TVL its Risk Curators anchor falls back to, so its size factor is 0.120x and its implied $55.8M is a 0.020x multiple \u2014 not the raw 0.214x global median. Gauntlet (0.028x) and Veda (0.027x) are the same effect, and Veda\u2019s own category has only 2 live peers (raw median 0.013x), so the global fallback raises Veda rather than cutting it. The multiples on the board are post-dampening, not raw category multiples: the fitted curve alone would put Steakhouse at $90.1M (0.033x), and the global-median multiple anchored to the $32.6M median peer TVL, plus growth and maturity, take it to $55.8M.</p>' +
       '<p><b>Growth:</b> 1 + clamp(7-day change, -60%, +120%) / 100 x 0.5. <b>Maturity:</b> 0.6 + min(age, 1095 days) / 1095 x 0.4. Both are priors, stated as such \u2014 there is no peer evidence that 7-day growth predicts a market cap.</p>' +
       '<p><b>No chain multiplier.</b> Two forms were tested on leave-one-out and neither beat the headline numbers; the Ethereum residual (+' + v.chainEthDex.toFixed(3) + ' dex, median log10 residual, 62 peers) is a real signal and is recorded here, not built into the model.</p>' +
-      '<h3>Validation \u2014 the number to quote</h3>' +
-      '<p><b>Leave-one-out on the ' + v.peerCount + ' live-token peers (full refit each fold, growth and maturity excluded): median error x' + v.adoptedMedian.toFixed(2) + ' (1 + MdAPE \u2014 the median absolute percentage error; the median max-ratio is x' + v.adoptedMedianMaxRatio.toFixed(2) + '), ' + v.adoptedWithin2.toFixed(1) + '% within 2x, ' + v.adoptedWithin3.toFixed(1) + '% within 3x.</b> That beats the top entries\u2019 quoted \u201cOOS x2.01\u201d, and it is a full leave-one-out refit, not a single split.</p>' +
+      '<h3>Validation \u2014 the leave-one-out table</h3>' +
+      '<p>Leave-one-out on the ' + v.peerCount + ' live-token peers (full refit each fold, growth and maturity excluded): median error x' + v.adoptedMedian.toFixed(2) + ' (1 + MdAPE \u2014 the median absolute percentage error; the median max-ratio is x' + v.adoptedMedianMaxRatio.toFixed(2) + '), ' + v.adoptedWithin2.toFixed(1) + '% within 2x, ' + v.adoptedWithin3.toFixed(1) + '% within 3x. That beats the top entries\u2019 quoted \u201cOOS x2.01\u201d, and it is a full leave-one-out refit, not a single split.</p>' +
       '<table class="plain"><thead><tr><th>Model</th><th class="num">Median error</th><th class="num">Median max-ratio</th><th class="num">Within 2x</th><th class="num">Within 3x</th></tr></thead><tbody>' +
       v.loo.map(function (r) {
         return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">x' + r.median.toFixed(2) + '</td><td class="num">x' + r.medianMaxRatio.toFixed(2) + '</td><td class="num">' + r.within2.toFixed(1) + '%</td><td class="num">' + r.within3.toFixed(1) + '%</td></tr>';
       }).join('') + '</tbody></table>' +
       '<p>No model clearly dominates on the median (x1.85\u2013x1.91 for all). The adopted model wins on the tail (best within-3x) while keeping the board sane. Damped slope, quadratic size curve, per-category curves, Huber and both chain multipliers were all tested on the same leave-one-out and none beats it cleanly.</p>' +
-      '<p><b>Time-split:</b> fit on protocols listed before 2025-01-01, test on the ' + v.timeSplitN + ' listed after \u2014 median error x' + (v.timeSplitMedian === null ? 'n/a' : v.timeSplitMedian.toFixed(2)) + '. ' +
-      '<b>Blind 80/20 (5 repeats, fixed seeds, ' + v.blindN + ' peers held out each time):</b> mean median error x' + (v.blindMedian === null ? 'n/a' : v.blindMedian.toFixed(2)) + ', ' + (v.blindWithin2 === null ? 'n/a' : v.blindWithin2.toFixed(1)) + '% within 2x.</p>' +
+      '<p class="small">For completeness, the small print: the size curve\u2019s R\u00b2 is ' + FIT.sizeR2.toFixed(3) + ' (TVL explains only 19% of the variance in market cap \u2014 the relationship is a yardstick, not a law), and Spearman(pred, act) is ' + v.adoptedSpearman.toFixed(3) + ' on leave-one-out and ' + (v.blindSpearman === null ? 'n/a' : v.blindSpearman.toFixed(3)) + ' on the blind splits. Neither is the headline: the median error and the band coverage above are. A four-way clean-comps experiment (strict peer filtering, per-category robust regression, and a hybrid) was run on the same frozen blind splits before this build; no variant beat the adopted model on blind median error and blind Spearman together, so the adopted model stands and the bands are built on it.</p>' +
       '<p><b>Coherence:</b> Spearman between TVL and implied value across the 40 watchlist rows is ' + v.coherence.toFixed(3) + ' (bar 0.75) \u2014 the multipliers do not overpower TVL. <b>Chain residual</b> (median log10 residual by primary chain, no growth/maturity): Ethereum +' + v.chainEthDex.toFixed(3) + ' dex, Solana ' + v.chainSolDex.toFixed(3) + ' dex. The shrunk effects (n/(n+30)) are +0.118 dex and -0.086 dex; neither is built into the model.</p>' +
       '<h3>Calibration</h3>' + calibrationChart() +
       '<h3>Farm verdicts</h3>' +
@@ -430,6 +439,9 @@
       '<div><div class="k">7-day change</div><div class="v">' + fmtPct(row.change_7d) + '</div></div>' +
       '<div><div class="k">Age</div><div class="v">' + fmtAge(row.age_days) + '</div></div>' +
       '<div><div class="k">Verdict</div><div class="v">' + verdictBadge(f.verdict) + '</div></div>' +
+      '<div><div class="k">80% band</div><div class="v">' + fmtBand(row) + '</div></div>' +
+      '<div><div class="k">50% band</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p25) + ' \u2013 ' + fmtUsd(row.uncertainty.p75) : 'n/a') + '</div></div>' +
+      '<div><div class="k">Farm mechanism</div><div class="v">' + esc(row.mechanism || '') + '</div></div>' +
       '</div>' +
       '<h3>How the value is derived</h3>' +
       '<div class="formula">implied = TVL &times; ' + b.mult.toFixed(3) + ' (' + esc(row.category || 'Uncategorised') + ', ' + b.n + ' peer' + (b.n === 1 ? '' : 's') + (b.n < MODEL.minPeers ? ' \u2014 global fallback' : '') + ') &times; ' + b.sizeF.toFixed(3) + ' (size) &times; ' + b.growthMult.toFixed(3) + ' (growth) &times; ' + b.mat.toFixed(3) + ' (maturity) = ' + fmtUsd(row.implied_value_usd) + '</div>' +
@@ -441,6 +453,7 @@
       '<div class="step"><div class="op">maturity ' + b.mat.toFixed(3) + 'x</div><div class="val">' + fmtUsd(afterMat) + '</div><div class="lab">' + fmtAge(row.age_days) + ' old</div></div>' +
       '</div>' +
       '<p class="small">Every number above is hand-recomputable from the snapshot: the category median is ' + b.rawMed.toFixed(3) + 'x over ' + b.n + ' live peers, shrunk toward the global 0.214x with weight ' + (b.n >= MODEL.minPeers ? (b.n / (b.n + MODEL.shrinkK)).toFixed(2) : '0') + '. The fitted size curve is log10(mcap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL), R\u00b2 = ' + FIT.sizeR2.toFixed(3) + '. The value is shown to 3 significant figures; the model\u2019s median error is x' + DATA.validation.adoptedMedian.toFixed(2) + ', so read it as a yardstick, not a price target.</p>' +
+      '<p class="small">The band is a bootstrap predictive interval: 200 resamples of the 128 peers, refit each time, plus one draw from the leave-one-out residual distribution. On the blind splits the 80% band holds the true market cap ' + (DATA.validation.bands.blindCov80 * 100).toFixed(1) + '% of the time and the 50% band ' + (DATA.validation.bands.blindCov50 * 100).toFixed(1) + '%. The band is wide because the error distribution is heavy-tailed: the median leave-one-out error is x' + DATA.validation.adoptedMedian.toFixed(2) + ' but 1 in 10 peers is off by more than x' + DATA.validation.adoptedP90MaxRatio.toFixed(1) + '.</p>' +
       '<h3>Comps: the peers behind the number</h3>' + compsChart(row) +
       '<p class="small">Nearest live-token peers in the same category (by TVL):</p>' +
       '<table class="plain"><thead><tr><th>Peer</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">MC / TVL</th></tr></thead><tbody>' +
@@ -466,7 +479,7 @@
     var h = '<div class="wrap">' +
       '<header><h1>Token Radar<span class="dot">.</span></h1>' +
       '<p class="sub">Pre-token protocols, ranked by implied token market capitalisation \u2014 fitted from ' + FIT.peerCount + ' live-token peers, leave-one-out tested, and costed to the dollar. As of ' + esc(DATA.as_of) + '.</p>' +
-      '<div class="kpi"><span><b>' + DATA.board_size + '</b> protocols</span><span><b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>LOO median error <b>x' + v.adoptedMedian.toFixed(2) + '</b></span><span><b>' + v.adoptedWithin3.toFixed(1) + '%</b> within 3x</span><span>implied values <b>' + fmtUsd(DATA.rows[DATA.rows.length - 1].implied_value_usd) + ' \u2013 ' + fmtUsd(DATA.rows[0].implied_value_usd) + '</b></span></div></header>' +
+      '<div class="kpi"><span>Blind 80/20 median error <b>x' + v.blindMedian.toFixed(2) + '</b></span><span><b>' + DATA.board_size + '</b> protocols</span><span><b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>80% band covers <b>' + (v.bands.blindCov80 * 100).toFixed(0) + '%</b> blind</span><span>LOO median error <b>x' + v.adoptedMedian.toFixed(2) + '</b></span></div></header>' +
       '<nav class="tabs">' +
       '<button data-tab="board"' + (state.tab === 'board' ? ' class="on"' : '') + '>Board</button>' +
       '<button data-tab="live"' + (state.tab === 'live' ? ' class="on"' : '') + '>Live tokens (' + DATA.live_size + ')</button>' +

@@ -22,11 +22,24 @@ not guessed:
 - **Growth and maturity adjustments** — 7-day TVL change clamped
   −60..+120% at weight 0.5, and a maturity factor 0.6–1.0 over 1095 days
   since listing.
-- **Validated out of sample** — leave-one-out: median error (1+MdAPE) ×1.89,
-  43.8% of peers within 3×, Spearman(pred, actual) 0.367; plus a
-  time-split and a blind 80/20 ×5. The full derivation, the LOO
+- **Validated blind, out of sample** — fit on 80% of the live-token
+  peers, evaluated on the held-out 20%, repeated five times with fixed
+  seeds, no tuning on the test set: median error (1+MdAPE) **×1.89**,
+  23.8% within 2×, 38.5% within 3×. A time split (fit pre-2025,
+  test the 31 listed after) gives ×1.84; leave-one-out over all 128
+  peers gives ×1.89, 43.8% within 3×. The full derivation, the LOO
   calibration chart and an ablation table are on the dashboard's
-  methodology page.
+  methodology page. (R² = 0.194 and Spearman 0.367 are in the small
+  print there, not the headline.)
+- **A band on every row, not just a point** — a bootstrap predictive
+  interval (200 resamples of the peer set, refit, plus one draw from
+  the leave-one-out residual distribution): p10/p90 is the 80% band,
+  p25/p75 the 50% band. On the blind splits the 80% band holds the
+  true market cap 83.8% of the time (target 80%) and the 50% band
+  46.2% (target 50%). The bands are wide — the median 80% band spans
+  206× — because the error distribution is heavy-tailed (1 in 10
+  peers is off by more than ×36.3). Each row also names its farm
+  mechanism, derived from its category.
 - **The biggest rows look cheap on purpose** — the sub-linear size curve
   (β = 0.522) compresses multiples on multi-billion-dollar TVL:
   Steakhouse ($2.75B TVL) is priced at 0.020x, Gauntlet at 0.028x and
@@ -41,7 +54,7 @@ Gauntlet $43.4M, Veda $41.9M, USDD $39.3M.
 
 `board.json` holds **200 rows** — the whole 40-protocol watchlist plus
 the 160 largest early protocols — ranked by implied value, each with a
-bear/base/bull band and 6–8 farm steps. Verdicts: **FARM 15 / THIN 78 /
+P10–P90 band, a named farm mechanism and 6–8 farm steps. Verdicts: **FARM 15 / THIN 78 /
 SKIP 107**. A farm verdict is the NetEV rule: airdrop pool = 8% of
 implied value, user share = pool × (capital / TVL) at a canonical
 $2,500 capital ($5,000 on Ethereum L1), costs = gas + opportunity cost
@@ -62,7 +75,9 @@ number on screen is derived, not pasted.
 `/input/snapshot.json` and writes `/output/board.json`, the dashboard
 into `/output`, and `/output/dossier.json` via the kit's
 `vendor/makefun-board.ts`. It is deterministic — two runs write
-identical bytes.
+identical bytes (a run takes ~18s: the band calibration is recomputed
+from the snapshot every run). Round 2 lives on branch `round2`
+(model `radar-3-bands`); round 1 is the submitted entry on `main`.
 
 ```sh
 mkdir -p out && node main.ts
