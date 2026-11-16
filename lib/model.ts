@@ -19,12 +19,18 @@
 //   maturity    = 0.6 + min(age_days, 1095)/1095 * 0.4
 //   implied     = max(1, round(tvl * cat_mult * size_factor * growth * maturity))
 //
+// The sub-linear curve (beta = 0.522) compresses the multiple of a protocol
+// far above its category's median TVL: Steakhouse Financial at $2.75B TVL is
+// 84x the $32.6M global median peer TVL, so its size factor is 0.120x and its
+// multiple is 0.020x, not the raw 0.214x -- the board's multiples are
+// post-dampening, not raw category multiples.
+//
 // The fit is recomputed from the snapshot every run (nothing is hardcoded
 // except the priors: k = 5, the slope, the growth weight and the maturity
 // floor). No protocol name is ever special-cased: the same function scores
 // every row. The model is a pricing yardstick, not a price target: its
 // leave-one-out error on the 128 live-token peers is a median of x1.89
-// (1 + median absolute percentage error), 43.8% within 3x.
+// (1 + MdAPE, the median absolute percentage error), 43.8% within 3x.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {

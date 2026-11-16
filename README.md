@@ -22,11 +22,17 @@ not guessed:
 - **Growth and maturity adjustments** — 7-day TVL change clamped
   −60..+120% at weight 0.5, and a maturity factor 0.6–1.0 over 1095 days
   since listing.
-- **Validated out of sample** — leave-one-out: median error ×1.89,
+- **Validated out of sample** — leave-one-out: median error (1+MdAPE) ×1.89,
   43.8% of peers within 3×, Spearman(pred, actual) 0.367; plus a
   time-split and a blind 80/20 ×5. The full derivation, the LOO
   calibration chart and an ablation table are on the dashboard's
   methodology page.
+- **The biggest rows look cheap on purpose** — the sub-linear size curve
+  (β = 0.522) compresses multiples on multi-billion-dollar TVL:
+  Steakhouse ($2.75B TVL) is priced at 0.020x, Gauntlet at 0.028x and
+  Veda at 0.027x; those are post-dampening multiples, not the raw 0.214x
+  global median. The dashboard's methodology page shows the full
+  decomposition.
 
 Watchlist total: **$0.637B**. Top implied values: Steakhouse $55.8M,
 Gauntlet $43.4M, Veda $41.9M, USDD $39.3M.
