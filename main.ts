@@ -106,12 +106,12 @@ writeFileSync(
   }),
 );
 
-const farm = { FARM: 0, THIN: 0, SKIP: 0 };
+const farm = { ROBUST: 0, FARM: 0, THIN: 0, SKIP: 0 };
 for (const r of board) farm[r.farm.verdict] += 1;
 const watchTotal = board.filter((r) => r.is_watchlist).reduce((s, r) => s + r.implied_value_usd, 0);
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
     `token radar: watchlist implied value $${(watchTotal / 1e9).toFixed(3)}B, LOO median x${radar.validation.adoptedMedian.toFixed(2)}, ${radar.validation.adoptedWithin3.toFixed(1)}% within 3x\n` +
-    `token radar: verdicts FARM ${farm.FARM} / THIN ${farm.THIN} / SKIP ${farm.SKIP}\n` +
+    `token radar: verdicts ROBUST ${farm.ROBUST} / FARM ${farm.FARM} / THIN ${farm.THIN} / SKIP ${farm.SKIP}\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dashFiles.length} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );

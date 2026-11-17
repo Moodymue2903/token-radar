@@ -11,33 +11,45 @@
 // figures, through a hierarchical (partial-pooling) comps model:
 //
 //   cat_mult    = shrunk category multiple (w = n/(n+5) toward the global
-//                 median 0.214; w = 0 when the category has fewer than 3
+//                 median 0.204; w = 0 when the category has fewer than 3
 //                 live peers, so Risk Curators falls back to global)
-//   size_factor = (tvl / median_tvl_of_category) ^ (0.522 - 1), the fitted
+//   size_factor = (tvl / median_tvl_of_category) ^ (0.508 - 1), the fitted
 //                 size curve anchored to the category's typical size
 //   growth      = 1 + clamp(change_7d, -60, 120)/100 * 0.5
 //   maturity    = 0.6 + min(age_days, 1095)/1095 * 0.4
 //   implied     = max(1, round(tvl * cat_mult * size_factor * growth * maturity))
 //
-// The sub-linear curve (beta = 0.522) compresses the multiple of a protocol
+// The sub-linear curve (beta = 0.508) compresses the multiple of a protocol
 // far above its category's median TVL: Steakhouse Financial at $2.75B TVL is
-// 84x the $32.6M global median peer TVL, so its size factor is 0.120x and its
-// multiple is 0.020x, not the raw 0.214x -- the board's multiples are
+// 82x the $33.4M global median peer TVL, so its size factor is 0.114x and its
+// multiple is 0.018x, not the raw 0.204x -- the board's multiples are
 // post-dampening, not raw category multiples.
 //
 // The fit is recomputed from the snapshot every run (nothing is hardcoded
-// except the priors: k = 5, the slope, the growth weight and the maturity
-// floor). No protocol name is ever special-cased: the same function scores
-// every row. The model is a pricing yardstick, not a price target: its
-// blind error — fit on 80% of the live-token peers, evaluated on the held-out
-// 20%, repeated five times with fixed seeds, no tuning on the test set — is a
-// median of x1.89 (1 + MdAPE, the median absolute percentage error), 43.8%
-// within 3x on leave-one-out. Every row carries a bootstrap predictive band
-// (200 resamples of the peer set, refit, plus one draw from the leave-one-out
-// residual distribution): the 80% band covers 84% of held-out market caps on
-// the blind splits, and it is wide — typically 200x — because the error
-// distribution is heavy-tailed (the 90th-percentile leave-one-out error is
-// far above the x1.89 median; the methodology panel states it).
+// except the priors: k = 5, the growth weight and the maturity floor; the
+// slope comes from the Huber fit below). The size curve is a Huber fit
+// (delta = 1.0, IRLS from OLS): the peer residuals are heavy-tailed, so OLS
+// lets a few far-off peers drag the slope. The fit peers are the 95 peers
+// with a listing date, out of the 128-peer universe: a protocol with no
+// listed_at cannot have a seasoning / maturity term — its age is unknowable,
+// not zero — so the 33 dateless peers are excluded from every fit,
+// validation and band, while the universe stays 128 for reporting. No
+// protocol name is ever special-cased: the same function scores every row.
+// The model is a pricing yardstick, not a price target: its blind error —
+// fit on 80% of the 95 fit peers, evaluated on the held-out 20%, repeated
+// five times with fixed seeds, no tuning on the test set — is a median of
+// x1.90 (1 + MdAPE, the median absolute percentage error), 50.5% within 3x
+// on leave-one-out (median x1.82). Every row carries a bootstrap predictive
+// band (200 resamples of the peer set, refit, plus one draw from the
+// leave-one-out residual distribution): the 80% band covers 82% of held-out
+// market caps on the blind splits, and it is wide — typically ~130x —
+// because the error distribution is heavy-tailed (the 90th-percentile
+// leave-one-out error is x21.2, far above the x1.82 median; the methodology
+// panel states it). A FARM row whose net EV is still ≥ $0 at the P25 implied value promotes to
+// ROBUST in the post-band step: it still pays (does not lose money) at the low end of its band.
+// The $40 farm threshold at P25 is unreachable — the P25 band is wide (p25/implied is 0.24–0.41
+// on FARM rows), so the best row on the board reaches only ~$9 at P25 — and "pays at the low
+// end" means breaking even there, not clearing the median's $40 bar.
 // The band is the honest uncertainty, shown next to the value, not hidden.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
@@ -74,6 +86,10 @@ export interface CategoryFit {
 /** Everything the fit computes from the peer set, once per run. */
 export interface FittedModel {
   peerCount: number;
+  /** The peer universe the fit peers were drawn from (128 live-token peers). */
+  peerUniverse: number;
+  /** Universe peers excluded from the fit for having no listing date (33). */
+  excludedNullListedAt: number;
   winsorLo: number;
   winsorHi: number;
   globalMedian: number;
@@ -141,7 +157,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-3-bands';
+export const MODEL_VERSION = 'radar-5-huber';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
@@ -157,11 +173,13 @@ export interface FarmStep {
   text: string;
   costUsd: number;
   time: string;
+  /** Hands-on minutes for this step: active work, not waiting (the hold step is 0). */
+  handsOnMinutes: number;
 }
 
 /** A row's net-EV verdict and the arithmetic behind it. */
 export interface Verdict {
-  verdict: 'FARM' | 'THIN' | 'SKIP';
+  verdict: 'ROBUST' | 'FARM' | 'THIN' | 'SKIP';
   capital: number;
   pool: number;
   share: number;
@@ -172,6 +190,21 @@ export interface Verdict {
   netEvRatio: number;
   /** The net EV after fee drag: netEv x (1 - feeDrag), where feeDrag is the gas share of the capital clamped to 0.5%-1.5%. Display only; the verdict gate is unchanged. */
   feesHold: number;
+  /**
+   * Post-band economics, filled by attachBands (the band must exist first):
+   * netEvP25 / netEvRatioP25 are the net EV and its ratio at the P25 implied
+   * value; breakevenValue is the implied value at which net EV is zero;
+   * breakevenOdds is P(implied >= breakevenValue) under the lognormal band;
+   * handsOnMinutes is the summed hands-on time of the farm steps;
+   * netPerHour is netEv per hands-on hour. Absent only on a board that never
+   * went through attachBands.
+   */
+  netEvP25?: number;
+  netEvRatioP25?: number;
+  breakevenValue?: number;
+  breakevenOdds?: number;
+  handsOnMinutes?: number;
+  netPerHour?: number;
 }
 
 /** One row of board.json: the ranked board's row. */
@@ -252,6 +285,15 @@ export interface Validation {
   adoptedWithin3: number;
   adoptedLogRmse: number;
   adoptedSpearman: number;
+  /**
+   * The P25–P75 band for actual/implied from the LOO log-residuals on the
+   * 95 fit peers: with r = log10(pred/actual), actual/implied = 10^(-r),
+   * so the band is [10^(-q75), 10^(-q25)] where q25/q75 are the 25th/75th
+   * percentiles of the residuals. The central half of held-out peers land
+   * between these multiples of their implied value.
+   */
+  looBandRatioLo: number;
+  looBandRatioHi: number;
   timeSplitMedian: number | null;
   timeSplitMedianMaxRatio: number | null;
   timeSplitWithin2: number | null;
@@ -370,6 +412,63 @@ export function ols(xs: number[], ys: number[]): { a: number; b: number; r2: num
   return { a, b, r2, seB, residSd };
 }
 
+/** Weighted least squares of y on x (intercept + slope), for the Huber IRLS loop. */
+export function wls(xs: number[], ys: number[], ws: number[]): { a: number; b: number } {
+  let sw = 0;
+  let mx = 0;
+  let my = 0;
+  for (let i = 0; i < xs.length; i++) {
+    sw += ws[i]!;
+    mx += ws[i]! * xs[i]!;
+    my += ws[i]! * ys[i]!;
+  }
+  mx /= sw;
+  my /= sw;
+  let sxx = 0;
+  let sxy = 0;
+  for (let i = 0; i < xs.length; i++) {
+    const dx = xs[i]! - mx;
+    sxx += ws[i]! * dx * dx;
+    sxy += ws[i]! * dx * (ys[i]! - my);
+  }
+  const b = sxx === 0 ? 0 : sxy / sxx;
+  return { a: my - b * mx, b };
+}
+
+/**
+ * Huber log-linear fit via IRLS (20 iterations, start from OLS, weights
+ * min(1, delta/|r|)): the size curve's fit since radar-5. Down-weighting the
+ * heavy-tailed residuals (a few peers sit orders of magnitude off the curve)
+ * instead of letting them drag the OLS slope.
+ */
+export function huberLin(xs: number[], ys: number[], delta: number): { a: number; b: number } {
+  let { a, b } = ols(xs, ys);
+  for (let it = 0; it < 20; it++) {
+    const ws = xs.map((x, i) => {
+      const r = Math.abs(ys[i]! - (a + b * x));
+      return r <= delta ? 1 : delta / r;
+    });
+    const next = wls(xs, ys, ws);
+    if (Math.abs(next.a - a) < 1e-12 && Math.abs(next.b - b) < 1e-12) {
+      a = next.a;
+      b = next.b;
+      break;
+    }
+    a = next.a;
+    b = next.b;
+  }
+  return { a, b };
+}
+
+/** The standard normal CDF, via the Abramowitz–Stegun erf approximation (7.1.26, |error| < 1.5e-7). Deterministic. */
+export function normalCdf(z: number): number {
+  const sign = z < 0 ? -1 : 1;
+  const x = Math.abs(z) / Math.SQRT2;
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return clamp(0.5 * (1 + sign * y), 0, 1);
+}
+
 /** Average ranks for ties (1-based), then the Pearson correlation of the ranks. */
 export function spearman(xs: number[], ys: number[]): number {
   const ranks = (v: number[]): number[] => {
@@ -437,11 +536,32 @@ export function peersOf(snapshot: Snapshot): SnapshotProtocol[] {
 }
 
 /**
+ * The fit peers: the peer universe minus the 33 protocols with no listing
+ * date (n=95). A protocol with no `listed_at` cannot have a seasoning /
+ * maturity term — its age is unknowable, not zero — so it is excluded from
+ * every fit, validation and band, while `peersOf` stays the 128-peer
+ * universe for reporting. All fit/validation/band code uses these peers.
+ */
+export function fitPeersOf(snapshot: Snapshot): SnapshotProtocol[] {
+  return snapshot.protocols.filter((p) => isPeer(p) && p.listed_at !== null);
+}
+
+/**
  * Fit the model on a peer list: winsor bounds, the global median, one
  * shrunk multiple per category, and the log-log size curve. Pure: the same
  * peers always give the same fit.
+ *
+ * The size curve is a Huber fit (delta = 1.0, IRLS from OLS): the peer
+ * residuals are heavy-tailed, so OLS lets a few far-off peers drag the
+ * slope. sizeR2 and residualSd are computed from the Huber fit's own
+ * predictions (R2 = 1 - SSE/SST; residualSd = sqrt(SSE/(n-2))); sizeSeB is
+ * residualSd / sqrt(Sxx) on the same fit — the Huber analogue of the OLS
+ * standard error, not an OLS quantity mixed into a Huber fit.
+ * `universe`, when given, is the peer universe the fit peers were drawn
+ * from, so the shipped fit can report peerUniverse / excludedNullListedAt;
+ * refits that omit it report the peers they were fit on.
  */
-export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODEL): FittedModel {
+export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODEL, universe?: SnapshotProtocol[]): FittedModel {
   const ratios = peers.map((p) => p.mcap_usd! / p.tvl_usd);
   const lo = percentile(ratios, 0.05);
   const hi = percentile(ratios, 0.95);
@@ -473,19 +593,37 @@ export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODE
     });
   const xs = peers.map((p) => Math.log10(p.tvl_usd));
   const ys = peers.map((p) => Math.log10(p.mcap_usd!));
-  const fit = ols(xs, ys);
+  const hub = huberLin(xs, ys, 1.0);
+  // R2 / residual SD / SE(slope) from the Huber fit's own predictions.
+  const n = xs.length;
+  const my = ys.reduce((s, y) => s + y, 0) / n;
+  const mx = xs.reduce((s, x) => s + x, 0) / n;
+  let sse = 0;
+  let sst = 0;
+  let sxx = 0;
+  for (let i = 0; i < n; i++) {
+    const r = ys[i]! - (hub.a + hub.b * xs[i]!);
+    sse += r * r;
+    sst += (ys[i]! - my) ** 2;
+    sxx += (xs[i]! - mx) ** 2;
+  }
+  const residSd = n > 2 ? Math.sqrt(sse / (n - 2)) : 0;
+  const sizeR2 = sst === 0 ? 0 : 1 - sse / sst;
+  const sizeSeB = sxx === 0 ? 0 : residSd / Math.sqrt(sxx);
   return {
     peerCount: peers.length,
+    peerUniverse: universe === undefined ? peers.length : universe.length,
+    excludedNullListedAt: universe === undefined ? 0 : universe.length - peers.length,
     winsorLo: lo,
     winsorHi: hi,
     globalMedian,
     globalMedianTvl,
     categories,
-    sizeA: fit.a,
-    sizeB: fit.b,
-    sizeR2: fit.r2,
-    sizeSeB: fit.seB,
-    residualSd: fit.residSd,
+    sizeA: hub.a,
+    sizeB: hub.b,
+    sizeR2,
+    sizeSeB,
+    residualSd: residSd,
   };
 }
 
@@ -731,31 +869,37 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
       text: `Use a fresh wallet that holds only the $${capital} you plan to farm, and keep its seed phrase offline`,
       costUsd: 1 * gas,
       time: '5 minutes',
+      handsOnMinutes: 5,
     },
     {
       text: action.replace(/\.$/, ''),
       costUsd: 2 * gas,
       time: '15 minutes to set up',
+      handsOnMinutes: 15,
     },
     {
       text: `Make one qualifying action each week for 12 weeks on ${chain}, such as a deposit, a borrow, a swap or a vote`,
       costUsd: 12 * gas,
       time: '10 minutes a week',
+      handsOnMinutes: 120,
     },
     {
       text: `Hold the position for at least ${hold} days so the activity is counted in more than one snapshot; the $${capital} stays in the position`,
       costUsd: opp,
       time: `${hold} days`,
+      handsOnMinutes: 0,
     },
     {
       text: `Before you withdraw, open ${p.name}'s own page and claim only from a link it publishes; never pay to claim`,
       costUsd: 1 * gas,
       time: '10 minutes',
+      handsOnMinutes: 10,
     },
     {
       text: `Write the wallet, the dates and every transaction hash in a farm log so you can repeat the position or unwind it`,
       costUsd: 0,
       time: '5 minutes',
+      handsOnMinutes: 5,
     },
   ];
   if (multiChain) {
@@ -765,6 +909,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
       text: `Repeat the main action with $${secondCapital} on ${secondChain} so the position is visible on 2 chains`,
       costUsd: 2 * gas2,
       time: '15 minutes',
+      handsOnMinutes: 15,
     });
   }
   return steps;
@@ -777,7 +922,9 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
  * the steps' gas plus the opportunity cost of the capital. FARM needs a
  * net EV of at least $40 (build-time retune from $75; see MODEL.farmThreshold)
  * and at least 1.5x the cost; THIN needs a net EV
- * of at least $0; anything else is SKIP.
+ * of at least $0; anything else is SKIP. ROBUST is not decided here:
+ * attachBands promotes a FARM row whose net EV at the P25 implied value
+ * is still at least $0 (it still pays at the low end of its band).
  */
 export function verdictFor(
   p: SnapshotProtocol,
@@ -1044,6 +1191,11 @@ function round4(n: number): number {
   return Math.round(n * 10000) / 10000;
 }
 
+/** Round a number to 2 decimals for the data file (deterministic, locale-free). */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 // ---------------------------------------------------------------- uncertainty bands
 
 /** Bootstrap resamples per row for the predictive interval. Fixed, so two runs agree byte for byte. */
@@ -1117,7 +1269,7 @@ export interface BandReport {
  * before 2025-01-01 vs after). The board widths come from attachBands, not from here.
  */
 export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODEL): Omit<BandReport, 'boardWidth80' | 'boardWidth50'> {
-  const peers = peersOf(snapshot);
+  const peers = fitPeersOf(snapshot);
   const seeds = [11, 23, 37, 41, 53];
   const holdN = Math.round(peers.length * 0.2);
   let in80 = 0;
@@ -1169,12 +1321,29 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
 /**
  * Attach the predictive band to every board row (whole dollars, growth and maturity applied) and
  * return the median band width across the board. The seed per row is fixed (4242000 + the row's
- * index in board order), so two runs write identical bands. The LOO residuals come from the full
- * 128-peer fit; growth and maturity scale the band by the row's own deterministic multipliers.
+ * index in board order), so two runs write identical bands. The LOO residuals and the bootstrap
+ * resamples come from the 95 fit peers; growth and maturity scale the band by the row's own
+ * deterministic multipliers.
+ *
+ * Post-band step (same pass, once the band exists): per-row farm economics
+ * and the ROBUST tier. netEvP25 / netEvRatioP25 rerun verdictFor's exact
+ * pool/share arithmetic at the P25 implied value with the cost unchanged; a
+ * FARM row whose net EV at P25 is still ≥ $0 promotes to ROBUST — it still
+ * pays (does not lose money) at the low end of its band. The $40 farm
+ * threshold is the median's bar; at P25 the honest bar is breaking even. breakevenValue is the
+ * implied value at which net EV is zero (totalCost * tvl / (poolShare *
+ * capital)); breakevenOdds is P(implied >= breakevenValue) modelling
+ * log10(implied) as normal with median the row's implied value and sigma =
+ * (log10(p75) - log10(p25)) / 1.349 (the 50% band spans 1.349 sigma), via the
+ * Abramowitz-Stegun normal CDF, clamped to [0, 1]; netPerHour is netEv per
+ * hands-on hour (hands-on minutes summed across the farm steps; the hold
+ * step is waiting, not hands-on). Idempotent: a second pass leaves ROBUST
+ * rows alone (only FARM rows can promote).
  */
 export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snapshot, model: ModelConstants = MODEL): { boardWidth80: number; boardWidth50: number } {
-  const peers = peersOf(snapshot);
+  const peers = fitPeersOf(snapshot);
   const resid = looLogResiduals(peers, snapshot, model);
+  const index = bySlug(snapshot.protocols);
   const widths80: number[] = [];
   const widths50: number[] = [];
   board.forEach((row, i) => {
@@ -1192,6 +1361,27 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
     };
     widths80.push(row.uncertainty.p90 / row.uncertainty.p10);
     widths50.push(row.uncertainty.p75 / row.uncertainty.p25);
+    // Post-band farm economics + ROBUST promotion (needs the band's p25/p75).
+    const p = index.get(row.slug)!;
+    const steps = farmSteps(p, row.age_days, model);
+    const vMed = verdictFor(p, row.implied_value_usd, steps, model);
+    const vP25 = verdictFor(p, row.uncertainty.p25, steps, model);
+    const handsOn = steps.reduce((s, st) => s + st.handsOnMinutes, 0);
+    const breakevenValue = (vMed.totalCost * p.tvl_usd) / (model.poolShare * vMed.capital);
+    const sigma = (Math.log10(row.uncertainty.p75) - Math.log10(row.uncertainty.p25)) / 1.349;
+    const breakevenOdds =
+      sigma > 0
+        ? 1 - normalCdf((Math.log10(breakevenValue) - Math.log10(row.implied_value_usd)) / sigma)
+        : breakevenValue <= row.implied_value_usd
+          ? 1
+          : 0;
+    row.farm.netEvP25 = round2(vP25.netEv);
+    row.farm.netEvRatioP25 = round2(vP25.netEvRatio);
+    row.farm.breakevenValue = round2(breakevenValue);
+    row.farm.breakevenOdds = round4(breakevenOdds);
+    row.farm.handsOnMinutes = handsOn;
+    row.farm.netPerHour = round2(vMed.netEv / (handsOn / 60));
+    if (row.farm.verdict === 'FARM' && vP25.netEv >= 0) row.farm.verdict = 'ROBUST';
   });
   return { boardWidth80: median(widths80), boardWidth50: median(widths50) };
 }
@@ -1203,7 +1393,7 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
  * watchlist coherence audit and the chain-residual finding.
  */
 export function validateModel(snapshot: Snapshot, fit: FittedModel, model: ModelConstants = MODEL, band?: BandReport): Validation {
-  const peers = peersOf(snapshot);
+  const peers = fitPeersOf(snapshot);
   const asOf = snapshot.as_of;
   const noGm = (p: SnapshotProtocol, f: FittedModel): number => impliedValue(p, f, asOf, model, false).raw;
   const flat = (p: SnapshotProtocol): number => Math.max(1, p.tvl_usd * 0.25);
@@ -1218,9 +1408,14 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
   // The 90th-percentile leave-one-out error: 1 in 10 peers is off by more than this.
   const looResid = looLogResiduals(peers, snapshot, model);
   const adoptedP90MaxRatio = round4(Math.pow(10, percentile(looResid.map((r) => Math.abs(r)), 0.9)));
+  // P25–P75 band for actual/implied from the same LOO log-residuals (n=95):
+  // r = log10(pred/actual), so actual/implied = 10^(-r); the band is
+  // [10^(-q75), 10^(-q25)] where q25/q75 are the residual percentiles.
+  const looBandRatioLo = round4(Math.pow(10, -percentile(looResid, 0.75)));
+  const looBandRatioHi = round4(Math.pow(10, -percentile(looResid, 0.25)));
   const loo: LooRow[] = [
     { model: 'flat 0.25x (starter)', median: round4(mFlat.median1p), medianMaxRatio: round4(mFlat.medianMax), within2: round4(mFlat.within2), within3: round4(mFlat.within3), spearman: round4(mFlat.spearman) },
-    { model: 'global median 0.214x', median: round4(mGlobal.median1p), medianMaxRatio: round4(mGlobal.medianMax), within2: round4(mGlobal.within2), within3: round4(mGlobal.within3), spearman: round4(mGlobal.spearman) },
+    { model: 'global median ' + fit.globalMedian.toFixed(3) + 'x', median: round4(mGlobal.median1p), medianMaxRatio: round4(mGlobal.medianMax), within2: round4(mGlobal.within2), within3: round4(mGlobal.within3), spearman: round4(mGlobal.spearman) },
     { model: 'size curve only', median: round4(mSize.median1p), medianMaxRatio: round4(mSize.medianMax), within2: round4(mSize.within2), within3: round4(mSize.within3), spearman: round4(mSize.spearman) },
     { model: 'shrunk s=0.5 (damped)', median: round4(mDamped.median1p), medianMaxRatio: round4(mDamped.medianMax), within2: round4(mDamped.within2), within3: round4(mDamped.within3), spearman: round4(mDamped.spearman) },
     { model: 'shrunk s=1.0 (adopted)', median: round4(mAdopted.median1p), medianMaxRatio: round4(mAdopted.medianMax), within2: round4(mAdopted.within2), within3: round4(mAdopted.within3), spearman: round4(mAdopted.spearman) },
@@ -1368,6 +1563,8 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     adoptedWithin3: round4(mAdopted.within3),
     adoptedLogRmse: round4(mAdopted.logRmse),
     adoptedSpearman: round4(mAdopted.spearman),
+    looBandRatioLo,
+    looBandRatioHi,
     timeSplitMedian,
     timeSplitMedianMaxRatio,
     timeSplitWithin2,
@@ -1401,7 +1598,7 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
 
 /** Everything the dashboard renders, from the snapshot. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
-  const fit = fitModel(peersOf(snapshot), model);
+  const fit = fitModel(fitPeersOf(snapshot), model, peersOf(snapshot));
   const board = buildBoard(snapshot, fit, model);
   const live = liveRows(snapshot);
   const early = board.filter((r) => !r.is_watchlist).length;
@@ -1423,7 +1620,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     validation: validateModel(snapshot, fit, model, { ...bandCal, ...bandWidths }),
     rows: board,
     live,
-    peers: peerPoints(peersOf(snapshot)),
+    peers: peerPoints(fitPeersOf(snapshot)),
   };
   return { board, radar };
 }
