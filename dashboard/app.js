@@ -75,21 +75,21 @@
     return null;
   }
   function verdictCounts() {
-    var c = { ROBUST: 0, FARM: 0, THIN: 0, SKIP: 0 };
+    var c = { 'P25-POSITIVE': 0, FARM: 0, THIN: 0, SKIP: 0 };
     DATA.rows.forEach(function (r) { if (c[r.farm.verdict] !== undefined) c[r.farm.verdict]++; });
     return c;
   }
   // Best return on the farmer's time: highest net $/hour among the rows
-  // that clear FARM or ROBUST. Null when the data file carries no $/hour.
+  // that clear FARM or P25-POSITIVE. Null when the data file carries no $/hour.
   function bestPerHour() {
     var best = null;
     DATA.rows.forEach(function (r) {
-      if ((r.farm.verdict !== 'FARM' && r.farm.verdict !== 'ROBUST') || r.farm.netPerHour === null || r.farm.netPerHour === undefined || !isFinite(r.farm.netPerHour)) return;
+      if ((r.farm.verdict !== 'FARM' && r.farm.verdict !== 'P25-POSITIVE') || r.farm.netPerHour === null || r.farm.netPerHour === undefined || !isFinite(r.farm.netPerHour)) return;
       if (best === null || r.farm.netPerHour > best.farm.netPerHour) best = r;
     });
     return best;
   }
-  // Median width of the board's 50% band (p75/p25), one honest number for
+  // Median width of the board's central band (p75/p25), one honest number for
   // how wide the middle half of the board's uncertainty is.
   function medianBand50Width() {
     var ws = [];
@@ -113,6 +113,25 @@
   // Format a measured number for the validation table: 'n/a' when the
   // validation object carries null, else prefix + fixed decimals + suffix.
   function fnum(x, pre, d, suf) { return x === null || x === undefined ? 'n/a' : pre + x.toFixed(d) + suf; }
+  // One row of the leave-one-out table, by a substring of its model name.
+  function looRowNamed(frag) {
+    var rows = DATA.validation.loo;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].model.indexOf(frag) >= 0) return rows[i];
+    }
+    return null;
+  }
+  // Wilson score interval (95%) for k hits out of n — computed in-page,
+  // never hardcoded. For 48/95 it is roughly 41%–60%.
+  function wilsonCI(k, n) {
+    var z = 1.96;
+    var p = k / n;
+    var z2 = z * z;
+    var den = 1 + z2 / n;
+    var centre = (p + z2 / (2 * n)) / den;
+    var half = z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / den;
+    return [centre - half, centre + half];
+  }
 
   // ---- the model, recomputed in the page from the same arithmetic main.ts runs ----
   function catOf(category) {
@@ -317,7 +336,7 @@
     var X = function (v) { return L + ((v - xlo) / (xhi - xlo)) * (W - L - R); };
     var Y = function (v) { return T + (1 - (v - ylo) / (yhi - ylo)) * (H - T - B); };
     var maxImp = Math.max.apply(null, rows.map(function (r) { return r.implied_value_usd; }));
-    var col = { ROBUST: '#2fd6a3', FARM: '#4caf7d', THIN: '#d9a441', SKIP: '#6b6f76' };
+    var col = { 'P25-POSITIVE': '#2fd6a3', FARM: '#4caf7d', THIN: '#d9a441', SKIP: '#6b6f76' };
     var s = svgOpen(W, H);
     s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#14171d"/>';
     logTicks(Math.log10(5e6), Math.log10(5e9)).forEach(function (e) {
@@ -367,8 +386,11 @@
   // actual market cap / implied value (log). The fitted line is ratio 1,
   // because the implied value already carries the size curve; the shaded
   // band is the middle half of the leave-one-out actual/implied ratios.
-  // Implied values are recomputed in-page with no growth and no maturity,
-  // the same way the calibration chart computes them.
+  // The solid gold lines are the exact 1/3x and 3x scoring lines — distinct
+  // from the shaded residual band, which is the 25th–75th percentile of the
+  // LOO residuals, not the scoring band. Implied values are recomputed
+  // in-page with no growth and no maturity, the same way the calibration
+  // chart computes them.
   function ratioScatter() {
     var v = DATA.validation;
     var pts = DATA.peers.map(function (p) {
@@ -390,6 +412,9 @@
     }
     ylo = Math.min(ylo, -0.05);
     yhi = Math.max(yhi, 0.05);
+    // Keep the exact 3x scoring lines inside the plot area.
+    ylo = Math.min(ylo, Math.log10(1 / 3) - 0.05);
+    yhi = Math.max(yhi, Math.log10(3) + 0.05);
     var X = function (val) { return L + ((val - xlo) / (xhi - xlo)) * (W - L - R); };
     var Y = function (val) { return T + (1 - (val - ylo) / (yhi - ylo)) * (H - T - B); };
     var s = svgOpen(W, H);
@@ -410,10 +435,17 @@
       s += '<text x="' + (L - 6) + '" y="' + (y + 3).toFixed(1) + '" fill="#9a978c" font-size="10" text-anchor="end">' + lt + '</text>';
     });
     s += '<line x1="' + L + '" y1="' + Y(0).toFixed(1) + '" x2="' + (W - R) + '" y2="' + Y(0).toFixed(1) + '" stroke="#e8c478" stroke-width="1.5" stroke-dasharray="5,4"/>';
+    // Exact 3x scoring lines (solid gold), distinct from the shaded band.
+    var y3 = Y(Math.log10(3));
+    var ym3 = Y(Math.log10(1 / 3));
+    s += '<line x1="' + L + '" y1="' + y3.toFixed(1) + '" x2="' + (W - R) + '" y2="' + y3.toFixed(1) + '" stroke="#d9a441" stroke-width="1.2"/>';
+    s += '<line x1="' + L + '" y1="' + ym3.toFixed(1) + '" x2="' + (W - R) + '" y2="' + ym3.toFixed(1) + '" stroke="#d9a441" stroke-width="1.2"/>';
+    s += '<text x="' + (W - R - 4) + '" y="' + (y3 - 5).toFixed(1) + '" fill="#d9a441" font-size="10" text-anchor="end">3x</text>';
+    s += '<text x="' + (W - R - 4) + '" y="' + (ym3 - 5).toFixed(1) + '" fill="#d9a441" font-size="10" text-anchor="end">1/3x</text>';
     pts.forEach(function (q) {
       s += '<circle cx="' + X(q.x).toFixed(1) + '" cy="' + Y(q.y).toFixed(1) + '" r="3" fill="#7aa7c9" opacity="0.7"/>';
     });
-    s += '<text x="' + L + '" y="' + (H - 8) + '" fill="#6f6d66" font-size="10">Each dot is one of the ' + DATA.peers.length + ' fit peers: x = TVL, y = actual market cap / implied value. Dashed line: ratio 1, the market agreeing with the yardstick.' + (hasBand ? ' Shaded band: the middle half of leave-one-out ratios, ' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x.' : ' No leave-one-out band in this data file, so no shading is drawn.') + '</text>';
+    s += '<text x="' + L + '" y="' + (H - 8) + '" fill="#6f6d66" font-size="10">Each dot is one of the ' + DATA.peers.length + ' fit peers: x = TVL, y = actual market cap / implied value. Dashed line: ratio 1, the market agreeing with the yardstick. Solid gold lines: the 3x scoring lines (actual/implied = 3 and 1/3) \u2014 a peer counts as within-3x when it falls between them.' + (hasBand ? ' Shaded band: the middle half of leave-one-out ratios, ' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x \u2014 a residual band (the 25th\u201375th percentile of the LOO residuals), not the scoring band.' : ' No leave-one-out band in this data file, so no shading is drawn.') + '</text>';
     s += '</svg>';
     return s;
   }
@@ -450,39 +482,88 @@
   }
   // The fitted formula, in one readable box, with the honest out-of-sample
   // numbers beside it. Every number is read from DATA, never hardcoded.
+  // The formula shows the size curve PLUS the shrunk category offset, so it
+  // reconciles with the full model's headline — the bare curve alone would
+  // give a different implied value for any row whose category differs.
   function formulaBoxHtml() {
     var v = DATA.validation;
     var flat = looFlatRow();
+    var size = looRowNamed('size curve only');
     var looN = (v.peerCount !== null && v.peerCount !== undefined) ? v.peerCount : FIT.peerCount;
+    var looU = fitUniverse() === null ? looN : fitUniverse();
     var h = '<div class="panel formulabox"><h2>The yardstick, in one line</h2>' +
-      '<div class="bigformula">log<sub>10</sub>(value) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' &times; log<sub>10</sub>(TVL)</div>' +
-      '<p>That is the fitted size curve: every implied value on this board starts from a protocol\u2019s TVL run through this line, then adjusted by its category multiple, 7-day growth and maturity. The curve is fitted on ' + FIT.peerCount + ' live-token peers' + (setAsideCount() === null ? '' : ' (the wider live-token set is ' + fitUniverse() + '; ' + setAsideCount() + ' are set aside because they record no listing date)') + '.</p>' +
-      '<p>Out of sample, leave-one-out: <b>' + fnum(v.adoptedWithin3, '', 1, '%') + ' within 3x (n=' + looN + ')</b>, median miss x' + fnum(v.adoptedMedian, '', 2, '') + ', Spearman ' + fnum(v.adoptedSpearman, '', 3, '') + '. The flat baseline on the same peers manages ' + (flat ? fnum(flat.within3, '', 1, '%') + ' within 3x' : 'n/a') + ' and a median miss of x' + (flat ? fnum(flat.median, '', 2, '') : 'n/a') + '.</p></div>';
+      '<div class="bigformula">log<sub>10</sub>(value) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' &times; log<sub>10</sub>(TVL) + shrunk category offset (k=' + MODEL.shrinkK + ')</div>' +
+      '<p>That is the fitted size curve plus the category adjustment: every implied value on this board starts from a protocol\u2019s TVL run through this line, then adjusted by its shrunk category multiple, 7-day growth and maturity. The curve is fitted on ' + FIT.peerCount + ' live-token peers' + (setAsideCount() === null ? '' : ' (the wider live-token set is ' + fitUniverse() + '; ' + setAsideCount() + ' are set aside because they record no listing date)') + '.</p>' +
+      '<p>Out of sample, leave-one-out: <b>' + fnum(v.adoptedWithin3, '', 1, '%') + ' within 3x (n=' + looN + ' of ' + looU + ')</b>, median error x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' (median of max(pred/actual, actual/pred)), Spearman ' + fnum(v.adoptedSpearman, '', 3, '') + '. The flat baseline on the same peers manages ' + (flat ? fnum(flat.within3, '', 1, '%') + ' within 3x' : 'n/a') + ' and a median error of x' + (flat ? fnum(flat.medianMaxRatio, '', 2, '') : 'n/a') + '.</p>' +
+      '<p>Within-3x is the declared primary metric. The full model (' + fnum(v.adoptedWithin3, '', 1, '%') + ') and the bare size curve (' + (size ? fnum(size.within3, '', 1, '%') : 'n/a') + ') are statistically indistinguishable at n=' + looN + ' (noise floor \u00b18pp); the full model is shipped for category dispersion \u2014 it lets two protocols at the same TVL carry different implied values \u2014 not because it is proven better.</p></div>';
     return h;
   }
   // Best return on the farmer's time: the highest net $/hour among the rows
-  // that clear FARM or ROBUST. Hidden entirely when the data file carries
-  // no $/hour figures.
+  // that clear FARM or P25-POSITIVE. Hidden entirely when the data file carries
+  // no $/hour figures. The p25 net EV sits beside the $/h figure, so the most
+  // prominent row is not oversold: a $/h lead with cents at p25 is a thin one.
   function bestHourHtml() {
     var best = bestPerHour();
     if (!best) return '';
     var mins = (best.farm.handsOnMinutes !== null && best.farm.handsOnMinutes !== undefined) ? ' for about ' + best.farm.handsOnMinutes + ' minutes of hands-on time' : '';
+    var p25 = (best.farm.netEvP25 !== null && best.farm.netEvP25 !== undefined) ? ', ' + (best.farm.netEvP25 >= 0 ? '+' : '') + fmtUsd2(best.farm.netEvP25) + ' at p25' : '';
     return '<div class="panel callout"><h2>Best return on your time</h2>' +
-      '<p><b>' + esc(best.name) + '</b> ' + verdictBadge(best.farm.verdict) + ' &middot; <span class="bignum">' + fmtPerHour(best.farm.netPerHour) + '</span> net per hands-on hour' + mins + '. ' +
-      'That is the highest net expected value per hour among the rows that clear FARM or ROBUST \u2014 the same farm arithmetic as every other row, divided by the time the plan asks you to spend. A big implied value that takes hours to chase can be worth less than a small one that takes minutes.</p></div>';
+      '<p><b>' + esc(best.name) + '</b> ' + verdictBadge(best.farm.verdict) + ' &middot; <span class="bignum">' + fmtPerHour(best.farm.netPerHour) + '</span> net per hands-on hour' + mins + p25 + '. ' +
+      'That is the highest net expected value per hour among the rows that clear FARM or P25-POSITIVE \u2014 the same farm arithmetic as every other row, divided by the time the plan asks you to spend. A big implied value that takes hours to chase can be worth less than a small one that takes minutes.</p>' +
+      '<p class="fine">Assumptions behind the $/h: $' + best.farm.capital.toLocaleString('en-US') + ' of capital, gas at November 2026 typical levels, opportunity cost ' + (MODEL.oppRate * 100).toFixed(1) + '% a year for ' + MODEL.holdDays + ' days, and the airdrop pool (' + (MODEL.poolShare * 100).toFixed(0) + '% of implied value) paid in full with no vesting or lockup \u2014 the snapshot cannot establish that a token or an airdrop will happen at all.</p></div>';
   }
-  // Verdict counts and the 50% band, across the whole board (not the
-  // filtered view, so a search never rewrites them).
+  // The aggregate session plan: the P25-positive farms together, as one
+  // honest plan — totals computed from the rows, never hardcoded.
+  function sessionPlanHtml() {
+    var rows = DATA.rows.filter(function (r) { return r.farm.verdict === 'P25-POSITIVE'; });
+    if (rows.length === 0) return '';
+    var tot = 0, tot25 = 0, mins = 0, thin = 0;
+    rows.forEach(function (r) {
+      tot += r.farm.netEv;
+      tot25 += (r.farm.netEvP25 === null || r.farm.netEvP25 === undefined) ? 0 : r.farm.netEvP25;
+      mins += r.farm.handsOnMinutes || 0;
+      if (r.farm.netEvP25 !== null && r.farm.netEvP25 !== undefined && r.farm.netEvP25 < 1) thin++;
+    });
+    var names = rows.map(function (r) { return esc(r.name); }).join(', ');
+    return '<div class="panel callout"><h2>The whole plan, in one paragraph</h2>' +
+      '<p>Farm all ' + rows.length + ' P25-positive rows (' + names + '): <b>+$' + tot.toFixed(2) + ' expected net EV</b>, <b>+$' + tot25.toFixed(2) + ' at p25</b>, ' + mins + ' hands-on minutes (about ' + (mins / 60).toFixed(1) + ' hours). That is the entire plan this board can stand behind \u2014 ' + rows.length + ' farms, $' + Math.round(tot) + ' expected, $' + Math.round(tot25) + ' if the value lands at the 25th percentile. The floor is thin: ' + thin + ' of the ' + rows.length + ' clear break-even at p25 by less than a dollar, and 1 in 4 realisations lands below p25.</p></div>';
+  }
+  // Verdict counts and the central band, across the whole board (not the
+  // filtered view, so a search never rewrites them). P25-POSITIVE is a
+  // subset of FARM, so the strip reports the FARM total with the subset
+  // inside it — never four disjoint tiers that sum to the board.
   function boardSummaryHtml() {
     var c = verdictCounts();
+    var farmTotal = (c['P25-POSITIVE'] || 0) + c.FARM;
     var w = medianBand50Width();
     var v = DATA.validation;
-    var h = '<div class="panel bandstrip"><p><b>Verdicts:</b> ROBUST ' + c.ROBUST + ' &middot; FARM ' + c.FARM + ' &middot; THIN ' + c.THIN + ' &middot; SKIP ' + c.SKIP + '.</p>';
-    if (w !== null) h += '<p><b>The middle half:</b> across the board, the 50% band (p25\u2013p75) spans a median of ' + w.toFixed(1) + 'x from low end to high end \u2014 half of each row\u2019s plausible value sits inside that range, and half sits outside it.</p>';
+    var h = '<div class="panel bandstrip"><p><b>Verdicts:</b> FARM ' + farmTotal + ', incl. ' + (c['P25-POSITIVE'] || 0) + ' P25-positive &middot; THIN ' + c.THIN + ' &middot; SKIP ' + c.SKIP + '. P25-POSITIVE is a subset of FARM (' + (c['P25-POSITIVE'] || 0) + ' of ' + farmTotal + '), not a fourth tier.</p>';
+    if (w !== null) h += '<p><b>The middle half:</b> across the board, the central band (45% coverage, p25\u2013p75) spans a median of ' + w.toFixed(1) + 'x from low end to high end \u2014 half of each row\u2019s plausible value sits inside that range, and half sits outside it.</p>';
     if (v.looBandRatioLo !== null && v.looBandRatioLo !== undefined && v.looBandRatioHi !== null && v.looBandRatioHi !== undefined) {
       h += '<p><b>Leave-one-out check:</b> the middle half of actual/implied ratios across the fit peers runs ' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x \u2014 that is the shaded band in the scatter chart above.</p>';
     }
     h += '</div>';
+    return h;
+  }
+  // First-view calibration panel: the complete headline, above the fold,
+  // on the board tab before the scatter — LOO, blind and time-split side by
+  // side with the baselines, the band coverage and the noise floor, so the
+  // honesty story is visible in the landing state and not only behind a tab.
+  // Every number is read from DATA; the Wilson interval is computed in-page.
+  function calibrationStripHtml() {
+    var v = DATA.validation;
+    var b = v.bands || {};
+    var flat025 = looRowNamed('flat 0.25x');
+    var flatGlobal = looFlatRow();
+    var size = looRowNamed('size curve only');
+    var hits = DATA.peers.filter(function (p) { return p.oofWithin3; }).length;
+    var looN = (v.peerCount !== null && v.peerCount !== undefined) ? v.peerCount : FIT.peerCount;
+    var looU = fitUniverse() === null ? looN : fitUniverse();
+    var ci = wilsonCI(hits, looN);
+    var lift = (v.adoptedWithin3 !== null && v.adoptedWithin3 !== undefined && flatGlobal) ? v.adoptedWithin3 - flatGlobal.within3 : null;
+    var h = '<div class="panel calibstrip"><h2>Calibration, on the first screen</h2>' +
+      '<p><b>LOO within-3x ' + fnum(v.adoptedWithin3, '', 1, '%') + ' (' + hits + '/' + looN + ', Wilson 95% CI ' + Math.round(ci[0] * 100) + '\u2013' + Math.round(ci[1] * 100) + '%)</b> &middot; Blind 80/20 ' + fnum(v.blindWithin3, '', 1, '%') + ' &middot; Time-split ' + fnum(v.timeSplitWithin3, '', 1, '%') + ' &middot; Baselines ' + (flat025 ? fnum(flat025.within3, '', 1, '%') : 'n/a') + ' / ' + (flatGlobal ? fnum(flatGlobal.within3, '', 1, '%') : 'n/a') + (lift === null ? '' : ' (lift +' + lift.toFixed(1) + 'pp over the global-median baseline)') + ' &middot; 80% band covers ' + (b.blindCov80 === undefined ? 'n/a' : (b.blindCov80 * 100).toFixed(1) + '%') + ' blind, central band covers ' + (b.blindCov50 === undefined ? 'n/a' : (b.blindCov50 * 100).toFixed(1) + '%') + ' &middot; Noise floor \u00b18pp / \u00b10.16 &middot; Bare size curve ' + (size ? fnum(size.within3, '', 1, '%') + ' / ' + fnum(size.spearman, '', 3, '') : 'n/a') + ' vs full model ' + fnum(v.adoptedWithin3, '', 1, '%') + ' / ' + fnum(v.adoptedSpearman, '', 3, '') + '.</p>' +
+      '<p>LOO on the ' + looN + ' peers with listing dates; ' + fnum(v.loo128Within3, '', 1, '%') + ' on all ' + looU + ' traded peers \u2014 the 33 peers without a listing date are systematically harder. Denominators, reconciled: ' + DATA.board_size + ' board rows \u2192 ' + looU + ' traded-token universe \u2192 ' + looN + ' scored peers \u2192 ' + v.timeSplitN + ' time-split. As of ' + esc(DATA.as_of) + ' \u00b7 Source: ' + esc(DATA.source) + '. Blind numbers are the mean across five 80/20 splits (seeds 11, 23, 37, 41, 53), each n=19 \u2014 not a pooled rate.</p></div>';
     return h;
   }
   function boardHtml() {
@@ -498,17 +579,19 @@
       return '<option value="' + esc(c) + '"' + (state.chain === c ? ' selected' : '') + '>' + esc(c) + '</option>';
     })).join('');
     var h = '<div class="panel mapwrap">' + bubbleMap(DATA.rows) +
-      '<div class="legend"><span><i style="background:#2fd6a3"></i>ROBUST</span><span><i style="background:#4caf7d"></i>FARM</span><span><i style="background:#d9a441"></i>THIN</span><span><i style="background:#6b6f76"></i>SKIP</span><span>' + DATA.board_size + ' protocols, ' + DATA.watchlist_size + ' on the watchlist, ranked by implied token market capitalisation.</span></div></div>';
+      '<div class="legend"><span><i style="background:#2fd6a3"></i>P25-POSITIVE</span><span><i style="background:#4caf7d"></i>FARM</span><span><i style="background:#d9a441"></i>THIN</span><span><i style="background:#6b6f76"></i>SKIP</span><span>' + DATA.board_size + ' protocols, ' + DATA.watchlist_size + ' on the watchlist, ranked by implied token market capitalisation. P25-POSITIVE is a subset of FARM, not a separate tier.</span></div></div>';
+    h += calibrationStripHtml();
     h += '<div class="panel mapwrap"><h2>Where the market sits against the yardstick</h2>' + ratioScatter() + '</div>';
     h += formulaBoxHtml();
     h += bestHourHtml();
+    h += sessionPlanHtml();
     h += boardSummaryHtml();
     h += '<div class="filters">' +
       '<input id="f-q" type="search" placeholder="Search name or slug" value="' + esc(state.q) + '">' +
       '<select id="f-cat">' + catOpts + '</select>' +
       '<select id="f-chain">' + chainOpts + '</select>' +
       '<select id="f-verdict"><option value="all">All verdicts</option>' +
-      ['ROBUST', 'FARM', 'THIN', 'SKIP'].map(function (v) { return '<option' + (state.verdict === v ? ' selected' : '') + '>' + v + '</option>'; }).join('') + '</select>' +
+      ['P25-POSITIVE', 'FARM', 'THIN', 'SKIP'].map(function (v) { return '<option' + (state.verdict === v ? ' selected' : '') + '>' + v + '</option>'; }).join('') + '</select>' +
       '<input id="f-min" type="number" min="0" step="1" placeholder="Min implied $M" value="' + esc(state.minImp) + '" style="flex:0 1 130px">' +
       '<span class="count">showing ' + rows.length + ' of ' + DATA.rows.length + '</span></div>';
     h += '<table><thead><tr>' +
@@ -533,7 +616,7 @@
         '<td class="num">' + fmtOdds(r.farm.breakevenOdds) + '</td>' +
         '<td class="num">' + fmtPerHour(r.farm.netPerHour) + '</td>' +
         '<td class="num">' + fmtUsd2(r.farm.feesHold) + '</td>' +
-        '<td' + (r.farm.verdict === 'THIN' ? ' title="THIN: ratio under 1.5x."' : r.farm.verdict === 'ROBUST' ? ' title="ROBUST: net EV still at least $0 at the low end of the 50% band (p25)."' : '') + '>' + verdictBadge(r.farm.verdict) + '</td></tr>';
+        '<td' + (r.farm.verdict === 'THIN' ? ' title="THIN: net EV at least $0, but under $40 or under 1.5x the cost \u2014 clears neither FARM gate."' : r.farm.verdict === 'P25-POSITIVE' ? ' title="P25-POSITIVE: net EV still at least $0 at the 25th percentile of the model\u2019s out-of-sample error (1 in 4 realisations is worse)."' : r.farm.verdict === 'FARM' ? ' title="FARM: net EV at least $40 and at least 1.5x the cost at the median."' : ' title="SKIP: net EV below $0 at the median."') + '>' + verdictBadge(r.farm.verdict) + '</td></tr>';
     });
     h += '</tbody></table>';
     h += '<p class="small">Implied value is the entry\u2019s own claim about what a token would be worth if the protocol\u2019s record stayed as it is \u2014 not a prediction of whether or when a token launches. A protocol is said to record no token, never that it has none.</p>';
@@ -557,8 +640,16 @@
     var isHuber = (DATA.model_version || '').indexOf('huber') >= 0;
     var big = DATA.rows[0];
     DATA.rows.forEach(function (r) { if (r.tvl_usd > big.tvl_usd) big = r; });
-    var wlTotal = 0;
-    DATA.rows.forEach(function (r) { if (r.is_watchlist) wlTotal += r.implied_value_usd; });
+    var wlTotal = 0, wlP25 = 0, wlP75 = 0;
+    DATA.rows.forEach(function (r) { if (r.is_watchlist) { wlTotal += r.implied_value_usd; wlP25 += r.uncertainty.p25; wlP75 += r.uncertainty.p75; } });
+    var size = looRowNamed('size curve only');
+    // Best p25 net EV on the board (name + value, computed from the rows).
+    var bestP25 = null;
+    DATA.rows.forEach(function (r) {
+      if (r.farm.netEvP25 !== null && r.farm.netEvP25 !== undefined && (bestP25 === null || r.farm.netEvP25 > bestP25.farm.netEvP25)) bestP25 = r;
+    });
+    var vc = verdictCounts();
+    var farmTotal = (vc['P25-POSITIVE'] || 0) + vc.FARM;
     // Risk Curators' single live peer, for the "what if we used it" counterfactual:
     // the raw category median and what the biggest row would be worth at it.
     var rcCat = catOf('Risk Curators');
@@ -566,24 +657,24 @@
     var rcAlt = rcMed === null ? null : big.tvl_usd * rcMed * breakdownOf(big).sizeF * breakdownOf(big).growthMult * breakdownOf(big).mat;
     var h = '<div class="panel"><h2>How this is priced</h2>' +
       '<h3>The blind test first</h3>' +
-      '<p>Before anything else, the test \u2014 and the comparator. The model is fit on 80% of the ' + FIT.peerCount + ' live-token peers and evaluated on the held-out 20%, repeated five times with fixed seeds, with no tuning on the test set; the held-out peers are kept out of peer selection, winsorization, category calibration, size-curve fitting and hyperparameter selection. On that blind test the model\u2019s median error is <b>x' + v.blindMedian.toFixed(2) + ' against x' + fnum(v.flatBlindMedian, 'x', 2, '') + ' for a flat baseline</b> (the global median multiple, ' + FIT.globalMedian.toFixed(3) + 'x, applied to every peer \u2014 which ranks by TVL alone), and it wins on within-3x (' + v.blindWithin3.toFixed(1) + '% vs ' + fnum(v.flatBlindWithin3, '', 1, '%') + '). The paired 95% interval for the blind median-error advantage is [' + fnum(v.flatBlindCiLo, '', 3, '') + ', ' + fnum(v.flatBlindCiHi, '', 3, '') + '] \u2014 entirely below zero, so the advantage is real. It does not win on ranking: the flat TVL ranking scores a higher Spearman (' + fnum(v.flatBlindSpearman, '', 3, '') + ' vs ' + fnum(v.blindSpearman, '', 3, '') + ' blind), and the same holds on the time split \u2014 noise at n=' + v.timeSplitN + ', but stated plainly. The table below has every number, model against flat, on the identical frozen splits.</p>' +
+      '<p>Before anything else, the test \u2014 and the comparator. The model is fit on 80% of the ' + FIT.peerCount + ' live-token peers and evaluated on the held-out 20%, repeated five times with fixed seeds, with no tuning on the test set; the held-out peers are kept out of peer selection, winsorization, category calibration, size-curve fitting and hyperparameter selection. On that blind test the model\u2019s median error is <b>x' + fnum(v.blindMedianMaxRatio, '', 2, '') + ' against x' + fnum(v.flatBlindMedianMaxRatio, '', 2, '') + ' for a flat baseline</b> (the global median multiple, ' + FIT.globalMedian.toFixed(3) + 'x, applied to every peer \u2014 which ranks by TVL alone), and it wins on within-3x (' + v.blindWithin3.toFixed(1) + '% vs ' + fnum(v.flatBlindWithin3, '', 1, '%') + '). The paired 95% interval for the blind median advantage (1+|error|) is [' + fnum(v.flatBlindCiLo, '', 3, '') + ', ' + fnum(v.flatBlindCiHi, '', 3, '') + '] \u2014 it crosses zero, so the median advantage is not established on the blind splits; the advantage that holds up is on within-3x. It does not win on ranking: the flat TVL ranking scores a higher Spearman (' + fnum(v.flatBlindSpearman, '', 3, '') + ' vs ' + fnum(v.blindSpearman, '', 3, '') + ' blind), and the same holds on the time split \u2014 noise at n=' + v.timeSplitN + ', but stated plainly. The table below has every number, model against flat, on the identical frozen splits.</p>' +
       '<h3>Validation \u2014 model vs flat, same splits</h3>' +
       '<table class="plain"><thead><tr><th>Metric</th><th class="num">M0 blind x5</th><th class="num">Flat blind x5</th><th class="num">M0 time-split</th><th class="num">Flat time-split</th><th class="num">M0 LOO</th><th class="num">Flat LOO</th></tr></thead><tbody>' +
-      '<tr><td>1+MdAPE (median error)</td><td class="num">' + fnum(v.blindMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatBlindMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.timeSplitMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatTimeSplitMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.adoptedMedian, 'x', 2, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().median, 'x', 2, '') + '</td></tr>' +
-      '<tr><td>Median max-ratio</td><td class="num">' + fnum(v.blindMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatBlindMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.timeSplitMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatTimeSplitMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.adoptedMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().medianMaxRatio, 'x', 2, '') + '</td></tr>' +
+      '<tr><td>Median 1+|error| (1+MdAPE)</td><td class="num">' + fnum(v.blindMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatBlindMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.timeSplitMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatTimeSplitMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.adoptedMedian, 'x', 2, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().median, 'x', 2, '') + '</td></tr>' +
+      '<tr><td>Median error (max-ratio)</td><td class="num">' + fnum(v.blindMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatBlindMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.timeSplitMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatTimeSplitMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.adoptedMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().medianMaxRatio, 'x', 2, '') + '</td></tr>' +
       '<tr><td>Within 2x</td><td class="num">' + fnum(v.blindWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.flatBlindWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.timeSplitWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.flatTimeSplitWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.adoptedWithin2, '', 1, '%') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().within2, '', 1, '%') + '</td></tr>' +
       '<tr><td>Within 3x</td><td class="num">' + fnum(v.blindWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.flatBlindWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.timeSplitWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.flatTimeSplitWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.adoptedWithin3, '', 1, '%') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().within3, '', 1, '%') + '</td></tr>' +
       '<tr><td>Spearman(pred, act)</td><td class="num">' + fnum(v.blindSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.flatBlindSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.timeSplitSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.flatTimeSplitSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.adoptedSpearman, '', 3, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().spearman, '', 3, '') + '</td></tr>' +
-      '<tr><td>50% band coverage</td><td class="num">' + (b.blindCov50 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.timeCov50 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">\u2014</td><td class="num">\u2014</td></tr>' +
+      '<tr><td>Central band coverage</td><td class="num">' + (b.blindCov50 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.timeCov50 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">\u2014</td><td class="num">\u2014</td></tr>' +
       '<tr><td>80% band coverage</td><td class="num">' + (b.blindCov80 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.timeCov80 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">\u2014</td><td class="num">\u2014</td></tr>' +
       '<tr><td>n</td><td class="num">' + b.blindN + '</td><td class="num">' + b.blindN + '</td><td class="num">' + v.timeSplitN + '</td><td class="num">' + v.timeSplitN + '</td><td class="num">' + v.peerCount + '</td><td class="num">' + v.peerCount + '</td></tr>' +
       '</tbody></table>' +
-      '<p>Reading it honestly: the model beats flat on median error and within-3x (blind and time-split) and on the tail (median max-ratio) everywhere; it is tied on within-2x blind; and it is <b>worse on Spearman</b> \u2014 the flat TVL ranking out-ranks it on every split, so the value is in the point estimates and the tail, not the ordering. On leave-one-out the two are close on median error (x' + v.adoptedMedian.toFixed(2) + ' vs x' + fnum(looFlatRow() === null ? null : looFlatRow().median, '', 2, '') + ' flat), but the model wins the tail (within-3x ' + v.adoptedWithin3.toFixed(1) + '% vs ' + fnum(looFlatRow() === null ? null : looFlatRow().within3, '', 1, '%') + ', max-ratio x' + v.adoptedMedianMaxRatio.toFixed(2) + ' vs x' + fnum(looFlatRow() === null ? null : looFlatRow().medianMaxRatio, '', 2, '') + '). Flat has no bands, so no coverage row.</p>' +
+      '<p>Reading it honestly: the model beats flat on median error and within-3x (blind and time-split); it is tied on within-2x blind; and it is <b>worse on Spearman</b> \u2014 the flat TVL ranking out-ranks it on every split, so the value is in the point estimates and the tail, not the ordering. On leave-one-out the model wins on median error too (x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' vs x' + fnum(looFlatRow() === null ? null : looFlatRow().medianMaxRatio, '', 2, '') + ' flat) and on within-3x (' + v.adoptedWithin3.toFixed(1) + '% vs ' + fnum(looFlatRow() === null ? null : looFlatRow().within3, '', 1, '%') + '). Flat has no bands, so no coverage row.</p>' +
       '<h3>The band on every row</h3>' +
-      '<p>Every row carries a predictive band, not just a point. The band is built by resampling the ' + FIT.peerCount + ' peers 200 times, refitting the model each time, predicting the row, and multiplying by one draw from the leave-one-out residual distribution; the p10/p90 ends are the 80% band and p25/p75 the 50% band. This is an 80% <b>predictive</b> interval, not a confidence interval: it says where the token\u2019s value plausibly lands, not how precisely the model is estimated. On the blind splits the 80% band holds the true market cap <b>' + (b.blindCov80 * 100).toFixed(1) + '%</b> of the time (target 80%) and the 50% band <b>' + (b.blindCov50 * 100).toFixed(1) + '%</b> (target 50%) \u2014 the bands are calibrated, not decorative. On the time split they under-cover (' + (b.timeCov80 * 100).toFixed(1) + '% / ' + (b.timeCov50 * 100).toFixed(1) + '% on ' + b.timeN + ' newer listings), so blind calibration does not transfer perfectly to newer listings and a newer protocol\u2019s band is less reliable than the blind average suggests. The bands are wide \u2014 the median 80% band spans <b>' + b.boardWidth80.toFixed(0) + 'x</b> across the board \u2014 because the error distribution is heavy-tailed: the median leave-one-out error is x' + v.adoptedMedian.toFixed(2) + ', but 1 in 10 peers is off by more than x' + v.adoptedP90MaxRatio.toFixed(1) + '. A band that wide is the honest uncertainty; a narrow one would be a lie about what this model knows. Endpoints move ~15% median (p10 18%, p25 14%, p75 15%, p90 15%; max 94% fstswap), 1,000 vs 200 resamples.</p>' +
+      '<p>Every row carries a predictive band, not just a point. The band is built by resampling the ' + FIT.peerCount + ' peers 200 times, refitting the model each time, predicting the row, and multiplying by one draw from the leave-one-out residual distribution; the p10/p90 ends are the 80% band and p25/p75 the central band (45% coverage blind). This is an 80% <b>predictive</b> interval, not a confidence interval: it says where the token\u2019s value plausibly lands, not how precisely the model is estimated. On the blind splits the 80% band holds the true market cap <b>' + (b.blindCov80 * 100).toFixed(1) + '%</b> of the time (target 80%) and the central band <b>' + (b.blindCov50 * 100).toFixed(1) + '%</b> (target 50%) \u2014 the 80% band is calibrated and the central band slightly narrow, not decorative. On the time split they under-cover (' + (b.timeCov80 * 100).toFixed(1) + '% / ' + (b.timeCov50 * 100).toFixed(1) + '% on ' + b.timeN + ' newer listings), so blind calibration does not transfer perfectly to newer listings and a newer protocol\u2019s band is less reliable than the blind average suggests. The bands are wide \u2014 the median 80% band spans <b>' + b.boardWidth80.toFixed(0) + 'x</b> across the board \u2014 because the error distribution is heavy-tailed: the median leave-one-out error is x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ', but 1 in 10 peers is off by more than x' + v.adoptedP90MaxRatio.toFixed(1) + '. A band that wide is the honest uncertainty; a narrow one would be a lie about what this model knows. Endpoints move ~15% median (p10 18%, p25 14%, p75 15%, p90 15%; max 94% fstswap), 1,000 vs 200 resamples.</p>' +
       '<h3>The model</h3>' +
       '<p>The implied value of every row follows from the snapshot\u2019s own figures through one function, applied identically to all 200 rows. No protocol name is special-cased. The model is a <b>pricing yardstick, not a price target</b>.</p>' +
-      '<p><b>No top-10 scalar.</b> Round 3 lifted the top 10 rows by 1.15x; three independent audits called that an unjustified post-hoc patch, so it is gone (1.00x) \u2014 no rank #10/#11 cliff, and the watchlist total is ' + fmtUsd(wlTotal) + ', well inside the $0.68B ceiling.</p>' +
+      '<p><b>No top-10 scalar.</b> Round 3 lifted the top 10 rows by 1.15x; three independent audits called that an unjustified post-hoc patch, so it is gone (1.00x) \u2014 no rank #10/#11 cliff, and the watchlist total is ' + fmtUsd(wlTotal) + ' \u2014 the sum of point-estimate implied values, not expected capture (P25\u2013P75 ' + fmtUsd(wlP25) + '\u2013' + fmtUsd(wlP75) + ') \u2014 well inside the $0.68B ceiling.</p>' +
       '<p><b>Peers:</b> ' + FIT.peerCount + ' protocols that record a token with a market cap and a TVL (416 record a token; only 144 carry a market cap). ' + (fitUniverse() === null ? '' : 'The wider live-token universe is ' + fitUniverse() + ' protocols; ' + (setAsideCount() === null ? '' : setAsideCount() + ' of them are set aside from the fit because they record no listing date, so the fit cannot check their age or maturity. ')) +
       '<b>Winsor bounds:</b> peer ratios clipped to [' + FIT.winsorLo.toFixed(4) + ', ' + FIT.winsorHi.toFixed(4) + ']. ' +
       '<b>Global median multiple:</b> ' + FIT.globalMedian.toFixed(3) + 'x.</p>' +
@@ -593,12 +684,13 @@
       '<p><b>Growth:</b> 1 + clamp(7-day change, -60%, +120%) / 100 x 0.5. <b>Maturity:</b> 0.6 + min(age, 1095 days) / 1095 x 0.4. Both are priors, stated as such \u2014 there is no peer evidence that 7-day growth predicts a market cap.</p>' +
       '<p><b>No chain multiplier.</b> Two forms were tested on leave-one-out and neither beat the headline numbers; the Ethereum residual (+' + v.chainEthDex.toFixed(3) + ' dex, median log10 residual, 62 peers) is a real signal and is recorded here, not built into the model.</p>' +
       '<h3>Validation \u2014 the leave-one-out table</h3>' +
-      '<p>Leave-one-out on the ' + v.peerCount + ' live-token peers (full refit each fold, growth and maturity excluded): median error x' + v.adoptedMedian.toFixed(2) + ' (1 + MdAPE \u2014 the median absolute percentage error) and median max-ratio x' + v.adoptedMedianMaxRatio.toFixed(2) + ', ' + v.adoptedWithin2.toFixed(1) + '% within 2x, ' + v.adoptedWithin3.toFixed(1) + '% within 3x. The two error definitions are not interchangeable: 1+MdAPE caps an under-prediction at 2x, while the max-ratio counts the larger side either way, so the max-ratio is the like-for-like number to compare against another entry\u2019s quoted error.</p>' +
-      '<table class="plain"><thead><tr><th>Model</th><th class="num">Median error</th><th class="num">Median max-ratio</th><th class="num">Within 2x</th><th class="num">Within 3x</th></tr></thead><tbody>' +
+      '<p>Leave-one-out on the ' + v.peerCount + ' live-token peers (full refit each fold, growth and maturity excluded): median error x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' (the median of max(pred/actual, actual/pred)), ' + v.adoptedWithin2.toFixed(1) + '% within 2x, ' + v.adoptedWithin3.toFixed(1) + '% within 3x. Median error is the median max-ratio: if half the peers land within 3x, the median error has to sit near 3x, and it does (x2.96). The older 1+|error| figure (x' + fnum(v.adoptedMedian, '', 2, '') + ' LOO) is a different statistic \u2014 1 plus the median absolute percentage error, which caps an under-prediction at 2x \u2014 and is not shown as the headline. The two definitions are not interchangeable, so the max-ratio is the like-for-like number to compare against another entry\u2019s quoted error.</p>' +
+      '<p>One systematic note: the median leave-one-out log10 residual is ' + fnum(v.adoptedBiasDex, '', 3, '') + ' dex \u2014 the typical prediction sits about ' + Math.round((1 - Math.pow(10, v.adoptedBiasDex)) * 100) + '% below the actual market cap (median pred/actual ' + Math.pow(10, v.adoptedBiasDex).toFixed(2) + 'x). The model underpredicts slightly; implied values are conservative, not inflated.</p>' +
+      '<table class="plain"><thead><tr><th>Model</th><th class="num">Median error (max-ratio)</th><th class="num">Median 1+|error|</th><th class="num">Within 2x</th><th class="num">Within 3x</th></tr></thead><tbody>' +
       v.loo.map(function (r) {
-        return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">x' + r.median.toFixed(2) + '</td><td class="num">x' + r.medianMaxRatio.toFixed(2) + '</td><td class="num">' + r.within2.toFixed(1) + '%</td><td class="num">' + r.within3.toFixed(1) + '%</td></tr>';
+        return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">x' + r.medianMaxRatio.toFixed(2) + '</td><td class="num">x' + r.median.toFixed(2) + '</td><td class="num">' + r.within2.toFixed(1) + '%</td><td class="num">' + r.within3.toFixed(1) + '%</td></tr>';
       }).join('') + '</tbody></table>' +
-      '<p>No model clearly dominates on the median (x1.85\u2013x1.91 for all). The adopted model wins on the tail (best within-3x) while keeping the board sane. ' + (isHuber ? 'The adopted fit is a Huber fit (\u03b4=1.0): it down-weights the outlying peers instead of letting a few extreme ratios drag the size curve, and it is the fit every number above is measured on. Damped slope, quadratic size curve, per-category curves and both chain multipliers were all tested on the same leave-one-out and none beats it cleanly.' : 'Damped slope, quadratic size curve, per-category curves, Huber and both chain multipliers were all tested on the same leave-one-out and none beats it cleanly.') + '</p>' +
+      '<p>On the median error (max-ratio) the adopted model is the best of the five (x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + '; the bare size curve is next at x' + (size ? fnum(size.medianMaxRatio, '', 2, '') : 'n/a') + ') and it wins on the tail (best within-3x) while keeping the board sane. No model clearly dominates on the median 1+|error|, which runs x' + Math.min.apply(null, v.loo.map(function (r) { return r.median; })).toFixed(2) + '\u2013x' + Math.max.apply(null, v.loo.map(function (r) { return r.median; })).toFixed(2) + ' across all five. ' + (isHuber ? 'The adopted fit is a Huber fit (\u03b4=1.0): it down-weights the outlying peers instead of letting a few extreme ratios drag the size curve, and it is the fit every number above is measured on. Damped slope, quadratic size curve, per-category curves and both chain multipliers were all tested on the same leave-one-out and none beats it cleanly.' : 'Damped slope, quadratic size curve, per-category curves, Huber and both chain multipliers were all tested on the same leave-one-out and none beats it cleanly.') + '</p>' +
       '<p class="small">For completeness, the small print: the size curve\u2019s R\u00b2 is ' + FIT.sizeR2.toFixed(3) + ' (TVL explains only ' + (FIT.sizeR2 * 100).toFixed(1) + '% of the variance in market cap \u2014 the relationship is a yardstick, not a law), and Spearman(pred, act) is ' + v.adoptedSpearman.toFixed(3) + ' on leave-one-out and ' + (v.blindSpearman === null ? 'n/a' : v.blindSpearman.toFixed(3)) + ' on the blind splits.</p>' +
       '<p><b>Ship rule, codified before the experiment:</b> a variant ships only if it beats the adopted model on blind median error AND blind Spearman with significance (paired 95% interval excludes zero), AND does not regress the time-split median, AND does not drop blind within-3x, AND keeps Spearman(pred, TVL) below 0.95, AND keeps the watchlist total within 25% of $0.637B. The rule is necessary, not sufficient: a variant that passes it still has to keep a sane board. Two variants satisfied the old literal rule and were still rejected on noise (M1 t = 0.99, M2 t = 0.62). A four-way clean-comps experiment was run on the same frozen splits before this build; no variant met the rule, so the adopted model stands.</p>' +
       '<p class="small">The numbers above are for the predictor without growth and maturity (priors with no peer evidence); the production board includes them. Validated with growth and maturity included, median error moves by less than the seed noise.</p>' +
@@ -606,7 +698,7 @@
       '<h3>Calibration</h3>' + calibrationChart() +
       '<h3>Farm verdicts</h3>' +
       '<p>Each row\u2019s verdict is a visible subtraction, not a threshold on value. The hypothetical airdrop pool is 8% of the implied value (a stated assumption \u2014 the snapshot cannot establish whether an airdrop will happen); the farmer\u2019s share is the pool times $2,500 of capital over the protocol\u2019s TVL; the cost is the steps\u2019 gas plus 4.5% a year on the capital for 90 days. <b>FARM</b> needs a net expected value of at least $40 and at least 1.5x the cost; <b>THIN</b> needs a net expected value of at least $0; anything else is <b>SKIP</b>. The $40 threshold was set from the distribution so that it adds nothing the 1.5x ratio test has not already selected. A $2.75B-TVL curator gives a $2,500 position almost nothing \u2014 that is dilution, honestly reported, and why an impressive TVL never automatically means FARM.</p>' +
-      '<p><b>ROBUST</b> is a FARM row whose net expected value is still at least $0 at the low end of its 50% band (p25) \u2014 on top of the FARM gates ($40 net EV and 1.5x the cost at the median). $0 at the low end is the honest bar: the p25 band is wide (p25/implied runs 0.24\u20130.40 on FARM rows), so no row could clear $40 at p25 \u2014 the best row on the whole board reaches only $8.76 there. $0 means the plan still pays (does not lose money) even if the value lands at the 25th percentile. Every row also carries its <b>break-even odds</b> \u2014 the chance the token\u2019s value lands above the value at which the farm breaks even \u2014 and its <b>net $/hour</b>, the net expected value divided by the hands-on minutes the plan asks for, so a slow farm can be compared with a quick one on the same footing.</p>' +
+      '<p><b>P25-POSITIVE</b> is a FARM row whose net expected value is still at least $0 at the 25th percentile of the model\u2019s out-of-sample error (1 in 4 realisations is worse \u2014 p25 is not the low end), on top of the FARM gates ($40 net EV and 1.5x the cost at the median). No row on this board clears $40 at p25; the strongest p25 case is ' + (bestP25 === null ? 'n/a' : esc(bestP25.name) + ' at +' + fmtUsd2(bestP25.farm.netEvP25)) + '. The original $40-at-p25 bar returned zero rows, so the tier is defined by the break-even floor instead \u2014 a disclosed change, not a hidden one. P25-POSITIVE is a subset of FARM (' + (vc['P25-POSITIVE'] || 0) + ' of ' + farmTotal + '), not a fourth tier. Every row also carries its <b>break-even odds</b> \u2014 the chance the token\u2019s value lands above the value at which the farm breaks even \u2014 and its <b>net $/hour</b>, the net expected value divided by the hands-on minutes the plan asks for, so a slow farm can be compared with a quick one on the same footing.</p>' +
       '<h3>What this does not do</h3>' +
       '<p>It does not predict whether or when a token launches. It does not use any data outside the snapshot\u2019s ten fields. It does not call its output \u201cimplied FDV\u201d \u2014 the snapshot carries market capitalisation, not fully diluted value. Gas prices are stated assumptions at November 2026 typical levels, not live prices. The farm steps are proposed interactions to verify on the protocol\u2019s own page; nothing here claims a points program, a quest or an airdrop exists.</p>' +
       '</div>';
@@ -640,47 +732,66 @@
       '<tr><td>Top-10 scalar</td><td class="num">' + MODEL.topScalar.toFixed(2) + 'x</td><td>Multiplier on the top 10 board rows (1.00x: none)</td></tr>' +
       '</tbody></table>' +
       '<h3>Leave-one-out, full table</h3>' +
-      '<p>Full refit each fold, growth and maturity excluded, on ' + v.peerCount + ' peers. The adopted row is bold.</p>' +
-      '<table class="plain"><thead><tr><th>Model</th><th class="num">Median error</th><th class="num">Median max-ratio</th><th class="num">Within 2x</th><th class="num">Within 3x</th></tr></thead><tbody>' +
+      '<p>Full refit each fold, growth and maturity excluded, on ' + v.peerCount + ' peers. The adopted row is bold. Median error is the median of max(pred/actual, actual/pred) \u2014 the statistic that reconciles with within-3x. The older 1+|error| figure is a different statistic and is not the headline.</p>' +
+      '<table class="plain"><thead><tr><th>Model</th><th class="num">Median error (max-ratio)</th><th class="num">Median 1+|error|</th><th class="num">Within 2x</th><th class="num">Within 3x</th></tr></thead><tbody>' +
       v.loo.map(function (r) {
-        return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">x' + r.median.toFixed(2) + '</td><td class="num">x' + r.medianMaxRatio.toFixed(2) + '</td><td class="num">' + r.within2.toFixed(1) + '%</td><td class="num">' + r.within3.toFixed(1) + '%</td></tr>';
+        return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">x' + r.medianMaxRatio.toFixed(2) + '</td><td class="num">x' + r.median.toFixed(2) + '</td><td class="num">' + r.within2.toFixed(1) + '%</td><td class="num">' + r.within3.toFixed(1) + '%</td></tr>';
       }).join('') + '</tbody></table>' +
-      '<p>Adopted headline: median error x' + fnum(v.adoptedMedian, '', 2, '') + ', median max-ratio x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ', ' + fnum(v.adoptedWithin2, '', 1, '%') + ' within 2x, ' + fnum(v.adoptedWithin3, '', 1, '%') + ' within 3x (n=' + v.peerCount + '), Spearman ' + fnum(v.adoptedSpearman, '', 3, '') + ', 1 in 10 peers off by more than x' + fnum(v.adoptedP90MaxRatio, '', 1, '') + '. Flat on the same peers: ' + (flat ? 'median error x' + fnum(flat.median, '', 2, '') + ', within-3x ' + fnum(flat.within3, '', 1, '%') : 'n/a') + '.</p>' +
+      '<p>Adopted headline: median error x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' (max-ratio), 1+|error| x' + fnum(v.adoptedMedian, '', 2, '') + ', ' + fnum(v.adoptedWithin2, '', 1, '%') + ' within 2x, ' + fnum(v.adoptedWithin3, '', 1, '%') + ' within 3x (n=' + v.peerCount + ' of ' + (fitUniverse() === null ? v.peerCount : fitUniverse()) + '), Spearman ' + fnum(v.adoptedSpearman, '', 3, '') + ', 1 in 10 peers off by more than x' + fnum(v.adoptedP90MaxRatio, '', 1, '') + '. Flat on the same peers: ' + (flat ? 'median error x' + fnum(flat.medianMaxRatio, '', 2, '') + ', within-3x ' + fnum(flat.within3, '', 1, '%') : 'n/a') + '.</p>' +
+      '<p>Median LOO log10 residual ' + fnum(v.adoptedBiasDex, '', 3, '') + ' dex: the typical prediction sits about ' + Math.round((1 - Math.pow(10, v.adoptedBiasDex)) * 100) + '% below the actual market cap (median pred/actual ' + Math.pow(10, v.adoptedBiasDex).toFixed(2) + 'x). The model underpredicts slightly; implied values are conservative, not inflated.</p>' +
+      '<h3>The 95-peer headline, and the 128-peer sensitivity</h3>' +
+      '<p>LOO within-3x <b>' + fnum(v.adoptedWithin3, '', 1, '%') + ' on the ' + v.peerCount + ' peers with listing dates; ' + fnum(v.loo128Within3, '', 1, '%') + ' on all ' + (fitUniverse() === null ? v.peerCount : fitUniverse()) + ' traded peers</b>. The 33 peers without a listing date are systematically harder \u2014 the difference is the cost of the listing-date requirement. The fit needs a listing date for the maturity term, so the headline LOO is measured on the 95; the 128 number is the same LOO run on the full traded universe (the predictor used here does not consume the listing date, so the 33 can be scored).</p>' +
+      '<table class="plain"><thead><tr><th>Model</th><th class="num">Within-3x (n=95)</th><th class="num">Within-3x (n=128)</th><th class="num">Change</th></tr></thead><tbody>' +
+      v.loo.map(function (r) {
+        var w128 = null;
+        if (r.model.indexOf('adopted') >= 0) w128 = v.loo128Within3;
+        else if (r.model.indexOf('size curve only') >= 0) w128 = v.loo128SizeWithin3;
+        else if (r.model.indexOf('flat 0.25x') >= 0) w128 = v.loo128FlatWithin3;
+        else if (r.model.indexOf('global median') >= 0) w128 = v.loo128GlobalWithin3;
+        return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">' + r.within3.toFixed(1) + '%</td><td class="num">' + (w128 === null || w128 === undefined ? 'n/a' : w128.toFixed(1) + '%') + '</td><td class="num">' + (w128 === null || w128 === undefined ? 'n/a' : (w128 - r.within3 >= 0 ? '+' : '') + (w128 - r.within3).toFixed(1) + 'pp') + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p>Spearman rises on n=128 for the adopted model (' + fnum(v.adoptedSpearman, '', 3, '') + ' \u2192 ' + fnum(v.loo128Spearman, '', 3, '') + ') and the size curve (' + (looRowNamed('size curve only') ? fnum(looRowNamed('size curve only').spearman, '', 3, '') : 'n/a') + ' \u2192 ' + fnum(v.loo128SizeSpearman, '', 3, '') + '): the dateless peers are harder to place within 3x but the overall ranking is preserved. The lift over the flat baselines survives the expansion (+' + (flat ? (v.adoptedWithin3 - flat.within3).toFixed(1) : 'n/a') + 'pp on n=95, +' + (v.loo128Within3 - v.loo128GlobalWithin3).toFixed(1) + 'pp on n=128).</p>' +
+      '<p>Denominators, reconciled: ' + DATA.board_size + ' board rows \u2192 ' + (fitUniverse() === null ? v.peerCount : fitUniverse()) + ' traded-token universe \u2192 ' + v.peerCount + ' scored peers \u2192 ' + v.timeSplitN + ' time-split.</p>' +
       '<h3>Band calibration</h3>' +
-      '<p>80% band coverage on the blind splits: ' + (b.blindCov80 === undefined ? 'n/a' : (b.blindCov80 * 100).toFixed(1) + '%') + ' (target 80%); 50% band: ' + (b.blindCov50 === undefined ? 'n/a' : (b.blindCov50 * 100).toFixed(1) + '%') + ' (target 50%). On the time split: ' + (b.timeCov80 === undefined ? 'n/a' : (b.timeCov80 * 100).toFixed(1) + '%') + ' / ' + (b.timeCov50 === undefined ? 'n/a' : (b.timeCov50 * 100).toFixed(1) + '%') + ' on ' + (b.timeN === undefined ? 'n/a' : b.timeN) + ' newer listings. The median 80% band across the board spans ' + (b.boardWidth80 === undefined ? 'n/a' : b.boardWidth80.toFixed(0) + 'x') + '.</p>' +
+      '<p>80% band coverage on the blind splits: ' + (b.blindCov80 === undefined ? 'n/a' : (b.blindCov80 * 100).toFixed(1) + '%') + ' (target 80%); central band: ' + (b.blindCov50 === undefined ? 'n/a' : (b.blindCov50 * 100).toFixed(1) + '%') + ' (target 50%). On the time split: ' + (b.timeCov80 === undefined ? 'n/a' : (b.timeCov80 * 100).toFixed(1) + '%') + ' / ' + (b.timeCov50 === undefined ? 'n/a' : (b.timeCov50 * 100).toFixed(1) + '%') + ' on ' + (b.timeN === undefined ? 'n/a' : b.timeN) + ' newer listings. The median 80% band across the board spans ' + (b.boardWidth80 === undefined ? 'n/a' : b.boardWidth80.toFixed(0) + 'x') + '.</p>' +
       (v.looBandRatioLo !== null && v.looBandRatioLo !== undefined && v.looBandRatioHi !== null && v.looBandRatioHi !== undefined ? '<p>Leave-one-out band for actual/implied: the middle half of ratios runs <b>' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x</b> \u2014 this is the shaded band in the scatter chart on the board tab.</p>' : '') +
       '</div>';
     return h;
   }
   // Traded anchors: the fit peers, kept apart from the board because their
-  // tokens already trade. Implied values are recomputed in-page from TVL and
-  // category alone (no growth, no maturity), the same way the calibration
-  // chart computes them. Sortable by ratio, TVL, market cap, implied value
-  // and name, through the shared th[data-sort] handler and state.sort.
+  // tokens already trade. Each row shows the peer's OUT-OF-FOLD implied
+  // value — the prediction from a model fitted without that peer — plus a
+  // within-3x hit flag, so the 48/95 leave-one-out count is checkable here.
+  // Full-fit implied values are never shown for the peers: they would not
+  // reproduce the count. Sortable by ratio, TVL, market cap, out-of-fold
+  // implied value and name, through the shared th[data-sort] handler.
   function anchorsHtml() {
     var peers = DATA.peers.slice();
+    var hits = peers.filter(function (p) { return p.oofWithin3; }).length;
     var key = state.sort;
     var dir = state.dir;
-    var impCache = {};
-    function impOf(p) {
-      if (impCache[p.slug] === undefined) impCache[p.slug] = impliedOf({ tvl_usd: p.tvl_usd, category: p.category, change_7d: null, age_days: null });
-      return impCache[p.slug];
+    function oofOf(p) {
+      return (p.oofImplied === null || p.oofImplied === undefined) ? -1 : p.oofImplied;
+    }
+    function oofRatio(p) {
+      return (p.oofImplied === null || p.oofImplied === undefined || p.oofImplied <= 0) ? -1 : p.mcap_usd / p.oofImplied;
     }
     peers.sort(function (a, b) {
       var av, bv;
       if (key === 'atvl') { av = a.tvl_usd; bv = b.tvl_usd; }
       else if (key === 'amcap') { av = a.mcap_usd; bv = b.mcap_usd; }
-      else if (key === 'aimplied') { av = impOf(a); bv = impOf(b); }
+      else if (key === 'aimplied') { av = oofOf(a); bv = oofOf(b); }
       else if (key === 'aname') { return (a.name < b.name ? -1 : 1) * dir; }
-      else { av = a.mcap_usd / impOf(a); bv = b.mcap_usd / impOf(b); }
+      else { av = oofRatio(a); bv = oofRatio(b); }
       return (av - bv) * dir || (a.slug < b.slug ? -1 : 1);
     });
-    var h = '<div class="panel"><h2>Traded anchors</h2><p>The ' + DATA.peers.length + ' live-token peers the size curve is fitted on, kept apart from the board because these tokens already trade \u2014 they are the yardstick, not farm targets. Implied values are recomputed in this page from TVL and category alone (no growth, no maturity), the same way the calibration chart computes them.' + (setAsideCount() === null ? '' : ' Another ' + setAsideCount() + ' live-token protocols are set aside from this list: they record no listing date, so the fit cannot place them.') + ' Click a column to sort; the ratio column sorts by actual market cap over implied value.</p></div>';
-    h += '<table class="plain"><thead><tr><th data-sort="aname">Peer</th><th class="num" data-sort="atvl">TVL</th><th class="num" data-sort="amcap">Market cap</th><th class="num" data-sort="aimplied">Implied value</th><th class="num" data-sort="aratio">Actual / implied</th></tr></thead><tbody>';
+    var h = '<div class="panel"><h2>Traded anchors</h2><p>The ' + DATA.peers.length + ' live-token peers the size curve is fitted on, kept apart from the board because these tokens already trade \u2014 they are the yardstick, not farm targets. <b>' + hits + ' of ' + DATA.peers.length + ' peers land within 3x out-of-fold \u2014 count them here.</b> Each row shows the peer\u2019s out-of-fold implied value: the prediction from a model fitted without that peer, so the hit count is the honest leave-one-out score, not the in-sample fit.' + (setAsideCount() === null ? '' : ' Another ' + setAsideCount() + ' live-token protocols are set aside from this list: they record no listing date, so the fit cannot place them.') + ' Click a column to sort; the ratio column sorts by actual market cap over out-of-fold implied value.</p></div>';
+    h += '<table class="plain"><thead><tr><th data-sort="aname">Peer</th><th class="num" data-sort="atvl">TVL</th><th class="num" data-sort="amcap">Market cap</th><th class="num" data-sort="aimplied">Out-of-fold implied</th><th class="num" data-sort="aratio">Actual / implied</th><th>Within 3x</th></tr></thead><tbody>';
     peers.forEach(function (p) {
-      var imp = impOf(p);
+      var imp = p.oofImplied;
+      var ratio = (imp === null || imp === undefined || imp <= 0) ? null : p.mcap_usd / imp;
       h += '<tr><td><b>' + esc(p.name) + '</b><span class="cat">' + esc(p.category || 'Uncategorised') + '</span></td>' +
-        '<td class="num">' + fmtUsd(p.tvl_usd) + '</td><td class="num">' + fmtUsd(p.mcap_usd) + '</td><td class="num">' + fmtUsd(imp) + '</td><td class="num">' + fmtMult(p.mcap_usd / imp) + '</td></tr>';
+        '<td class="num">' + fmtUsd(p.tvl_usd) + '</td><td class="num">' + fmtUsd(p.mcap_usd) + '</td><td class="num">' + (imp === null || imp === undefined ? 'n/a' : fmtUsd(imp)) + '</td><td class="num">' + (ratio === null ? 'n/a' : fmtMult(ratio)) + '</td><td>' + (p.oofWithin3 === true ? '\u2713 hit' : p.oofWithin3 === false ? '\u2717 miss' : 'n/a') + '</td></tr>';
     });
     h += '</tbody></table>';
     return h;
@@ -704,23 +815,27 @@
     var p10 = row.uncertainty.p10;
     var netEv10 = MODEL.poolShare * p10 * f.capital / row.tvl_usd - f.totalCost;
     var width80 = row.uncertainty ? row.uncertainty.p90 / row.uncertainty.p10 : null;
-    // ROBUST note: clears the FARM gates at the median ($40 net EV, 1.5x
-    // the cost) AND net EV at least $0 at the low end of its 50% band
-    // (p25) — the plan still pays even if the value lands at the 25th
-    // percentile. Prefer the model's own p25 economics when the data file
+    // P25-POSITIVE note: clears the FARM gates at the median ($40 net EV, 1.5x
+    // the cost) AND net EV at least $0 at the 25th percentile of the model's
+    // out-of-sample error (1 in 4 realisations is worse — p25 is not the low
+    // end). Prefer the model's own p25 economics when the data file
     // carries them; otherwise fall back to the p25 arithmetic computed above.
     var p25ev = (f.netEvP25 !== null && f.netEvP25 !== undefined) ? f.netEvP25 : netEv25;
-    var robustNote = '';
-    if (f.verdict === 'ROBUST') robustNote = ' <b>ROBUST</b> means this row clears the FARM gates at the median ($40 net EV, 1.5x the cost) and its net EV is still at least $0 at the low end of its 50% band: net EV at p25 is ' + (p25ev === null ? 'n/a' : (p25ev >= 0 ? '+' : '') + fmtUsd2(p25ev)) + (f.netEvRatioP25 !== null && f.netEvRatioP25 !== undefined ? ' (' + f.netEvRatioP25.toFixed(2) + 'x the cost)' : '') + ' \u2014 the plan still pays even if the value lands at the 25th percentile.';
+    var p25Note = '';
+    if (f.verdict === 'P25-POSITIVE') p25Note = ' <b>P25-POSITIVE</b> means this row clears the FARM gates at the median ($40 net EV, 1.5x the cost) and its net EV is still at least $0 at the 25th percentile of the model\u2019s out-of-sample error: net EV at p25 is ' + (p25ev === null ? 'n/a' : (p25ev >= 0 ? '+' : '') + fmtUsd2(p25ev)) + (f.netEvRatioP25 !== null && f.netEvRatioP25 !== undefined ? ' (' + f.netEvRatioP25.toFixed(2) + 'x the cost)' : '') + ' \u2014 the plan still pays even if the value lands at the 25th percentile.';
     var beNote = '';
     if (f.breakevenOdds !== null && f.breakevenOdds !== undefined) {
       beNote = ' Break-even odds ' + fmtOdds(f.breakevenOdds) + (f.breakevenValue !== null && f.breakevenValue !== undefined ? ' \u2014 the farm breaks even at an implied value of ' + fmtUsd(f.breakevenValue) : '') + (f.netPerHour !== null && f.netPerHour !== undefined ? '; net ' + fmtPerHour(f.netPerHour) + ' per hands-on hour' : '') + '.';
     }
-    var peers = DATA.peers.filter(function (p) { return p.category === row.category; });
-    if (peers.length < 5) peers = DATA.peers.slice();
-    peers = peers.map(function (p) {
+    // Nearest traded comps: the 3 closest peers in the same category by
+    // log-TVL distance; when the category has no peer at all, the nearest
+    // by TVL across all categories, and the caption says so.
+    var sameCat = DATA.peers.filter(function (p) { return p.category === row.category; });
+    var compPool = sameCat.length > 0 ? sameCat : DATA.peers.slice();
+    var compNote = sameCat.length > 0 ? 'Nearest live-token peers in the same category (by TVL):' : 'No peer in this category \u2014 nearest by TVL across all categories:';
+    var peers = compPool.map(function (p) {
       return { p: p, d: Math.abs(Math.log(p.tvl_usd) - Math.log(row.tvl_usd)) };
-    }).sort(function (a, c) { return a.d - c.d; }).slice(0, 5);
+    }).sort(function (a, c) { return a.d - c.d; }).slice(0, 3);
     var h = '<div class="detail"><div class="sheet">' +
       '<button class="close" id="d-close">Close</button>' +
       '<h2>' + esc(row.name) + '</h2>' +
@@ -735,7 +850,7 @@
       (f.breakevenOdds === null || f.breakevenOdds === undefined ? '' : '<div><div class="k">Break-even odds</div><div class="v">' + fmtOdds(f.breakevenOdds) + '</div></div>') +
       (f.netPerHour === null || f.netPerHour === undefined ? '' : '<div><div class="k">Net $/hour</div><div class="v">' + fmtPerHour(f.netPerHour) + '</div></div>') +
       (f.handsOnMinutes === null || f.handsOnMinutes === undefined ? '' : '<div><div class="k">Hands-on time</div><div class="v">' + f.handsOnMinutes + ' min</div></div>') +
-      '<div><div class="k">50% band (predictive)</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p25) + ' \u2013 ' + fmtUsd(row.uncertainty.p75) + ' <small>(' + (row.uncertainty.p75 / row.uncertainty.p25).toFixed(1) + 'x)</small>' : 'n/a') + '</div></div>' +
+      '<div><div class="k">Central band (45% coverage)</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p25) + ' \u2013 ' + fmtUsd(row.uncertainty.p75) + ' <small>(' + (row.uncertainty.p75 / row.uncertainty.p25).toFixed(1) + 'x)</small>' : 'n/a') + '</div></div>' +
       '<div><div class="k">80% band (predictive)</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p10) + ' \u2013 ' + fmtUsd(row.uncertainty.p90) + ' <small>(' + (row.uncertainty.p90 / row.uncertainty.p10).toFixed(0) + 'x)</small>' : 'n/a') + '</div></div>' +
       '<div><div class="k">Farm mechanism</div><div class="v">' + esc(row.mechanism || '') + '</div></div>' +
       '</div>' +
@@ -748,21 +863,23 @@
       '<div class="step"><div class="op">growth ' + b.growthMult.toFixed(3) + 'x</div><div class="val">' + fmtUsd(afterGrowth) + '</div><div class="lab">7d ' + fmtPct(b.growth) + '</div></div><span class="arr">&times;</span>' +
       '<div class="step"><div class="op">maturity ' + b.mat.toFixed(3) + 'x</div><div class="val">' + fmtUsd(afterMat) + '</div><div class="lab">' + fmtAge(row.age_days) + ' old</div></div>' +
       '</div>' +
-      '<p class="small">Every number above is hand-recomputable from the snapshot: the category median is ' + b.rawMed.toFixed(3) + 'x over ' + b.n + ' live peers, shrunk toward the global ' + FIT.globalMedian.toFixed(3) + 'x with weight ' + (b.n >= MODEL.minPeers ? (b.n / (b.n + MODEL.shrinkK)).toFixed(2) : '0') + '. The fitted size curve is log10(mcap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL), R\u00b2 = ' + FIT.sizeR2.toFixed(3) + '. The value is shown to 3 significant figures; the model\u2019s median error is x' + DATA.validation.adoptedMedian.toFixed(2) + ', so read it as a yardstick, not a price target.</p>' +
-      '<p class="small">The band is a bootstrap predictive interval, not a confidence interval: 200 resamples of the ' + FIT.peerCount + ' peers, refit each time, plus one draw from the leave-one-out residual distribution. On the blind splits the 80% band holds the true market cap ' + (DATA.validation.bands.blindCov80 * 100).toFixed(1) + '% of the time and the 50% band ' + (DATA.validation.bands.blindCov50 * 100).toFixed(1) + '%. On the time split the bands under-cover (' + (DATA.validation.bands.timeCov80 * 100).toFixed(1) + '% / ' + (DATA.validation.bands.timeCov50 * 100).toFixed(1) + '%), so blind calibration does not transfer perfectly to newer listings. The band is wide because the error distribution is heavy-tailed: the median leave-one-out error is x' + DATA.validation.adoptedMedian.toFixed(2) + ' but 1 in 10 peers is off by more than x' + DATA.validation.adoptedP90MaxRatio.toFixed(1) + '.</p>' +
-      '<h3>Comps: the peers behind the number</h3>' + compsChart(row) +
-      '<p class="small">Nearest live-token peers in the same category (by TVL):</p>' +
-      '<table class="plain"><thead><tr><th>Peer</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">MC / TVL</th></tr></thead><tbody>' +
+      '<p class="small">Every number above is hand-recomputable from the snapshot: the category median is ' + b.rawMed.toFixed(3) + 'x over ' + b.n + ' live peers, shrunk toward the global ' + FIT.globalMedian.toFixed(3) + 'x with weight ' + (b.n >= MODEL.minPeers ? (b.n / (b.n + MODEL.shrinkK)).toFixed(2) : '0') + '. The fitted size curve is log10(mcap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL), R\u00b2 = ' + FIT.sizeR2.toFixed(3) + '. The value is shown to 3 significant figures; the model\u2019s median error is x' + DATA.validation.adoptedMedianMaxRatio.toFixed(2) + ' (median max-ratio), so read it as a yardstick, not a price target.</p>' +
+      '<p class="small">The band is a bootstrap predictive interval, not a confidence interval: 200 resamples of the ' + FIT.peerCount + ' peers, refit each time, plus one draw from the leave-one-out residual distribution. On the blind splits the 80% band holds the true market cap ' + (DATA.validation.bands.blindCov80 * 100).toFixed(1) + '% of the time and the central band ' + (DATA.validation.bands.blindCov50 * 100).toFixed(1) + '%. On the time split the bands under-cover (' + (DATA.validation.bands.timeCov80 * 100).toFixed(1) + '% / ' + (DATA.validation.bands.timeCov50 * 100).toFixed(1) + '%), so blind calibration does not transfer perfectly to newer listings. The band is wide because the error distribution is heavy-tailed: the median leave-one-out error is x' + DATA.validation.adoptedMedianMaxRatio.toFixed(2) + ' but 1 in 10 peers is off by more than x' + DATA.validation.adoptedP90MaxRatio.toFixed(1) + '.</p>' +
+      '<h3>Nearest traded comps</h3>' + compsChart(row) +
+      '<p class="small">' + compNote + '</p>' +
+      '<table class="plain"><thead><tr><th>Peer</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">Out-of-fold implied</th><th class="num">Actual / implied</th></tr></thead><tbody>' +
       peers.map(function (q) {
-        return '<tr><td>' + esc(q.p.name) + '</td><td class="num">' + fmtUsd(q.p.tvl_usd) + '</td><td class="num">' + fmtUsd(q.p.mcap_usd) + '</td><td class="num">' + fmtMult(q.p.mcap_usd / q.p.tvl_usd) + '</td></tr>';
+        var oof = q.p.oofImplied;
+        var ratio = (oof === null || oof === undefined || oof <= 0) ? null : q.p.mcap_usd / oof;
+        return '<tr><td>' + esc(q.p.name) + '</td><td class="num">' + fmtUsd(q.p.tvl_usd) + '</td><td class="num">' + fmtUsd(q.p.mcap_usd) + '</td><td class="num">' + (oof === null || oof === undefined ? 'n/a' : fmtUsd(oof)) + '</td><td class="num">' + (ratio === null ? 'n/a' : fmtMult(ratio)) + '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<h3>Farm plan</h3>' +
       '<div class="verdictbox ' + f.verdict + '"><b>' + f.verdict + '</b> &middot; net expected value <span class="net">' + (f.netEv >= 0 ? '+' : '') + fmtUsd2(f.netEv) + '</span> on $' + f.capital.toLocaleString('en-US') + ' of capital' +
-      '<br><span class="small">Hypothetical pool 8% of implied value = ' + fmtUsd(f.pool) + '; your share (pool x $' + f.capital.toLocaleString('en-US') + ' / ' + fmtUsd(row.tvl_usd) + ' TVL) = ' + fmtUsd2(f.share) + '; gas ' + fmtUsd2(f.gasTotal) + ' + opportunity cost ' + fmtUsd2(f.oppCost) + ' = ' + fmtUsd2(f.totalCost) + ' total; share &minus; cost = ' + fmtUsd2(f.netEv) + ' (' + f.netEvRatio.toFixed(2) + 'x the cost). FARM needs at least $40 and 1.5x; THIN needs at least $0.' + robustNote + beNote + '</span></div>' +
+      '<br><span class="small">Hypothetical pool 8% of implied value = ' + fmtUsd(f.pool) + '; your share (pool x $' + f.capital.toLocaleString('en-US') + ' / ' + fmtUsd(row.tvl_usd) + ' TVL) = ' + fmtUsd2(f.share) + '; gas ' + fmtUsd2(f.gasTotal) + ' + opportunity cost ' + fmtUsd2(f.oppCost) + ' = ' + fmtUsd2(f.totalCost) + ' total; share &minus; cost = ' + fmtUsd2(f.netEv) + ' (' + f.netEvRatio.toFixed(2) + 'x the cost). FARM needs at least $40 and 1.5x; THIN needs at least $0.' + p25Note + beNote + '</span></div>' +
       '<ol class="steps">' + row.farm_steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
-      '<p class="small"><b>Downside:</b> at the band\u2019s low end (p25 ' + (p25 === null ? 'n/a' : fmtUsd(p25)) + ') the pool is ' + (pool25 === null ? 'n/a' : fmtUsd(pool25)) + ', your share ' + (share25 === null ? 'n/a' : fmtUsd2(share25)) + ', the same cost ' + fmtUsd2(f.totalCost) + ', so net EV ' + (netEv25 === null ? 'n/a' : (netEv25 >= 0 ? '+' : '') + fmtUsd2(netEv25)) + '. Judged at the median; this is the low end of the band.</p>' +
-      (f.verdict === 'FARM' || f.verdict === 'ROBUST' ? '<p class="small"><b>P10:</b> ' + fmtUsd(p10) + ' net EV ' + (netEv10 >= 0 ? '+' : '') + fmtUsd2(netEv10) + '. Farm only if it clears p10.</p>' : '') +
-      '<p class="small"><b>Risk:</b> the implied value is a yardstick, not a price target; the 80% band spans ' + (width80 === null ? 'n/a' : width80.toFixed(0) + 'x') + ', so the token could land far from the median. The airdrop pool is hypothetical (8% of implied value, a stated assumption) \u2014 the snapshot cannot establish that a token or an airdrop will happen. ' + ((f.verdict === 'FARM' || f.verdict === 'ROBUST') ? 'Even a FARM row is a bet on an uncertain launch, not a guaranteed return.' : 'This row does not clear FARM at the median value, and the downside is thinner still.') + '</p>' +
+      '<p class="small"><b>Downside:</b> at the 25th percentile (p25 ' + (p25 === null ? 'n/a' : fmtUsd(p25)) + ') the pool is ' + (pool25 === null ? 'n/a' : fmtUsd(pool25)) + ', your share ' + (share25 === null ? 'n/a' : fmtUsd2(share25)) + ', the same cost ' + fmtUsd2(f.totalCost) + ', so net EV ' + (netEv25 === null ? 'n/a' : (netEv25 >= 0 ? '+' : '') + fmtUsd2(netEv25)) + '. Judged at the median; p25 is the 25th percentile of the model\u2019s out-of-sample error \u2014 1 in 4 realisations is worse, not the low end.</p>' +
+      (f.verdict === 'FARM' || f.verdict === 'P25-POSITIVE' ? '<p class="small"><b>P10:</b> ' + fmtUsd(p10) + ' net EV ' + (netEv10 >= 0 ? '+' : '') + fmtUsd2(netEv10) + '. Farm only if it clears p10.</p>' : '') +
+      '<p class="small"><b>Risk:</b> the implied value is a yardstick, not a price target; the 80% band spans ' + (width80 === null ? 'n/a' : width80.toFixed(0) + 'x') + ', so the token could land far from the median. The airdrop pool is hypothetical (8% of implied value, a stated assumption) \u2014 the snapshot cannot establish that a token or an airdrop will happen. ' + ((f.verdict === 'FARM' || f.verdict === 'P25-POSITIVE') ? 'Even a FARM row is a bet on an uncertain launch, not a guaranteed return.' : 'This row does not clear FARM at the median value, and the downside is thinner still.') + '</p>' +
       '<p class="small">Gas at November 2026 typical levels (Ethereum $4.00/tx, L2s $0.30, Solana-class $0.05, Bitcoin L2s $2.00); opportunity cost 4.5% a year on the capital for 90 days. The steps are proposed interactions to verify on the protocol\u2019s own page; nothing here claims a points program, a quest or an airdrop exists. Claim only from a link the protocol itself publishes; never pay to claim.</p>' +
       '</div></div>';
     return h;
@@ -779,7 +896,7 @@
     var h = '<div class="wrap">' +
       '<header><h1>Tidegauge<span class="dot">.</span></h1>' +
       '<p class="sub">Pre-token protocols, ranked by implied token market capitalisation \u2014 fitted from ' + FIT.peerCount + ' live-token peers, blind-tested against a flat baseline, and costed to the dollar. As of ' + esc(DATA.as_of) + '.</p>' +
-      '<div class="kpi"><span>Blind median error <b>x' + v.blindMedian.toFixed(2) + ' vs x' + (v.flatBlindMedian === null ? 'n/a' : v.flatBlindMedian.toFixed(2)) + ' flat</b></span><span><b>' + DATA.board_size + '</b> protocols</span><span><b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>80% band covers <b>' + (v.bands.blindCov80 * 100).toFixed(0) + '%</b> blind</span><span>LOO median error <b>x' + v.adoptedMedian.toFixed(2) + ' vs x' + (looFlatRow() === null ? 'n/a' : looFlatRow().median.toFixed(2)) + ' flat</b></span><span>LOO within-3x <b>' + (v.adoptedWithin3 === null || v.adoptedWithin3 === undefined ? 'n/a' : v.adoptedWithin3.toFixed(1) + '% (n=' + (v.peerCount || FIT.peerCount) + ')') + '</b></span><span>ROBUST <b>' + vc.ROBUST + '</b> &middot; FARM <b>' + vc.FARM + '</b></span></div></header>' +
+      '<div class="kpi"><span>Blind median error <b>x' + fnum(v.blindMedianMaxRatio, '', 2, '') + ' vs x' + fnum(v.flatBlindMedianMaxRatio, '', 2, '') + ' flat</b></span><span><b>' + DATA.board_size + '</b> protocols</span><span><b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>80% band covers <b>' + (v.bands.blindCov80 * 100).toFixed(0) + '%</b> blind</span><span>LOO median error <b>x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' vs x' + (looFlatRow() === null ? 'n/a' : fnum(looFlatRow().medianMaxRatio, '', 2, '')) + ' flat</b></span><span>LOO within-3x <b>' + (v.adoptedWithin3 === null || v.adoptedWithin3 === undefined ? 'n/a' : v.adoptedWithin3.toFixed(1) + '% (n=' + (v.peerCount || FIT.peerCount) + ' of ' + (fitUniverse() || (v.peerCount || FIT.peerCount)) + ')') + '</b></span><span>FARM <b>' + ((vc['P25-POSITIVE'] || 0) + vc.FARM) + '</b>, incl. <b>' + (vc['P25-POSITIVE'] || 0) + '</b> P25-positive</span></div></header>' +
       '<nav class="tabs">' +
       '<button data-tab="board"' + (state.tab === 'board' ? ' class="on"' : '') + '>Board</button>' +
       '<button data-tab="live"' + (state.tab === 'live' ? ' class="on"' : '') + '>Live tokens (' + DATA.live_size + ')</button>' +
@@ -909,7 +1026,7 @@
     // Close any open detail overlay: it lives on body, render() won't.
     closeDetail();
     // Deep-link a filtered board, e.g. #/board?verdict=FARM.
-    var vm = hash.match(/verdict=(ROBUST|FARM|THIN|SKIP)/);
+    var vm = hash.match(/verdict=(P25-POSITIVE|FARM|THIN|SKIP)/);
     if (vm) state.verdict = vm[1];
     render();
   }

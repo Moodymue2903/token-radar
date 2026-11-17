@@ -46,7 +46,7 @@
 // because the error distribution is heavy-tailed (the 90th-percentile
 // leave-one-out error is x21.2, far above the x1.82 median; the methodology
 // panel states it). A FARM row whose net EV is still ≥ $0 at the P25 implied value promotes to
-// ROBUST in the post-band step: it still pays (does not lose money) at the low end of its band.
+// P25-POSITIVE in the post-band step: it still pays (does not lose money) at the low end of its band.
 // The $40 farm threshold at P25 is unreachable — the P25 band is wide (p25/implied is 0.24–0.41
 // on FARM rows), so the best row on the board reaches only ~$9 at P25 — and "pays at the low
 // end" means breaking even there, not clearing the median's $40 bar.
@@ -179,7 +179,7 @@ export interface FarmStep {
 
 /** A row's net-EV verdict and the arithmetic behind it. */
 export interface Verdict {
-  verdict: 'ROBUST' | 'FARM' | 'THIN' | 'SKIP';
+  verdict: 'P25-POSITIVE' | 'FARM' | 'THIN' | 'SKIP';
   capital: number;
   pool: number;
   share: number;
@@ -262,6 +262,16 @@ export interface PeerPoint {
   category: string | null;
   tvl_usd: number;
   mcap_usd: number;
+  /**
+   * The peer's OUT-OF-FOLD implied value: the model's prediction for this
+   * peer from a fit on the other 94 peers (the same nested refit the LOO
+   * uses), and whether that prediction lands within 3x of the actual
+   * market cap. The anchors tab shows these so a reader can count the
+   * 48/95 within-3x hits themselves — full-fit values would not reproduce
+   * the headline, so they are never shown as the peer's implied value.
+   */
+  oofImplied: number;
+  oofWithin3: boolean;
 }
 
 /** One row of the leave-one-out comparison table. */
@@ -285,6 +295,31 @@ export interface Validation {
   adoptedWithin3: number;
   adoptedLogRmse: number;
   adoptedSpearman: number;
+  /**
+   * The median LOO log10 residual log10(pred/actual) on the 95 fit peers,
+   * in dex. Negative means the model underpredicts at the median: the
+   * typical implied value is 10^bias times the actual market cap. The
+   * audit found -0.067 dex (median pred/actual 0.86x): a real but modest
+   * conservative bias, disclosed here rather than hidden.
+   */
+  adoptedBiasDex: number;
+  /**
+   * The all-128 sensitivity: the same LOO, run on the FULL traded-peer
+   * universe (peersOf, n=128) instead of the 95 fit peers. The 33 dateless
+   * peers are systematically harder, so these numbers are lower than the
+   * n=95 headline — the difference is the cost of the listing-date
+   * requirement, published here so the headline cannot be read as the
+   * whole story. The noGm predictor does not consume listed_at, so the
+   * 33 can be included in this LOO.
+   */
+  loo128PeerCount: number;
+  loo128Within3: number;
+  loo128Spearman: number;
+  loo128MedianMaxRatio: number;
+  loo128SizeWithin3: number;
+  loo128SizeSpearman: number;
+  loo128FlatWithin3: number;
+  loo128GlobalWithin3: number;
   /**
    * The P25–P75 band for actual/implied from the LOO log-residuals on the
    * 95 fit peers: with r = log10(pred/actual), actual/implied = 10^(-r),
@@ -922,7 +957,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
  * the steps' gas plus the opportunity cost of the capital. FARM needs a
  * net EV of at least $40 (build-time retune from $75; see MODEL.farmThreshold)
  * and at least 1.5x the cost; THIN needs a net EV
- * of at least $0; anything else is SKIP. ROBUST is not decided here:
+ * of at least $0; anything else is SKIP. P25-POSITIVE is not decided here:
  * attachBands promotes a FARM row whose net EV at the P25 implied value
  * is still at least $0 (it still pays at the low end of its band).
  */
@@ -1051,9 +1086,32 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
 }
 
 /** The peers as points for the comps chart, sorted by TVL. */
-export function peerPoints(peers: SnapshotProtocol[]): PeerPoint[] {
+/**
+ * The fit peers as chart points, each carrying its out-of-fold implied
+ * value: the model's prediction for that peer from a fit on the other
+ * peers (the same nested refit the LOO uses), so the anchors tab can show
+ * a within-3x flag a reader can count. The noGm predictor (no
+ * growth/maturity) is used, matching the LOO headline.
+ */
+export function peerPoints(peers: SnapshotProtocol[], snapshot: Snapshot, model: ModelConstants = MODEL): PeerPoint[] {
+  const asOf = snapshot.as_of;
   return peers
-    .map((p) => ({ slug: p.slug, name: p.name, category: p.category, tvl_usd: p.tvl_usd, mcap_usd: p.mcap_usd! }))
+    .map((p, i) => {
+      const train = peers.filter((_, j) => j !== i);
+      const f = fitModel(train, model);
+      const oof = impliedValue(p, f, asOf, model, false).raw;
+      const actual = p.mcap_usd!;
+      const ratio = Math.max(oof / actual, actual / oof);
+      return {
+        slug: p.slug,
+        name: p.name,
+        category: p.category,
+        tvl_usd: p.tvl_usd,
+        mcap_usd: actual,
+        oofImplied: Math.round(oof),
+        oofWithin3: ratio <= 3,
+      };
+    })
     .sort((a, b) => a.tvl_usd - b.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
 }
 
@@ -1326,9 +1384,9 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
  * deterministic multipliers.
  *
  * Post-band step (same pass, once the band exists): per-row farm economics
- * and the ROBUST tier. netEvP25 / netEvRatioP25 rerun verdictFor's exact
+ * and the P25-POSITIVE tier. netEvP25 / netEvRatioP25 rerun verdictFor's exact
  * pool/share arithmetic at the P25 implied value with the cost unchanged; a
- * FARM row whose net EV at P25 is still ≥ $0 promotes to ROBUST — it still
+ * FARM row whose net EV at P25 is still ≥ $0 promotes to P25-POSITIVE — it still
  * pays (does not lose money) at the low end of its band. The $40 farm
  * threshold is the median's bar; at P25 the honest bar is breaking even. breakevenValue is the
  * implied value at which net EV is zero (totalCost * tvl / (poolShare *
@@ -1337,7 +1395,7 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
  * (log10(p75) - log10(p25)) / 1.349 (the 50% band spans 1.349 sigma), via the
  * Abramowitz-Stegun normal CDF, clamped to [0, 1]; netPerHour is netEv per
  * hands-on hour (hands-on minutes summed across the farm steps; the hold
- * step is waiting, not hands-on). Idempotent: a second pass leaves ROBUST
+ * step is waiting, not hands-on). Idempotent: a second pass leaves P25-POSITIVE
  * rows alone (only FARM rows can promote).
  */
 export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snapshot, model: ModelConstants = MODEL): { boardWidth80: number; boardWidth50: number } {
@@ -1361,7 +1419,7 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
     };
     widths80.push(row.uncertainty.p90 / row.uncertainty.p10);
     widths50.push(row.uncertainty.p75 / row.uncertainty.p25);
-    // Post-band farm economics + ROBUST promotion (needs the band's p25/p75).
+    // Post-band farm economics + P25-POSITIVE promotion (needs the band's p25/p75).
     const p = index.get(row.slug)!;
     const steps = farmSteps(p, row.age_days, model);
     const vMed = verdictFor(p, row.implied_value_usd, steps, model);
@@ -1381,7 +1439,7 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
     row.farm.breakevenOdds = round4(breakevenOdds);
     row.farm.handsOnMinutes = handsOn;
     row.farm.netPerHour = round2(vMed.netEv / (handsOn / 60));
-    if (row.farm.verdict === 'FARM' && vP25.netEv >= 0) row.farm.verdict = 'ROBUST';
+    if (row.farm.verdict === 'FARM' && vP25.netEv >= 0) row.farm.verdict = 'P25-POSITIVE';
   });
   return { boardWidth80: median(widths80), boardWidth50: median(widths50) };
 }
@@ -1408,6 +1466,18 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
   // The 90th-percentile leave-one-out error: 1 in 10 peers is off by more than this.
   const looResid = looLogResiduals(peers, snapshot, model);
   const adoptedP90MaxRatio = round4(Math.pow(10, percentile(looResid.map((r) => Math.abs(r)), 0.9)));
+  // The median LOO log10 residual: the model's bias, in dex. Negative =
+  // the typical prediction sits below the actual market cap.
+  const adoptedBiasDex = round4(median(looResid));
+  // The all-128 sensitivity: the same LOO on the full traded-peer universe
+  // (peersOf, n=128), using the noGm predictor, which does not consume
+  // listed_at. The 33 dateless peers are systematically harder; publishing
+  // both numbers is the honest answer to the cherry-pick question.
+  const peers128 = peersOf(snapshot);
+  const m128Adopted = looRun(peers128, asOf, noGm, model);
+  const m128Size = looRun(peers128, asOf, sizeOnly, model);
+  const m128Flat = looRun(peers128, asOf, flat, model);
+  const m128Global = looRun(peers128, asOf, global, model);
   // P25–P75 band for actual/implied from the same LOO log-residuals (n=95):
   // r = log10(pred/actual), so actual/implied = 10^(-r); the band is
   // [10^(-q75), 10^(-q25)] where q25/q75 are the residual percentiles.
@@ -1563,6 +1633,15 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     adoptedWithin3: round4(mAdopted.within3),
     adoptedLogRmse: round4(mAdopted.logRmse),
     adoptedSpearman: round4(mAdopted.spearman),
+    adoptedBiasDex,
+    loo128PeerCount: peers128.length,
+    loo128Within3: round4(m128Adopted.within3),
+    loo128Spearman: round4(m128Adopted.spearman),
+    loo128MedianMaxRatio: round4(m128Adopted.medianMax),
+    loo128SizeWithin3: round4(m128Size.within3),
+    loo128SizeSpearman: round4(m128Size.spearman),
+    loo128FlatWithin3: round4(m128Flat.within3),
+    loo128GlobalWithin3: round4(m128Global.within3),
     looBandRatioLo,
     looBandRatioHi,
     timeSplitMedian,
@@ -1620,7 +1699,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     validation: validateModel(snapshot, fit, model, { ...bandCal, ...bandWidths }),
     rows: board,
     live,
-    peers: peerPoints(fitPeersOf(snapshot)),
+    peers: peerPoints(fitPeersOf(snapshot), snapshot, model),
   };
   return { board, radar };
 }
