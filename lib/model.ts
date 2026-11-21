@@ -788,21 +788,42 @@ export function fitPeersOf(snapshot: Snapshot): SnapshotProtocol[] {
  * b always give the same x.
  */
 export function solveLinear(Ain: number[][], bin: number[]): number[] {
+  // Flat Float64Array storage for the augmented matrix (row-major, d+1
+  // columns). The arithmetic is the same Gauss-Jordan elimination with
+  // partial pivoting in the same order as the array-of-arrays version, so
+  // the result is bit-identical; only the storage (and its allocation
+  // cost) changes.
   const d = bin.length;
-  const M = Ain.map((row, i) => [...row, bin[i]!]);
+  const W = d + 1;
+  const M = new Float64Array(d * W);
+  for (let i = 0; i < d; i++) {
+    for (let j = 0; j < d; j++) M[i * W + j] = Ain[i]![j]!;
+    M[i * W + d] = bin[i]!;
+  }
   for (let col = 0; col < d; col++) {
     let piv = col;
-    for (let r = col + 1; r < d; r++) if (Math.abs(M[r]![col]!) > Math.abs(M[piv]![col]!)) piv = r;
-    [M[col], M[piv]] = [M[piv]!, M[col]!];
-    const pv = M[col]![col]!;
+    for (let r = col + 1; r < d; r++) if (Math.abs(M[r * W + col]!) > Math.abs(M[piv * W + col]!)) piv = r;
+    if (piv !== col) {
+      for (let c = 0; c <= d; c++) {
+        const t = M[col * W + c]!;
+        M[col * W + c] = M[piv * W + c]!;
+        M[piv * W + c] = t;
+      }
+    }
+    const pv = M[col * W + col]!;
     if (Math.abs(pv) < 1e-12) continue;
     for (let r = 0; r < d; r++) {
       if (r === col) continue;
-      const fac = M[r]![col]! / pv;
-      for (let c = col; c <= d; c++) M[r]![c]! -= fac * M[col]![c]!;
+      const fac = M[r * W + col]! / pv;
+      for (let c = col; c <= d; c++) M[r * W + c]! -= fac * M[col * W + c]!;
     }
   }
-  return M.map((row, i) => row[d]! / (Math.abs(M[i]![i]!) < 1e-12 ? 1 : M[i]![i]!));
+  const out = new Array<number>(d);
+  for (let i = 0; i < d; i++) {
+    const diag = M[i * W + i]!;
+    out[i] = M[i * W + d]! / (Math.abs(diag) < 1e-12 ? 1 : diag);
+  }
+  return out;
 }
 
 /** Extra design columns for a ridge variant, computed from the fit set (set-dependent columns like family stems are built here, so every refit recomputes them from its own train set). */
@@ -855,9 +876,14 @@ export function ridgeFit(
   const withCategories = opts?.categories !== false;
   const extra = opts?.extra === undefined ? undefined : opts.extra(peers);
   const nExtra = extra === undefined || peers.length === 0 ? 0 : extra.cols(peers[0]!).length;
+  // Category counts in one pass (insertion order = first-appearance
+  // order, the same order [...new Set(peers.map(p => p.category))] gives);
+  // the filter and sort below are unchanged, so `cats` is identical.
+  const catCounts = new Map<string | null, number>();
+  for (const p of peers) catCounts.set(p.category, (catCounts.get(p.category) ?? 0) + 1);
   const cats = withCategories
-    ? [...new Set(peers.map((p) => p.category))]
-        .filter((c) => peers.filter((p) => p.category === c).length >= model.minPeers)
+    ? [...catCounts.keys()]
+        .filter((c) => catCounts.get(c)! >= model.minPeers)
         .sort((a, b) => {
           if (a === null) return 1;
           if (b === null) return -1;
@@ -872,22 +898,40 @@ export function ridgeFit(
   const ysSorted = peers.map((p) => Math.log10(p.mcap_usd!)).sort((a, b) => a - b);
   const winsorLo = ysSorted[Math.floor(model.ridgeWinsorLoQ * (ysSorted.length - 1))]!;
   const winsorHi = ysSorted[Math.floor(model.ridgeWinsorHiQ * (ysSorted.length - 1))]!;
-  const X = peers.map((p) => {
-    const row = new Array<number>(d).fill(0);
-    row[0] = 1;
-    row[1] = Math.log10(p.tvl_usd);
+  // The design rows, sparse: each row has at most 3 + nExtra nonzeros
+  // (intercept 1, log10(tvl), one category dummy, the extra columns), so
+  // the normal equations below only visit nonzero (row, col) pairs. The
+  // columns are ascending, and a skipped zero term contributes exactly 0
+  // to its sum, so the accumulated A and bvec are bit-identical to the
+  // dense version. logMcap is hoisted (the same Math.log10 calls, once).
+  const logMcap = peers.map((p) => Math.log10(p.mcap_usd!));
+  const nzCols: number[][] = new Array(peers.length);
+  const nzVals: number[][] = new Array(peers.length);
+  for (let i = 0; i < peers.length; i++) {
+    const p = peers[i]!;
+    const cols: number[] = [0, 1];
+    const vals: number[] = [1, Math.log10(p.tvl_usd)];
     const ci = idx.get(p.category);
-    if (ci !== undefined) row[2 + ci] = 1;
+    if (ci !== undefined) {
+      cols.push(2 + ci);
+      vals.push(1);
+    }
     if (extra !== undefined) {
       const ec = extra.cols(p);
-      for (let j = 0; j < nExtra; j++) row[2 + k + j] = ec[j]!;
+      for (let j = 0; j < nExtra; j++) {
+        if (ec[j]! !== 0) {
+          cols.push(2 + k + j);
+          vals.push(ec[j]!);
+        }
+      }
     }
-    return row;
-  });
+    nzCols[i] = cols;
+    nzVals[i] = vals;
+  }
   // The outcome, winsorized: a peer's log10(mcap) is capped at the bounds,
   // so a few far-off peers cannot drag the slope. The Huber IRLS residuals
   // below are measured against this winsorized outcome.
-  const y = peers.map((p) => clamp(Math.log10(p.mcap_usd!), winsorLo, winsorHi));
+  const y = logMcap.map((v) => clamp(v, winsorLo, winsorHi));
   // Ridge penalties per column: 0 for intercept and slope, lambda for each
   // category offset, the extra columns' own penalties.
   const penalties = new Array<number>(d).fill(0);
@@ -900,9 +944,14 @@ export function ridgeFit(
     const bvec = new Array<number>(d).fill(0);
     for (let i = 0; i < peers.length; i++) {
       const w = weights[i]!;
-      for (let r = 0; r < d; r++) {
-        bvec[r] += w * X[i]![r]! * y[i]!;
-        for (let c = 0; c < d; c++) A[r]![c]! += w * X[i]![r]! * X[i]![c]!;
+      const cols = nzCols[i]!;
+      const vals = nzVals[i]!;
+      const yi = y[i]!;
+      for (let a = 0; a < cols.length; a++) {
+        const r = cols[a]!;
+        const vr = vals[a]!;
+        bvec[r]! += w * vr * yi;
+        for (let b = 0; b < cols.length; b++) A[r]![cols[b]!]! += w * vr * vals[b]!;
       }
     }
     for (let j = 0; j < d; j++) A[j]![j]! += penalties[j]!;
@@ -911,11 +960,15 @@ export function ridgeFit(
   let beta = solve(new Array<number>(peers.length).fill(1));
   if (huber) {
     for (let it = 0; it < 20; it++) {
-      const ws = peers.map((p, i) => {
-        const pred = beta.reduce((s, v, j) => s + v * X[i]![j]!, 0);
+      const ws = new Array<number>(peers.length);
+      for (let i = 0; i < peers.length; i++) {
+        const cols = nzCols[i]!;
+        const vals = nzVals[i]!;
+        let pred = 0;
+        for (let a = 0; a < cols.length; a++) pred += beta[cols[a]!]! * vals[a]!;
         const r = Math.abs(y[i]! - pred);
-        return r <= delta ? 1 : delta / r;
-      });
+        ws[i] = r <= delta ? 1 : delta / r;
+      }
       const next = solve(ws);
       const change = Math.max(...next.map((v, i) => Math.abs(v - beta[i]!)));
       beta = next;
@@ -925,7 +978,7 @@ export function ridgeFit(
   const offsets: RidgeOffset[] = cats.map((c, i) => ({
     category: c,
     offset: beta[2 + i]!,
-    n: peers.filter((p) => p.category === c).length,
+    n: catCounts.get(c)!,
   }));
   const predict = (p: SnapshotProtocol): number => {
     let z = beta[0]! + beta[1]! * Math.log10(p.tvl_usd);
