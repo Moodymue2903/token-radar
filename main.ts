@@ -112,6 +112,6 @@ const watchTotal = board.filter((r) => r.is_watchlist).reduce((s, r) => s + r.im
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
     `token radar: watchlist implied value $${(watchTotal / 1e9).toFixed(3)}B, LOO median error x${radar.validation.adoptedMedianMaxRatio.toFixed(2)}, ${radar.validation.adoptedWithin3.toFixed(1)}% within 3x\n` +
-    `token radar: verdicts P25-POSITIVE ${farm['P25-POSITIVE']} / FARM ${farm.FARM} / THIN ${farm.THIN} / SKIP ${farm.SKIP} (FARM ${farm.FARM + farm['P25-POSITIVE']} incl. P25-positive ${farm['P25-POSITIVE']})\n` +
+    `token radar: verdicts P25-POSITIVE ${farm['P25-POSITIVE']} / FARM ${farm.FARM} / MARGINAL ${farm.THIN} / SKIP ${farm.SKIP} (FARM ${farm.FARM + farm['P25-POSITIVE']} incl. P25-positive ${farm['P25-POSITIVE']})\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dashFiles.length} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );
