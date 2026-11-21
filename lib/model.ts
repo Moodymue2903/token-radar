@@ -2080,6 +2080,9 @@ export interface BandReport {
   timeCov80: number;
   timeCov50: number;
   timeN: number;
+  looCov80: number;
+  looCov50: number;
+  looN: number;
   boardWidth80: number;
   boardWidth50: number;
 }
@@ -2089,7 +2092,11 @@ export interface BandReport {
  * 80/20 splits (seeds 11, 23, 37, 41, 53 — the same splits validateModel uses), fit on the train
  * peers only, build each held-out peer's band from train-only LOO residuals, and count how often
  * the true market cap falls inside the 80% and 50% bands; the same on the time split (listed
- * before 2025-01-01 vs after). The board widths come from attachBands, not from here.
+ * before 2025-01-01 vs after); and the same leave-one-out, one peer at a time, each peer's band
+ * built from the other 94 peers and their LOO residuals (the peer's own residual excluded, so
+ * its band cannot see its own error), which tests the implemented band construction -- bootstrap
+ * refits plus residual draws -- rather than just the residual quantiles. The board widths come
+ * from attachBands, not from here.
  */
 export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODEL): Omit<BandReport, 'boardWidth80' | 'boardWidth50'> {
   const peers = fitPeersOf(snapshot);
@@ -2130,6 +2137,24 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
       if (p.mcap_usd! >= band.p25 && p.mcap_usd! <= band.p75) tsIn50++;
     });
   }
+  // Leave-one-out coverage (seeds 555000+i, fixed): for each fit peer, build
+  // its out-of-fold band from the other 94 peers and their LOO residuals --
+  // the peer's own residual is excluded -- via the same bootstrapBand the
+  // board bands use, and count how often the realised market cap falls
+  // inside the 80% and 50% bands. This is the range-honesty audit's LOO
+  // cohort: it checks the implemented band construction (bootstrap refits
+  // plus residual draws), not just the residual quantiles the bands are
+  // drawn from.
+  let looIn80 = 0;
+  let looIn50 = 0;
+  for (let i = 0; i < peers.length; i++) {
+    const p = peers[i]!;
+    const trainLoo = peers.filter((_, j) => j !== i);
+    const residLoo = looLogResiduals(trainLoo, snapshot, model);
+    const bandLoo = bootstrapBand(p, trainLoo, snapshot, residLoo, 555000 + i, model);
+    if (p.mcap_usd! >= bandLoo.p10 && p.mcap_usd! <= bandLoo.p90) looIn80++;
+    if (p.mcap_usd! >= bandLoo.p25 && p.mcap_usd! <= bandLoo.p75) looIn50++;
+  }
   return {
     boot: BAND_BOOT,
     blindCov80: n > 0 ? in80 / n : 0,
@@ -2138,6 +2163,9 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
     timeCov80: testTs.length > 0 ? tsIn80 / testTs.length : 0,
     timeCov50: testTs.length > 0 ? tsIn50 / testTs.length : 0,
     timeN: testTs.length,
+    looCov80: peers.length > 0 ? looIn80 / peers.length : 0,
+    looCov50: peers.length > 0 ? looIn50 / peers.length : 0,
+    looN: peers.length,
   };
 }
 

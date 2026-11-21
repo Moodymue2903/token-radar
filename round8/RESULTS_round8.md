@@ -380,6 +380,149 @@ us in a game.
 - `screenshots/3-calibration.png` — 2ea27709f2f8564958f4d4dddf1fe3bc35f1862eccd50c18c9674e89f6f7a666 (254,938 bytes)
 - Dossier images == screenshots 4/4 (see above).
 
+## Fix round 3 — range-honesty audit + badge + scatter artifact (2026-11-21, after the blind re-test)
+
+The blind re-test (`benchmark/blind-r8-fixed-vs-kiencx.md`, four fresh judges,
+both orders + two tiebreakers) ended 3–1 for us vs kiencx: C1 accuracy 4–0
+ours, C2 completeness FLIPPED to 2 wins / 2 ties / 0 losses (was 0–6), C3
+richness 0–4 (structural, not chased), C4 legibility 3–1 ours, C5 honesty
+now SPLIT 2–2 (was 6–0 ours). The one remaining presentation gap is C5:
+kiencx's range-honesty audit table won both tiebreakers — our dossier shows
+per-row ranges but no hit-rate audit in the four images. The user chose one
+more fix round before submitting. This round is presentation only: no model,
+fit, board, or validation number changed.
+
+**What changed — three items.**
+
+(a) **Range-honesty audit (the C5 gap).** The calibration tab now carries a
+"Range-honesty audit: do the stated bands hold?" table, appended LAST to
+the composite image 3 (audit h3 + table, 11 clips). Measured vs stated,
+with cohorts and n's explicit:
+
+| Cohort | n | P25–P75 measured (stated 50%) | P10–P90 measured (stated 80%) |
+|---|---|---|---|
+| Leave-one-out | 95 | 52.6% (50/95) | 82.1% (78/95) |
+| Blind 80/20, five splits × 19 | 95 | 46.3% (44/95) | 81.1% (77/95) |
+| Time-split walk-forward, listed 2025+ | 31 | 51.6% (16/31) | 74.2% (23/31) |
+
+Method, stated on the dashboard below the table: each leave-one-out peer's
+band is built from the other 94 peers and their leave-one-out residuals —
+the peer's own residual never enters its band — through the same bootstrap
+refits the board bands use, so this tests the implemented band
+construction, not just the residual quantiles. Blind n=95 is five splits ×
+19 held-out peers, pooled. Reading: the bands are honest on leave-one-out
+and on the blind splits (measured coverage within a few points of stated on
+both); the central band is slightly narrow blind (46.3% vs 50%); the 80%
+band under-covers on the time split (74.2% on 31 newer listings), so a
+newer protocol's band is less reliable than the blind average suggests —
+stated, not hidden.
+
+How the LOO numbers are computed (`lib/model.ts`): `bandCalibration` now
+also runs a leave-one-out loop — for each of the 95 fit peers, train = the
+other 94 peers, residuals = the LOO residuals of those 94, band =
+`bootstrapBand(peer, train, resid, seed 555000+i)` — and returns `looCov80`
+/ `looCov50` / `looN` in the `BandReport`, which the dashboard reads from
+DATA (no hardcoded numbers). The loop was first measured by a standalone
+probe (`benchmark/loo-coverage-r8.ts`, since deleted) at 82.1%/52.6%; the
+in-build computation reproduces it exactly (0.8210526315789474 /
+0.5263157894736842). The LOO column of the method tab's "Validation — model
+vs flat" coverage table is also filled now (was "—"). The stale prose that
+said the central band has "(45% coverage blind)" now reads the computed
+value (46.3%).
+
+(b) **Badge denominator nit (TB1).** The badge "LOO within-3× 50.5% (n=95
+of 128)" mixed denominators (50.5% of 95 is 48, not 95 of 128). It now reads
+"50.5% (48 of 95 peers with listing dates)" in the formula box and the
+calibration LOO headline, and "(48 of 95)" in the KPI-strip pill. The 128
+(all traded peers) is still stated where it belongs — the calibration strip
+already reconciles the denominators (200 board rows → 128 traded-token
+universe → 95 scored peers → 31 time-split). No number changed, only the
+labelling.
+
+(c) **Scatter placeholder nit (TB1) — the real cause was NOT the label
+text.** Image 1's scatter showed a visible "…" artifact at the top-left of
+the bubble panel. The first fix (bubbleMap tick "1x" → "1.00x") did NOT
+remove it — the harness caught that (102/103, the scatter-tick check
+failed) and a DOM probe found the real cause: the bubble map draws y-axis
+ticks for multiples [0.01x, 0.10x, 1.00x] unconditionally, but every
+protocol's multiple is below 1, so the 1.00x gridline sits ABOVE the panel
+— its label's bounding box started 7px above the SVG top edge, so only a
+~3px sliver rendered, reading as "......" at thumbnail scale. The fix:
+bubbleMap now skips any tick whose label would clip (y < T+8 or y > H−B).
+The y-axis now shows 0.10x and 0.01x only; the out-of-range 1.00x is
+omitted, not faked. The ratioScatter (the 95-dot OOF scatter, below the
+fold on the board tab, not in any dossier image) had the same "1x" text and
+was also fixed to "1.00x" — its tick sits inside its SVG, verified
+in-page. The panel being mostly empty on the right is genuine data
+sparsity (few protocols at $1B TVL), not an artifact — stated, not fixed.
+
+**Composite (image 3) — now 11 clips.** The audit h3 + table are appended
+last (after the odds term table). Stack 1102×1388, uniform scale **0.5122**
+(above the harness's 0.5 floor, but the margin is thin — 0.012), output
+1024×711, **232,638 bytes** (under the 524,288 cap), ink fraction 0.1112.
+Viewed by eye: the audit table is visible and legible at full size —
+cohort names, n's, and all six measured-vs-stated cells read clearly. The
+audit's method paragraph stays on the dashboard (not clipped); the table's
+headers carry the meaning.
+
+**Harness (`~/workspace/makefun/shot-tool/r8_verify.mjs`) — 106/106** (90 +
+16 new: audit content ×5, badge ×3, scatter tick ×1, bubble-map clip ×3,
+method-tab LOO column ×1, composite 11-clip ×3). The new assertions check
+content, not existence: the audit table carries the exact LOO/blind/time
+numbers with counts; no "n=95 of 128" anywhere on the board tab; the
+KPI/formula-box/calibration badges read "48 of 95"; the ratioScatter tick
+reads "1.00x"; no bubble-map label hangs outside its SVG
+(getBoundingClientRect vs SVG rect — this is the check that would have
+caught the original sliver); the method-tab coverage table LOO column shows
+52.6%/82.1%. Note: the harness + stitch script live outside the repo and
+are not committed (same as fix round 2).
+
+**A real bug found and fixed in this round:** the bubbleMap clip (above).
+Also found in passing: the first fix-round-3 harness run failed only on the
+scatter tick because the wrong function had been edited (bubbleMap instead
+of ratioScatter) — the harness's content assertion caught it, and the DOM
+probe then found the true cause (clipped label, not label text). And: a
+service restart killed the fifth rebuild mid-run; the rebuild was re-run
+from scratch and its hashes match the previous four.
+
+**Fix-round-3 re-verification:** five consecutive builds, all byte-identical
+to each other (data.js 9b5df74b…, board.json 51f26dc7…); recursive JSON diff
+of the new data.js vs the round-8 baseline shows exactly 3 added fields
+(`validation.bands.looCov80`/`looCov50`/`looN`) and ZERO changed or removed
+values; board.json byte-identical to the round-8 build (51f26dc7…);
+`reconcile_round8.py` PASSED; dossier hashes == screenshots **4/4** (full
+hashes below); harness **106/106** against the rebuilt `out/`; validation
+numbers unchanged (LOO ×2.74, blind ×3.73, WF-cutoff ×2.19, WF-half ×2.59,
+odds Brier 0.208/0.225, FARM 8, watchlist $402.0M). data.js DID change hash
+(0da7efd2… → 9b5df74b…) — by the three added LOO fields only, as proven by
+the JSON diff; the literal "byte-identical data.js" criterion is superseded
+by the explicit LOO-audit requirement, and its intent (no model/fit/board/
+validation number changed) is satisfied by the diff.
+
+**Honest assessment of whether this closes C5:** the gap the judges named
+is now closed on its face — the dossier carries a hit-rate audit with the
+exact measured-vs-stated numbers on three cohorts, computed by the same
+band construction the board uses, with the method stated underneath. Our
+audit is strictly stronger than kiencx's on coverage (three cohorts incl. a
+true leave-one-out audit, vs their two; our numbers sit within 2.1–5.8
+points of stated on every cell, theirs within 1–4). I expect C5 to flip
+back to us or at worst split — but the blind re-test, not this assessment,
+decides. One new risk: the composite's scale fell from 0.5905 to 0.5122 —
+the audit table is the smallest type in the dossier, and a judge who weighs
+its legibility heavily could mark C4 against us in a game, though the
+table's short cells (percentages + counts) read clearly at full size. Still
+weak, unchanged: C3 richness (FARM 8 vs 14, top $37M vs $69M, board $0.84B
+vs $1.52B) and the odds Brier gap (0.208/0.225 vs 0.186/0.215).
+
+**Fix-round-3 verification hashes (full sha256):**
+- `out/data.js` — 9b5df74b9bf63e10da6f61a58eeb50d5f2110fe46514811741e4f09361817009 (round-8 baseline was 0da7efd22f913d2e266410e614511d5272e8feed65d116ffc58c5a5f0148b5d0; differs by the 3 added LOO fields only)
+- `out/board.json` — 51f26dc718f24b14ff2c35cc180c2233b9860b1db2e7695708caa6e5e8277b03 (byte-identical to round-8)
+- `screenshots/1-board.png` — 2dd4976f714d67eedab5653d99895f8a7a12047a0be7b7f7db1e2e46f5891f96 (134,153 bytes)
+- `screenshots/2-detail.png` — 935e202b5223381933c0884fb895c44f09c87e5287980ad6c54f2a34a66ce843 (173,243 bytes)
+- `screenshots/3-calibration.png` — 79d612890bb8eb8b309b04e25d8a2c9a31ca07e9c0b3642cf3b3bd0284a59c79 (232,638 bytes)
+- `screenshots/4-board-table.png` — 42708bcec1ad08cf8c3b45cc4a7909950f787a4eb99324e4bb3e20949446acbf (167,380 bytes; unchanged from fix round 2)
+- Dossier images == screenshots 4/4 (see above).
+
 ## Files changed (branch round8-winsor)
 
 - `lib/model.ts` — winsorized `ridgeFit` (index-rule quantiles, `ridgeWinsorLo/Hi`
@@ -402,10 +545,10 @@ us in a game.
 
 ## Next steps
 
-1. Re-audit (Gemini / DeepSeek / GLM) with this RESULTS file + the built board.
-2. Blind pairwise test vs kiencx (#1) and europa-nova (#10) with the full
-   board visible (board-table shot included).
-3. Show the user; submit ONLY on their go-ahead. Before any submit: verify
-   the kit (ours level 18, site 33), verify the transcript gate from the exact
-   sessions, bundle with the current kit, run kit check. Deadline
+1. Blind pairwise re-test vs kiencx (#1) with the fixed dossier (fresh
+   blind coordinator, both orders + tiebreakers if split) — decides whether
+   C5 closed.
+2. Show the user; submit ONLY on their go-ahead. Before any submit: verify
+   the kit (ours level 18, site 33), verify the transcript gate from the
+   exact sessions, bundle with the current kit, run kit check. Deadline
    2026-12-14T10:00Z; quota open (5 day slots, 37 hard, pulled 2026-11-21).
