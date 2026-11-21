@@ -24,7 +24,11 @@ Held for re-audit + blind test vs kiencx (#1) and europa-nova (#10) + the user's
        hashes match 4/4 (the round-7 blocker does not recur).
    (b) 4th dossier image is a **board-table shot** (4-board-table.png), replacing
        anchors — the judge can now see the ranked board table, the TOKEN ODDS
-       column and the verdicts.
+       column and the verdicts. (Fix round 2026-11-21: the round-8 build's shot
+       showed the accounting table, not the ranked table — the harness scrolled
+       to the first table in DOM order. The harness now selects the table by
+       its "Token odds" header and asserts it; the shot was retaken and
+       visually confirmed — see "Fix round" below.)
    (c) False claims corrected (see "Corrections to round-7 RESULTS").
    (d) Huber-vs-OLS disclosed on the calibration tab (see below).
    (e) Value-model two-test term table added to the calibration tab.
@@ -121,8 +125,9 @@ the adopted model stands.
 | #75 | MetalX Swap | $3.69M | 0.82 | $74.13 | 2.60x | FARM | netEvFull $64.58, p25 −$10.28 |
 | #92 | SyncSwap | $3.16M | 0.70 | $53.81 | 1.62x | FARM | netEvFull $41.71, p25 −$16.06 |
 
-**5 playbooks** (every P25-POSITIVE row + top-5 FARM by NetEV, deduped — the
-rule, not a bug: Steer, WEMIX.FI and FstSwap are FARM without playbooks).
+**5 playbooks** (every P25-POSITIVE row + the top 5 by NetEV among FARM and
+P25-POSITIVE rows, deduped — the rule, not a bug: Steer, WEMIX.FI and FstSwap
+are FARM without playbooks).
 Top playbook by fully costed NetEV: **Katana DEX $67.06** (was MetalX $61.74).
 **P25-FULL: 0** — no playbook row breaks even at p25 once fully costed (round 7
 had 1, Binaryx $5.45; round 8 Binaryx is −$5.46). Both P25-POSITIVE rows go
@@ -188,22 +193,72 @@ not a board error. Stated explicitly on the dashboard (method tab) and here.
 - **Byte-identical rebuilds ×2:** `out/` and `out2/` built from the same source
   are byte-identical (`diff -r` clean). Both report watchlist $0.402B, LOO
   ×2.74 / 50.5%, FARM 8.
-- **Harness:** `~/workspace/makefun/shot-tool/r8_verify.mjs` — **68/68 checks
+- **Harness:** `~/workspace/makefun/shot-tool/r8_verify.mjs` — **71/71 checks
   passed** against `out/` (self-checks 0 mismatches, board columns, playbooks,
   scatter OOF geometry, filters, Katana detail $67.06, Binaryx −$5.46,
-  calibration value term table + Huber/OLS disclosure, anchors 48/95).
+  calibration value term table + Huber/OLS disclosure, anchors 48/95, plus
+  the 3 new shot-4 assertions added in the fix round).
 - **Python reconciliation:** `round8/reconcile_round8.py` — **PASSED**:
   independent numpy ridge (a=3.9013, b=0.4137) + winsor bounds (5.4578 /
   8.5026) + odds fit (−1.2486 / 0.6947 / 0.1657), all 200 implied values,
   odds, multiples, ranks, verdicts, net EVs, playbook totals, accounting
   (sums to 758) match the built board.
 - **Dossier embeds the round-8 screenshots:** `out/dossier.json` image hashes
-  == `screenshots/` hashes, 4/4 (fceefb8c…, ae3511c1…, 50d98a44…, 8aa3cddc…).
+  == `screenshots/` hashes, 4/4 (fceefb8c…, ae3511c1…, 1a24dca3…, 42708bce…).
 - **Screenshots** (`screenshots/`, sha256):
   - 1-board.png — fceefb8c88cd6a6a2103a3b96f7760a2720967c290a4edefae57c7df34126327
   - 2-detail.png — ae3511c125b45626a86c247afa754d48045b6c61edb6a1a298742d2e579ebc2d
-  - 3-calibration.png — 50d98a4471376b19e8c623077fbe47fbfae5a2c2ba5b8367169d59ae32566520
-  - 4-board-table.png — 8aa3cddcd36ce42c0078cd49c52d81f5631d553dd692905f534720470732fa88
+  - 3-calibration.png — 1a24dca3e1e36d2b0745bed07517c313ac698fa16a96d39fb203bb90ca06dacc
+  - 4-board-table.png — 42708bcec1ad08cf8c3b45cc4a7909950f787a4eb99324e4bb3e20949446acbf
+
+## Fix round (2026-11-21, after the round-8 audits)
+
+All three auditors (Gemini, DeepSeek, GLM) said SUBMIT WITH FIXES with ONE
+required fix in common, plus minor fixes. All are done here; no model, fit,
+board, or validation number changed (data.js / board.json byte-identical to
+the round-8 build: 0da7efd2… / 51f26dc7…).
+
+**The required fix — the 4th dossier image showed the wrong table.** The
+round-8 `4-board-table.png` showed the 758-protocol accounting table, not the
+ranked board table: `r8_verify.mjs` scrolled to `document.querySelector('table')`,
+and the first table in the board tab's DOM order is the accounting table
+(`dashboard/app.js:774`); the ranked table is built later (`app.js:882`). No
+dossier image showed a ranked row, so the §5(b) claim above was false. Fixed:
+the harness now selects the table by its "Token odds" header and asserts the
+selection (header has Token odds + Rank + Verdict, 200 rows). The shot was
+retaken and **visually confirmed**: it shows the full ranked board table —
+Rank, Protocol, TVL, 7d, Age, Implied value, Token odds, P10–P90, P25–P75,
+Multiple, Gross, Cost, Net EV, BE odds, Net $/h, Fees · Hold, Verdict — rows
+1–8 (Steakhouse $37.3M through OpenTrade $14.2M, Lofty THIN). One subtlety
+found while fixing it: the ranked table is 1,687px wide (17 columns), wider
+than the 1024px dossier viewport, so at 1024px the Verdict column (x=1622–
+1707) is off-screen entirely. The board-table shot therefore uses a wider
+viewport (2,294px, computed from the measured table width) that fits the
+whole table including Verdict; the other three shots stay at 1024x711. The
+harness asserts the Verdict column is inside the viewport
+(tableRight=2244, verdict=[2159,2244], viewportW=2294). The new image is
+2294x711, 167,380 bytes (under the 524,288 cap).
+
+**Minor fixes (same pass):** RESULTS playbook rule corrected — it is the top 5
+by NetEV among FARM and P25-POSITIVE rows, deduped (the old "top-5 FARM"
+wording would give 7 playbooks, not 5); same correction to the `playbook`
+type comment (`lib/model.ts:322`). `ridgeHuber` comment now states the blind
+loss (Huber loses blind x3.73 vs x3.48 OLS) instead of implying Huber wins
+everywhere. `topScalar` comment updated from the stale ~$0.637B to the
+round-8 totals ($402.0M / $877.8M). Dashboard OLS disclosure now adds the
+blind within-3x (45.3% vs 47.4% OLS). Untracked tmp screenshots deleted from
+`screenshots/`. Ship-rule governance checked, no change: the dashboard states
+the re-basing honestly (method tab — old $0.637B reference, round-8 total
+37.8% above it, reference moved to the current VIL total, so round 8 passes
+its own band by construction and the band binds future variants only).
+
+**Fix-round re-verification:** byte-identical rebuilds ×2 (`diff -r out out2`
+clean); harness **71/71** (68 + 3 new shot-4 assertions) against the rebuilt
+`out/`; dossier hashes == screenshots hashes **4/4** (fceefb8c…, ae3511c1…,
+1a24dca3…, 42708bce…); harness retakes of all four shots are byte-identical
+to the shipped screenshots; validation numbers unchanged (LOO ×2.74, blind
+×3.73, WF-cutoff ×2.19, WF-half ×2.59, odds Brier 0.208/0.225, FARM 8,
+watchlist $402.0M).
 
 ## Files changed (branch round8-winsor)
 

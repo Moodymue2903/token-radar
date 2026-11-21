@@ -190,10 +190,13 @@ export const MODEL: ModelConstants = {
   // round-7 two-test check (benchmark/ridge-test.ts), robust across 1-64.
   ridgeLambda: 4,
   // Huber weighting on: the flag is honoured by fitModel (round 7 hardcoded
-  // true). With the winsorized fit Huber wins or ties on the three splits
-  // the research measured for OLS+winsor (LOO x2.74 vs x2.76, WF-cutoff
-  // x2.19 vs x2.28, WF-half x2.59 vs x2.61; benchmark/path-to-number-one.md
-  // §4). Without winsor Huber lost the half/half split to OLS (x3.01 vs
+  // true). With the winsorized fit Huber wins the three headline splits the
+  // research measured for OLS+winsor (LOO x2.74 vs x2.76, WF-cutoff x2.19 vs
+  // x2.28, WF-half x2.59 vs x2.61; benchmark/path-to-number-one.md §4) but
+  // LOSES the blind test to OLS (x3.73 vs x3.48; within-3x 45.3% vs 47.4%)
+  // — the research report §4 claim that Huber "wins or ties on all four" is
+  // wrong on the winsorized fit, and the dashboard states the blind loss
+  // explicitly. Without winsor Huber lost the half/half split to OLS (x3.01 vs
   // x2.83) — the winsorization, not the weighting, is what fixed that split.
   ridgeHuber: true,
   // Huber delta = 1.0 in log10 units, the same delta the old size curve used.
@@ -239,7 +242,9 @@ export const MODEL: ModelConstants = {
   // patch (no derivation, a 15% cliff between ranks 10 and 11, and the
   // watchlist total pushed to $0.678B, 0.25% from the $0.68B ceiling), so
   // it is removed. 1.00 keeps every row's model value unchanged; the
-  // watchlist total falls back to the model's own ~$0.637B.
+  // watchlist total is the model's own: $402.0M odds-weighted / $877.8M
+  // value-if-launches in round 8 (the ~$0.637B figure from the discounted
+  // board is stale).
   topScalar: 1.0,
 };
 
@@ -319,7 +324,9 @@ export interface BoardRow {
   uncertainty?: { p10: number; p25: number; p75: number; p90: number };
   /** The farm mechanism in a few words, derived from the category (the farm plan's first action, shortened). */
   mechanism: string;
-  /** The fully costed playbook, attached by attachPlaybooks for the P25-positive rows and the top-5 FARM rows. Absent on every other row. */
+  /** The fully costed playbook, attached by attachPlaybooks for the
+   * P25-positive rows and the top-5 rows by net EV among FARM and
+   * P25-POSITIVE rows (deduped). Absent on every other row. */
   playbook?: Playbook;
   model: {
     cat_mult: number;
