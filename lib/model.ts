@@ -229,6 +229,8 @@ export interface BoardRow {
   uncertainty?: { p10: number; p25: number; p75: number; p90: number };
   /** The farm mechanism in a few words, derived from the category (the farm plan's first action, shortened). */
   mechanism: string;
+  /** The fully costed playbook, attached by attachPlaybooks for the P25-positive rows and the top-5 FARM rows. Absent on every other row. */
+  playbook?: Playbook;
   model: {
     cat_mult: number;
     cat_n: number;
@@ -242,6 +244,66 @@ export interface BoardRow {
   };
   farm: Verdict;
   farm_steps: string[];
+}
+
+/** One fee the board's cost model does not count: a swap, a bridge, or the exit transaction. */
+export interface PlaybookFee {
+  label: string;
+  amountUsd: number;
+  /** How the amount was derived: the rule and the inputs, so a reader can recompute it. */
+  basis: string;
+}
+
+/** The extra fees grouped by kind, so a reader can tell "no swap because
+ * non-LP" from "swap fee missing": swap is the entry + exit swaps (0.30%
+ * each way, only LP and stake rows swap); bridge is the $2.00 flat
+ * allowance per non-Ethereum chain touched, with the chain count; gas is
+ * the exit transactions, one per chain touched, with the tx count. The
+ * three sum exactly to extraTotal — the deposit/withdrawal protocol fee
+ * is $0, so it contributes nothing to the split. */
+export interface PlaybookFeeSplit {
+  swap: number;
+  bridge: number;
+  bridgeChains: number;
+  gas: number;
+  gasTxs: number;
+}
+
+/**
+ * A fully costed playbook for one FARM row: the entry, every fee the board
+ * does not count, the hold, the exit, and the net EV at p10/p25/p50/p75
+ * after those fees. The board's NetEV rule is untouched — the playbook
+ * starts from the board's NetEV and subtracts the extra fees, so the two
+ * reconcile exactly: fullyCosted = board − extraTotal at every
+ * percentile. The verdict is defined on board costs and does not change;
+ * a row can stay P25-POSITIVE on the board while its fully costed p25
+ * goes negative, and the playbook says so in plain words.
+ */
+export interface Playbook {
+  entryChain: string;
+  secondChain: string | null;
+  capital: number;
+  holdDays: number;
+  handsOnMinutes: number;
+  boardGas: number;
+  boardOpp: number;
+  boardTotal: number;
+  extraFees: PlaybookFee[];
+  extraTotal: number;
+  /** The extra fees grouped by kind (swap / bridge / exit gas); see PlaybookFeeSplit. */
+  feeSplit: PlaybookFeeSplit;
+  fullyCostedTotal: number;
+  netEvBoard: number;
+  netEvP10Board: number;
+  netEvP25Board: number;
+  netEvP75Board: number;
+  netEvFull: number;
+  netEvP10Full: number;
+  netEvP25Full: number;
+  netEvP75Full: number;
+  breakevenBoard: number;
+  breakevenFull: number;
+  exit: string;
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -984,6 +1046,159 @@ export function verdictFor(
   return { verdict, capital, pool, share, gasTotal, oppCost: opp, totalCost, netEv, netEvRatio: ratio, feesHold };
 }
 
+/**
+ * The extra fees a farm actually pays on top of the board's gas +
+ * opportunity cost. Every line is computed from the row's own record
+ * (chains, mechanism, capital) plus a stated assumption — nothing here is
+ * measured from the snapshot, because the snapshot carries no fee data,
+ * and each line says so in its basis.
+ *
+ * - Swaps: a liquidity provision swaps half the capital into the paired
+ *   asset at entry and back to USDC at exit; a stake swaps the whole
+ *   capital into the staking asset and back. The rate is 0.30%, the
+ *   standard AMM fee tier (Uniswap v2 charges 0.30%; v3 lists 0.30% among
+ *   its tiers). A deposit, a mint or a lend in USDC needs no swap.
+ * - Bridges: $2.00 flat per chain touched that is not Ethereum. The
+ *   capital starts as USDC on Ethereum (stated assumption); a chain
+ *   already on Ethereum costs no bridge. $2.00 is a flat allowance, not a
+ *   measured price — CCTP-style routes are gas-only, native bridges cost
+ *   a few dollars of L1 gas, and a farmer who already holds USDC on the
+ *   target chain pays $0. The chains touched are the primary chain and,
+ *   on a multi-chain plan, the second chain.
+ * - Exit gas: one transaction per chain touched, at that chain's gas
+ *   price (the same gasPerTx the board uses). The board's gas counts the
+ *   setup, the deposit, the weekly actions and the claim — it does not
+ *   count unwinding the position.
+ * - Deposit / withdrawal protocol fee: $0, a stated assumption — the
+ *   protocols on this board charge no protocol-level deposit or
+ *   withdrawal fee; the exit cost is gas only. Verify on the protocol's
+ *   own page before farming: a protocol that does charge an exit fee
+ *   breaks this playbook's arithmetic.
+ */
+export function playbookExtraFees(p: SnapshotProtocol, capital: number): PlaybookFee[] {
+  const fees: PlaybookFee[] = [];
+  const mech = mechanismFor(p);
+  if (mech === 'liquidity provision') {
+    const half = capital / 2;
+    const swap = round2(half * 0.003);
+    fees.push({ label: 'Entry swap (USDC → paired asset)', amountUsd: swap, basis: `0.30% of half the capital ($${half})` });
+    fees.push({ label: 'Exit swap (paired asset → USDC)', amountUsd: swap, basis: `0.30% of half the capital ($${half})` });
+  } else if (mech === 'staked receipt') {
+    const swap = round2(capital * 0.003);
+    fees.push({ label: 'Entry swap (USDC → staking asset)', amountUsd: swap, basis: '0.30% of the capital' });
+    fees.push({ label: 'Exit swap (staking asset → USDC)', amountUsd: swap, basis: '0.30% of the capital' });
+  }
+  const primary = primaryChain(p);
+  const second = p.chains.length >= 3 ? p.chains[1]! : null;
+  const touched = second === null ? [primary] : [primary, second];
+  for (const chain of touched) {
+    if (chain.trim().toLowerCase() === 'ethereum') continue;
+    fees.push({ label: `Bridge to ${chain === '' ? 'main chain' : chain}`, amountUsd: 2, basis: '$2.00 flat allowance per non-Ethereum chain touched' });
+  }
+  for (const chain of touched) {
+    fees.push({ label: `Exit gas (${chain === '' ? 'main chain' : chain})`, amountUsd: round2(gasPerTx(chain)), basis: '1 transaction at that chain\u2019s gas price' });
+  }
+  fees.push({ label: 'Deposit / withdrawal protocol fee', amountUsd: 0, basis: 'assumed $0 — no protocol-level deposit or withdrawal fee; verify on the protocol\u2019s own page' });
+  return fees;
+}
+
+/** The exit, in one sentence, from the same mechanism and chains as the entry. */
+export function exitFor(p: SnapshotProtocol): string {
+  const chain = primaryChain(p) === '' ? 'its main chain' : primaryChain(p);
+  const second = p.chains.length >= 3 ? p.chains[1]! : null;
+  const mech = mechanismFor(p);
+  let s: string;
+  if (mech === 'liquidity provision') s = `Withdraw the liquidity from ${p.name} on ${chain}, swap the paired asset back to USDC, and bridge back to Ethereum if the funds started there.`;
+  else if (mech === 'yield-bearing mint') s = `Redeem or sell the yield-bearing asset through ${p.name} on ${chain} and bridge back to Ethereum if the funds started there.`;
+  else if (mech === 'lending supply') s = `Withdraw the USDC supply from ${p.name} on ${chain} and bridge back to Ethereum if the funds started there.`;
+  else if (mech === 'staked receipt') s = `Unstake through ${p.name} on ${chain}, swap the staking asset back to USDC, and bridge back to Ethereum if the funds started there.`;
+  else s = `Unwind the position on ${p.name} on ${chain} and bridge back to Ethereum if the funds started there.`;
+  if (second !== null) s += ` Repeat the unwind on ${second}.`;
+  return s;
+}
+
+/**
+ * One row's fully costed playbook. Board figures are taken from the row
+ * itself (already rounded to cents by buildBoard/attachBands), so the
+ * fully costed figures reconcile with the board by construction:
+ * netEvFull = netEvBoard − extraTotal, at p10, p25, p50 and p75 alike, and
+ * breakevenFull is the board's own break-even plus the break-even effect
+ * of the extra fees (extraTotal × TVL / (poolShare × capital)) — exact by
+ * construction, and it keeps the board's break-even figure (computed in
+ * attachBands from the unrounded cost) as the base instead of recomputing
+ * it from the rounded total and drifting by cents. The p10 and p75 net EVs
+ * rerun verdictFor's exact pool/share arithmetic at the p10 and p75
+ * implied values with the cost unchanged.
+ */
+export function buildPlaybook(row: BoardRow, p: SnapshotProtocol, model: ModelConstants = MODEL): Playbook {
+  const steps = farmSteps(p, row.age_days, model);
+  const vP10 = verdictFor(p, row.uncertainty!.p10, steps, model);
+  const vP75 = verdictFor(p, row.uncertainty!.p75, steps, model);
+  const fees = playbookExtraFees(p, row.farm.capital);
+  const extraTotal = round2(fees.reduce((s, f) => s + f.amountUsd, 0));
+  // Group the extra fees by kind, from the fee labels: swaps are the
+  // entry + exit swaps; bridges are the $2.00 allowances (one per
+  // non-Ethereum chain touched); gas is the exit transactions (one per
+  // chain touched). The deposit/withdrawal protocol fee is $0 and
+  // contributes nothing. The three groups sum exactly to extraTotal.
+  const feeSplit: PlaybookFeeSplit = { swap: 0, bridge: 0, bridgeChains: 0, gas: 0, gasTxs: 0 };
+  for (const f of fees) {
+    if (f.label.startsWith('Entry swap') || f.label.startsWith('Exit swap')) feeSplit.swap = round2(feeSplit.swap + f.amountUsd);
+    else if (f.label.startsWith('Bridge')) { feeSplit.bridge = round2(feeSplit.bridge + f.amountUsd); feeSplit.bridgeChains++; }
+    else if (f.label.startsWith('Exit gas')) { feeSplit.gas = round2(feeSplit.gas + f.amountUsd); feeSplit.gasTxs++; }
+  }
+  const total = row.farm.totalCost;
+  const breakevenBoard = row.farm.breakevenValue ?? 0;
+  const breakevenFull = round2(breakevenBoard + (extraTotal * p.tvl_usd) / (model.poolShare * row.farm.capital));
+  return {
+    entryChain: primaryChain(p),
+    secondChain: p.chains.length >= 3 ? p.chains[1]! : null,
+    capital: row.farm.capital,
+    holdDays: holdDaysFor(row.age_days),
+    handsOnMinutes: row.farm.handsOnMinutes ?? steps.reduce((s, st) => s + st.handsOnMinutes, 0),
+    boardGas: row.farm.gasTotal,
+    boardOpp: row.farm.oppCost,
+    boardTotal: total,
+    extraFees: fees,
+    extraTotal,
+    feeSplit,
+    fullyCostedTotal: round2(total + extraTotal),
+    netEvBoard: row.farm.netEv,
+    netEvP10Board: round2(vP10.netEv),
+    netEvP25Board: row.farm.netEvP25 ?? 0,
+    netEvP75Board: round2(vP75.netEv),
+    netEvFull: round2(row.farm.netEv - extraTotal),
+    netEvP10Full: round2(vP10.netEv - extraTotal),
+    netEvP25Full: round2((row.farm.netEvP25 ?? 0) - extraTotal),
+    netEvP75Full: round2(vP75.netEv - extraTotal),
+    breakevenBoard,
+    breakevenFull,
+    exit: exitFor(p),
+  };
+}
+
+/**
+ * Attach a playbook to the rows that need one: every P25-POSITIVE row and
+ * the top 5 FARM rows by net EV (verdict FARM or P25-POSITIVE), deduped.
+ * Runs after attachBands — the P25-POSITIVE promotion and the p25 /
+ * break-even figures must exist first. The model and the verdict rule are
+ * untouched; this only costs what the board already decided to farm.
+ */
+export function attachPlaybooks(board: BoardRow[], snapshot: Snapshot, model: ModelConstants = MODEL): void {
+  const index = bySlug(snapshot.protocols);
+  const chosen = new Map<string, BoardRow>();
+  for (const r of board) if (r.farm.verdict === 'P25-POSITIVE') chosen.set(r.slug, r);
+  const topFarm = board
+    .filter((r) => r.farm.verdict === 'FARM' || r.farm.verdict === 'P25-POSITIVE')
+    .sort((a, b) => b.farm.netEv - a.farm.netEv || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0))
+    .slice(0, 5);
+  for (const r of topFarm) chosen.set(r.slug, r);
+  for (const r of chosen.values()) {
+    const p = index.get(r.slug);
+    if (p !== undefined) r.playbook = buildPlaybook(r, p, model);
+  }
+}
+
 /** The snapshot's protocol by slug. */
 function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
   return new Map(protocols.map((p) => [p.slug, p]));
@@ -1685,6 +1900,9 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   // methodology panel's calibration numbers are the same ones the board displays.
   const bandCal = bandCalibration(snapshot, model);
   const bandWidths = attachBands(board, fit, snapshot, model);
+  // The playbooks cost what the board already decided to farm: they run
+  // after the bands (P25-POSITIVE promotion, p25, break-even) exist.
+  attachPlaybooks(board, snapshot, model);
   const radar: RadarData = {
     as_of: snapshot.as_of,
     source: snapshot.source,

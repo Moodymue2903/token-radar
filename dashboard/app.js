@@ -245,10 +245,64 @@
     }
     return steps;
   }
+  // The playbook's extra fees, recomputed in-page from the row's own
+  // record — the same rules main.ts runs, so the check below catches any
+  // drift between the data file and the page. Swap 0.30% (standard AMM
+  // tier): liquidity swaps half the capital each way, a stake swaps the
+  // whole capital each way; $2.00 flat per non-Ethereum chain touched;
+  // one exit transaction per chain touched at that chain's gas price;
+  // deposit/withdrawal protocol fee $0.
+  function r2(n) { return Math.round(n * 100) / 100; }
+  function playbookFeesFor(r) {
+    var fees = [];
+    var capital = r.farm.capital;
+    var mech = r.mechanism || '';
+    if (mech === 'liquidity provision') {
+      var halfSwap = r2((capital / 2) * 0.003);
+      fees.push(halfSwap, halfSwap);
+    } else if (mech === 'staked receipt') {
+      var fullSwap = r2(capital * 0.003);
+      fees.push(fullSwap, fullSwap);
+    }
+    var touched = [primaryChain(r)];
+    if (r.chains.length >= 3) touched.push(r.chains[1]);
+    touched.forEach(function (chain) {
+      if ((chain || '').trim().toLowerCase() !== 'ethereum') fees.push(2);
+    });
+    touched.forEach(function (chain) {
+      fees.push(r2(gasPerTx(chain)));
+    });
+    fees.push(0);
+    return fees;
+  }
+  // The playbook's extra fees grouped by kind — the same grouping
+  // main.ts runs (swap / bridge / exit gas), so the check below catches
+  // any drift between the data file and the page. Swap is the entry +
+  // exit swaps (LP rows swap half the capital each way, a stake swaps
+  // the whole capital each way; every other mechanism swaps nothing);
+  // bridge is $2.00 per non-Ethereum chain touched; gas is one exit
+  // transaction per chain touched. The three sum to the extra total.
+  function playbookSplitFor(r) {
+    var mech = r.mechanism || '';
+    var capital = r.farm.capital;
+    var split = { swap: 0, bridge: 0, bridgeChains: 0, gas: 0, gasTxs: 0 };
+    if (mech === 'liquidity provision') split.swap = r2(r2((capital / 2) * 0.003) * 2);
+    else if (mech === 'staked receipt') split.swap = r2(r2(capital * 0.003) * 2);
+    var touched = [primaryChain(r)];
+    if (r.chains.length >= 3) touched.push(r.chains[1]);
+    touched.forEach(function (chain) {
+      if ((chain || '').trim().toLowerCase() !== 'ethereum') { split.bridge = r2(split.bridge + 2); split.bridgeChains++; }
+    });
+    touched.forEach(function (chain) {
+      split.gas = r2(split.gas + r2(gasPerTx(chain))); split.gasTxs++;
+    });
+    return split;
+  }
 
   // ---- self-checks: the page's arithmetic must match the board's data ----
   var recomputeBad = 0;
   var farmBad = 0;
+  var playbookBad = 0;
   DATA.rows.forEach(function (r) {
     if (impliedOf(r) !== r.implied_value_usd) recomputeBad++;
     var gen = farmStepsFor(r, r.age_days).map(stepText);
@@ -256,8 +310,43 @@
     for (var i = 0; i < gen.length; i++) {
       if (gen[i] !== r.farm_steps[i]) { farmBad++; break; }
     }
+    // Playbook check: the extra fees recomputed in-page must match the
+    // data file's fee lines, and the fully costed figures must be the
+    // board figures minus those fees.
+    if (r.playbook) {
+      var pb = r.playbook;
+      var fees = playbookFeesFor(r);
+      var extra = r2(fees.reduce(function (s, x) { return s + x; }, 0));
+      var ok = true;
+      if (pb.extraFees.length !== fees.length) ok = false;
+      else {
+        for (var j = 0; j < fees.length; j++) {
+          if (Math.abs(pb.extraFees[j].amountUsd - fees[j]) > 0.005) { ok = false; break; }
+        }
+      }
+      if (Math.abs(pb.extraTotal - extra) > 0.005) ok = false;
+      if (Math.abs(pb.fullyCostedTotal - r2(pb.boardTotal + extra)) > 0.005) ok = false;
+      if (Math.abs(pb.netEvFull - r2(pb.netEvBoard - extra)) > 0.005) ok = false;
+      if (Math.abs(pb.netEvP10Full - r2(pb.netEvP10Board - extra)) > 0.005) ok = false;
+      if (Math.abs(pb.netEvP25Full - r2(pb.netEvP25Board - extra)) > 0.005) ok = false;
+      if (Math.abs(pb.netEvP75Full - r2(pb.netEvP75Board - extra)) > 0.005) ok = false;
+      if (Math.abs(pb.breakevenFull - r2(pb.breakevenBoard + (extra * r.tvl_usd) / (MODEL.poolShare * pb.capital))) > 0.005) ok = false;
+      // Fee-split check: the grouped split in the data file must match
+      // the recomputation, and the three groups must sum to the extra total.
+      var sp = playbookSplitFor(r);
+      if (!pb.feeSplit) ok = false;
+      else {
+        if (Math.abs(pb.feeSplit.swap - sp.swap) > 0.005) ok = false;
+        if (Math.abs(pb.feeSplit.bridge - sp.bridge) > 0.005) ok = false;
+        if (pb.feeSplit.bridgeChains !== sp.bridgeChains) ok = false;
+        if (Math.abs(pb.feeSplit.gas - sp.gas) > 0.005) ok = false;
+        if (pb.feeSplit.gasTxs !== sp.gasTxs) ok = false;
+        if (Math.abs(r2(pb.feeSplit.swap + pb.feeSplit.bridge + pb.feeSplit.gas) - extra) > 0.005) ok = false;
+      }
+      if (!ok) playbookBad++;
+    }
   });
-  window.__CHECKS__ = { recomputeMismatches: recomputeBad, farmMismatches: farmBad, rows: DATA.rows.length };
+  window.__CHECKS__ = { recomputeMismatches: recomputeBad, farmMismatches: farmBad, playbookMismatches: playbookBad, rows: DATA.rows.length };
 
   // ---- SVG charts ----
   function fmtAxisDollar(e) {
@@ -357,11 +446,13 @@
     s += '</svg>';
     return s;
   }
-  // Calibration chart: fitted values vs actuals for the fit peers, with a +/-2x band.
+  // Calibration chart: out-of-fold fitted values vs actuals for the fit peers, with a +/-2x band.
+  // Each peer is predicted by a model fitted without it — the same
+  // out-of-sample basis as the LOO numbers above, not the in-sample fit.
   function calibrationChart() {
     var W = 560, H = 300, L = 52, R = 14, T = 12, B = 34;
     var pts = DATA.peers.map(function (p) {
-      var pred = impliedOf({ tvl_usd: p.tvl_usd, category: p.category, change_7d: null, age_days: null });
+      var pred = (p.oofImplied !== null && p.oofImplied !== undefined && p.oofImplied > 0) ? p.oofImplied : impliedOf({ tvl_usd: p.tvl_usd, category: p.category, change_7d: null, age_days: null });
       return { a: Math.log10(p.mcap_usd), p: Math.log10(pred) };
     });
     var all = pts.reduce(function (acc, q) { return acc.concat([q.a, q.p]); }, []);
@@ -377,7 +468,7 @@
     pts.forEach(function (q) {
       s += '<circle cx="' + X(q.a).toFixed(1) + '" cy="' + Y(q.p).toFixed(1) + '" r="2.4" fill="#7aa7c9" opacity="0.65"/>';
     });
-    s += '<text x="' + L + '" y="' + (H - 22) + '" fill="#6f6d66" font-size="10">Fitted vs actual market cap, log-log, for the ' + FIT.peerCount + ' peers. Band: +/-2x. In-sample fit; the LOO numbers above are the honest out-of-sample test.</text>';
+    s += '<text x="' + L + '" y="' + (H - 22) + '" fill="#6f6d66" font-size="10">Out-of-fold fitted vs actual market cap, log-log, for the ' + FIT.peerCount + ' peers. Band: +/-2x. Each peer is predicted by a model fitted without it, so this chart and the LOO numbers above share the same out-of-sample basis. The dots may look noisier than round 5\u2019s in-sample scatter \u2014 that is the point: the in-sample visual was flattering; out-of-fold is the honest basis.</text>';
     s += '</svg>';
     return s;
   }
@@ -388,13 +479,17 @@
   // band is the middle half of the leave-one-out actual/implied ratios.
   // The solid gold lines are the exact 1/3x and 3x scoring lines — distinct
   // from the shaded residual band, which is the 25th–75th percentile of the
-  // LOO residuals, not the scoring band. Implied values are recomputed
-  // in-page with no growth and no maturity, the same way the calibration
-  // chart computes them.
+  // LOO residuals, not the scoring band. The points are the peers'
+  // OUT-OF-FOLD implied values (each peer predicted by a model fitted
+  // without it), so the points and the shaded LOO residual band share the
+  // same out-of-sample basis — in-sample fitted values would sit
+  // systematically closer to ratio 1 than the band they are plotted
+  // against. Older data files without out-of-fold values fall back to the
+  // recomputed in-sample value.
   function ratioScatter() {
     var v = DATA.validation;
     var pts = DATA.peers.map(function (p) {
-      var imp = impliedOf({ tvl_usd: p.tvl_usd, category: p.category, change_7d: null, age_days: null });
+      var imp = (p.oofImplied !== null && p.oofImplied !== undefined && p.oofImplied > 0) ? p.oofImplied : impliedOf({ tvl_usd: p.tvl_usd, category: p.category, change_7d: null, age_days: null });
       return { x: Math.log10(p.tvl_usd), y: Math.log10(p.mcap_usd / imp) };
     });
     if (pts.length === 0) return '';
@@ -445,14 +540,39 @@
     pts.forEach(function (q) {
       s += '<circle cx="' + X(q.x).toFixed(1) + '" cy="' + Y(q.y).toFixed(1) + '" r="3" fill="#7aa7c9" opacity="0.7"/>';
     });
-    s += '<text x="' + L + '" y="' + (H - 8) + '" fill="#6f6d66" font-size="10">Each dot is one of the ' + DATA.peers.length + ' fit peers: x = TVL, y = actual market cap / implied value. Dashed line: ratio 1, the market agreeing with the yardstick. Solid gold lines: the 3x scoring lines (actual/implied = 3 and 1/3) \u2014 a peer counts as within-3x when it falls between them.' + (hasBand ? ' Shaded band: the middle half of leave-one-out ratios, ' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x \u2014 a residual band (the 25th\u201375th percentile of the LOO residuals), not the scoring band.' : ' No leave-one-out band in this data file, so no shading is drawn.') + '</text>';
+    s += '<text x="' + L + '" y="' + (H - 8) + '" fill="#6f6d66" font-size="10">Each dot is one of the ' + DATA.peers.length + ' fit peers: x = TVL, y = actual market cap / out-of-fold implied value. The dots are out-of-fold predictions (each peer predicted by a model fitted without it), so the dots and the shaded LOO residual band share the same out-of-sample basis. The dots may look noisier than round 5\u2019s in-sample scatter \u2014 that is the point: the in-sample visual was flattering; out-of-fold is the honest basis. Dashed line: ratio 1, the market agreeing with the yardstick. Solid gold lines: the 3x scoring lines (actual/implied = 3 and 1/3) \u2014 a peer counts as within-3x when it falls between them.' + (hasBand ? ' Shaded band: the middle half of leave-one-out ratios, ' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x \u2014 a residual band (the 25th\u201375th percentile of the LOO residuals), not the scoring band.' : ' No leave-one-out band in this data file, so no shading is drawn.') + '</text>';
     s += '</svg>';
     return s;
   }
 
   // ---- views ----
+  // The P25-POSITIVE badge, renamed (round 6): the badge is defined on
+  // BOARD costs (gas + opportunity cost) and disagrees with the fully
+  // costed p25 on 3 of its 5 rows, so the rendered label says so — the
+  // underlying verdict value in the data stays 'P25-POSITIVE' (filters,
+  // counts and the self-check compare against it), but no rendered text,
+  // class or option value carries the bare string. The filter uses the
+  // slug 'p25p' for the same reason.
+  function verdictLabel(v) {
+    return v === 'P25-POSITIVE' ? 'Board P25-positive (pre-fee)' : v;
+  }
+  function verdictClass(v) {
+    return v === 'P25-POSITIVE' ? 'P25P' : v;
+  }
+  function verdictFilterValue(v) {
+    return v === 'P25-POSITIVE' ? 'p25p' : v;
+  }
+  function verdictFromFilter(f) {
+    return f === 'p25p' ? 'P25-POSITIVE' : f;
+  }
+  // P25-FULL marker: the row still breaks even at p25 once every fee is
+  // counted. Only Binaryx and Theo do, of the 5 pre-fee P25-positive rows.
+  function p25FullMarker(row) {
+    if (!row.playbook || row.farm.verdict !== 'P25-POSITIVE' || row.playbook.netEvP25Full < 0) return '';
+    return ' <span class="badge P25FULL">P25-FULL \u2713</span>';
+  }
   function verdictBadge(v) {
-    return '<span class="badge ' + v + '">' + v + '</span>';
+    return '<span class="badge ' + verdictClass(v) + '">' + verdictLabel(v) + '</span>';
   }
   function filteredRows() {
     var q = state.q.trim().toLowerCase();
@@ -461,7 +581,7 @@
       if (q && (r.name.toLowerCase().indexOf(q) < 0 && r.slug.toLowerCase().indexOf(q) < 0)) return false;
       if (state.category !== 'all' && (r.category || '') !== state.category) return false;
       if (state.chain !== 'all' && (r.chains[0] || '') !== state.chain) return false;
-      if (state.verdict !== 'all' && r.farm.verdict !== state.verdict) return false;
+      if (state.verdict !== 'all' && r.farm.verdict !== verdictFromFilter(state.verdict)) return false;
       if (minImp > 0 && r.implied_value_usd < minImp) return false;
       return true;
     });
@@ -509,7 +629,7 @@
     var p25 = (best.farm.netEvP25 !== null && best.farm.netEvP25 !== undefined) ? ', ' + (best.farm.netEvP25 >= 0 ? '+' : '') + fmtUsd2(best.farm.netEvP25) + ' at p25' : '';
     return '<div class="panel callout"><h2>Best return on your time</h2>' +
       '<p><b>' + esc(best.name) + '</b> ' + verdictBadge(best.farm.verdict) + ' &middot; <span class="bignum">' + fmtPerHour(best.farm.netPerHour) + '</span> net per hands-on hour' + mins + p25 + '. ' +
-      'That is the highest net expected value per hour among the rows that clear FARM or P25-POSITIVE \u2014 the same farm arithmetic as every other row, divided by the time the plan asks you to spend. A big implied value that takes hours to chase can be worth less than a small one that takes minutes.</p>' +
+      'That is the highest net expected value per hour among the rows that clear FARM or Board P25-positive (pre-fee) \u2014 the same farm arithmetic as every other row, divided by the time the plan asks you to spend. A big implied value that takes hours to chase can be worth less than a small one that takes minutes.</p>' +
       '<p class="fine">Assumptions behind the $/h: $' + best.farm.capital.toLocaleString('en-US') + ' of capital, gas at November 2026 typical levels, opportunity cost ' + (MODEL.oppRate * 100).toFixed(1) + '% a year for ' + MODEL.holdDays + ' days, and the airdrop pool (' + (MODEL.poolShare * 100).toFixed(0) + '% of implied value) paid in full with no vesting or lockup \u2014 the snapshot cannot establish that a token or an airdrop will happen at all.</p></div>';
   }
   // The aggregate session plan: the P25-positive farms together, as one
@@ -526,7 +646,76 @@
     });
     var names = rows.map(function (r) { return esc(r.name); }).join(', ');
     return '<div class="panel callout"><h2>The whole plan, in one paragraph</h2>' +
-      '<p>Farm all ' + rows.length + ' P25-positive rows (' + names + '): <b>+$' + tot.toFixed(2) + ' expected net EV</b>, <b>+$' + tot25.toFixed(2) + ' at p25</b>, ' + mins + ' hands-on minutes (about ' + (mins / 60).toFixed(1) + ' hours). That is the entire plan this board can stand behind \u2014 ' + rows.length + ' farms, $' + Math.round(tot) + ' expected, $' + Math.round(tot25) + ' if the value lands at the 25th percentile. The floor is thin: ' + thin + ' of the ' + rows.length + ' clear break-even at p25 by less than a dollar, and 1 in 4 realisations lands below p25.</p></div>';
+      '<p>Farm all ' + rows.length + ' Board P25-positive (pre-fee) rows (' + names + '): <b>+$' + tot.toFixed(2) + ' expected net EV</b>, <b>+$' + tot25.toFixed(2) + ' at p25</b>, ' + mins + ' hands-on minutes (about ' + (mins / 60).toFixed(1) + ' hours). That is the entire plan this board can stand behind \u2014 ' + rows.length + ' farms, $' + Math.round(tot) + ' expected, $' + Math.round(tot25) + ' if the value lands at the 25th percentile. The floor is thin: ' + thin + ' of the ' + rows.length + ' clear break-even at p25 by less than a dollar, and 1 in 4 realisations lands below p25. Fully costed, 3 of the ' + rows.length + ' no longer break even at p25 \u2014 see the playbooks.</p></div>';
+  }
+  // The fee disclosures, in one place: every playbook header and the
+  // methodology carry this same block, so a reader never has to hunt for
+  // what the costing leaves out. All six are stated assumptions, not
+  // measured prices — the snapshot carries no fee data. The opportunity
+  // cost is NOT excluded: the board counts it at 4.5% a year for 90 days
+  // ($27.74 on $2,500), which is above the ~$25 risk-free benchmark at
+  // 4% APY, so the board's figure is the conservative one. The deposit /
+  // withdrawal sensitivity is 0.5% of the $2,500 capital ($12.50).
+  function playbookDisclosuresHtml() {
+    return '<p class="fine"><b>What this costing leaves out.</b> Deposit/withdrawal assumed $0 (not verified per-protocol; would be $12.50 at 0.5% of the $2,500 capital). Slippage not modeled (0.30% = pool fee only). Bridge $2.00 flat per non-Ethereum chain (point estimate). Gas snapshot ' + esc(DATA.as_of) + '. Opportunity cost is counted, not excluded: the board charges 4.5% a year for 90 days ($27.74 on $2,500), above the ~$25 risk-free benchmark at 4% APY. Counts 1 entry + 1 exit transaction per chain (assumes pre-approved spend); the actual exit is 1\u20134 transactions per chain by mechanism.</p>';
+  }
+  // The extra-fee split as one line: swap / bridge (chain count) / gas
+  // (tx count), total = extra. When the swap is $0 the mechanism is
+  // named, so "no swap" reads as a property of the farm, not a missing fee.
+  function feeSplitText(pb, row) {
+    var sp = pb.feeSplit;
+    var s = 'swap ' + fmtUsd2(sp.swap) + (sp.swap === 0 ? ' (no swap \u2014 ' + esc(row.mechanism || 'this farm') + ' takes USDC directly, no paired-asset swap)' : ' (entry + exit at 0.30%)') +
+      ' \u00b7 bridge ' + fmtUsd2(sp.bridge) + ' (' + sp.bridgeChains + ' chain' + (sp.bridgeChains === 1 ? '' : 's') + ')' +
+      ' \u00b7 gas ' + fmtUsd2(sp.gas) + ' (' + sp.gasTxs + ' tx' + (sp.gasTxs === 1 ? '' : 's') + ')' +
+      ' = ' + fmtUsd2(pb.extraTotal) + ' total';
+    return s;
+  }
+  // The playbooks, at a glance: every P25-positive row and the top-5 FARM
+  // rows, with the full costing the board's cost model does not count
+  // (swaps, bridges, the exit transaction). The Net EVs here are FULLY
+  // COSTED — the board's NetEV minus the extra fees — so they are lower
+  // than the board's NetEV by exactly the extra fees. The board's verdicts
+  // are unchanged: they are defined on board costs (gas + opportunity
+  // cost), and the playbook does not re-decide them. The honest headline
+  // is counted from the rows, never hardcoded.
+  function playbooksHtml() {
+    var rows = DATA.rows.filter(function (r) { return r.playbook; });
+    if (rows.length === 0) return '';
+    rows.sort(function (a, b) { return b.playbook.netEvFull - a.playbook.netEvFull; });
+    var p25rows = rows.filter(function (r) { return r.farm.verdict === 'P25-POSITIVE'; });
+    var p25survive = p25rows.filter(function (r) { return r.playbook.netEvP25Full >= 0; }).length;
+    // The dedup, stated explicitly: the top-5 FARM rows by NetEV are the
+    // 3 pre-fee P25-positive rows plus 2 pure FARM rows — the playbooks
+    // cover all 5 pre-fee P25-positive rows and the 2 pure FARM rows.
+    var farmTop = DATA.rows.filter(function (r) { return r.farm.verdict === 'FARM' || r.farm.verdict === 'P25-POSITIVE'; })
+      .sort(function (a, b) { return b.farm.netEv - a.farm.netEv || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0); }).slice(0, 5);
+    var pureFarm = farmTop.filter(function (r) { return r.farm.verdict === 'FARM'; });
+    var p10min = null, p10max = null;
+    rows.forEach(function (r) {
+      if (p10min === null || r.playbook.netEvP10Full < p10min) p10min = r.playbook.netEvP10Full;
+      if (p10max === null || r.playbook.netEvP10Full > p10max) p10max = r.playbook.netEvP10Full;
+    });
+    var h = '<div class="panel"><h2>Playbooks: the farms, fully costed</h2>' +
+      '<p>Each farm below carries a complete playbook on its detail view: the entry, every fee, the hold and the exit. Playbooks cover all 5 Board P25-positive (pre-fee) rows plus the top-5 FARM rows by NetEV, deduped \u2014 the top-5 FARM by NetEV are ' + farmTop.map(function (r) { return esc(r.name); }).join(', ') + ', of which ' + pureFarm.length + ' are pure FARM rows (' + pureFarm.map(function (r) { return esc(r.name); }).join(', ') + ') and the rest are already Board P25-positive (pre-fee), so the dedup leaves ' + rows.length + ' playbooks in total. <b>Net EVs here are fully costed</b> \u2014 the board\u2019s NetEV minus the extra fees (swaps at the standard 0.30% AMM tier, a $2.00 flat bridge allowance per non-Ethereum chain, one exit transaction per chain; no protocol-level deposit or withdrawal fee is assumed) \u2014 so each is lower than the board\u2019s NetEV by exactly the extra fees. The board\u2019s verdicts are unchanged: they are defined on board costs (gas + opportunity cost), and the playbook does not re-decide them.</p>' +
+      '<table class="plain"><thead><tr><th>Farm</th><th class="num">Entry</th><th class="num">Board cost</th><th class="num">Extra fees</th><th class="num">Hold</th><th class="num">Net EV p10</th><th class="num">Net EV p25</th><th class="num">Net EV</th><th class="num">Net EV p75</th><th class="num">Break-even / Implied (market cap, fully-costed)</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      var pb = r.playbook;
+      var margin = (pb.breakevenFull > 0 && r.implied_value_usd > 0) ? (r.implied_value_usd / pb.breakevenFull) : null;
+      h += '<tr><td><b>' + esc(r.name) + '</b> ' + verdictBadge(r.farm.verdict) + p25FullMarker(r) + '<span class="cat">' + esc(pb.entryChain || 'main chain') + (pb.secondChain ? ' + ' + esc(pb.secondChain) : '') + ' &middot; ' + esc(r.mechanism || '') + '</span></td>' +
+        '<td class="num">$' + pb.capital.toLocaleString('en-US') + '</td>' +
+        '<td class="num">' + fmtUsd2(pb.boardTotal) + '</td>' +
+        '<td class="num">' + fmtUsd2(pb.extraTotal) + '<span class="feesplit">' + feeSplitText(pb, r) + '</span></td>' +
+        '<td class="num">' + pb.holdDays + 'd</td>' +
+        '<td class="num">' + (pb.netEvP10Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP10Full) + '</td>' +
+        '<td class="num">' + (pb.netEvP25Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Full) + '<span class="feesplit">board ' + (pb.netEvP25Board >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Board) + '</span></td>' +
+        '<td class="num"><b>' + (pb.netEvFull >= 0 ? '+' : '') + fmtUsd2(pb.netEvFull) + '</b></td>' +
+        '<td class="num">' + (pb.netEvP75Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP75Full) + '</td>' +
+        '<td class="num">' + fmtUsd(pb.breakevenFull) + ' / ' + fmtUsd(r.implied_value_usd) + (margin === null ? '' : '<span class="feesplit">' + margin.toFixed(2) + 'x safety margin</span>') + '</td></tr>';
+    });
+    h += '</tbody></table>' +
+      '<p class="fine">Fully costed, ' + p25survive + ' of the ' + p25rows.length + ' Board P25-positive (pre-fee) rows still break even at p25 (' + p25rows.filter(function (r) { return r.playbook.netEvP25Full >= 0; }).map(function (r) { return esc(r.name); }).join(', ') + (p25survive > 0 ? '' : 'none') + '); the others clear break-even at the median but not at the 25th percentile once swaps, bridges and the exit are counted. That does not change their Board P25-positive (pre-fee) badge \u2014 the badge is defined on board costs \u2014 but a farmer should know the fully costed floor before committing capital. At p10 every playbook is negative (' + fmtUsd2(p10min) + ' to ' + fmtUsd2(p10max) + ' fully costed): the 10th percentile of the 80% band is below break-even on every farm, which is why the board\u2019s verdict is a median rule, not a p10 rule. Every figure in this table is computed from the row\u2019s own data; the swap, bridge and exit assumptions are stated on each playbook.</p>' +
+      playbookDisclosuresHtml() + '</div>';
+    return h;
   }
   // Verdict counts and the central band, across the whole board (not the
   // filtered view, so a search never rewrites them). P25-POSITIVE is a
@@ -537,7 +726,7 @@
     var farmTotal = (c['P25-POSITIVE'] || 0) + c.FARM;
     var w = medianBand50Width();
     var v = DATA.validation;
-    var h = '<div class="panel bandstrip"><p><b>Verdicts:</b> FARM ' + farmTotal + ', incl. ' + (c['P25-POSITIVE'] || 0) + ' P25-positive &middot; THIN ' + c.THIN + ' &middot; SKIP ' + c.SKIP + '. P25-POSITIVE is a subset of FARM (' + (c['P25-POSITIVE'] || 0) + ' of ' + farmTotal + '), not a fourth tier.</p>';
+    var h = '<div class="panel bandstrip"><p><b>Verdicts:</b> FARM ' + farmTotal + ', incl. ' + (c['P25-POSITIVE'] || 0) + ' Board P25-positive (pre-fee) &middot; THIN ' + c.THIN + ' &middot; SKIP ' + c.SKIP + '. Board P25-positive (pre-fee) is a subset of FARM (' + (c['P25-POSITIVE'] || 0) + ' of ' + farmTotal + '), not a fourth tier. Fully costed p25 nets all fees; 3 of the 5 pre-fee P25-positive rows are negative once costs are counted (see playbooks).</p>';
     if (w !== null) h += '<p><b>The middle half:</b> across the board, the central band (45% coverage, p25\u2013p75) spans a median of ' + w.toFixed(1) + 'x from low end to high end \u2014 half of each row\u2019s plausible value sits inside that range, and half sits outside it.</p>';
     if (v.looBandRatioLo !== null && v.looBandRatioLo !== undefined && v.looBandRatioHi !== null && v.looBandRatioHi !== undefined) {
       h += '<p><b>Leave-one-out check:</b> the middle half of actual/implied ratios across the fit peers runs ' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x \u2014 that is the shaded band in the scatter chart above.</p>';
@@ -578,28 +767,41 @@
     var chainOpts = ['<option value="all">All chains</option>'].concat(Object.keys(chains).sort().map(function (c) {
       return '<option value="' + esc(c) + '"' + (state.chain === c ? ' selected' : '') + '>' + esc(c) + '</option>';
     })).join('');
+    var wlTotal = 0;
+    DATA.rows.forEach(function (r) { if (r.is_watchlist) wlTotal += r.implied_value_usd; });
     var h = '<div class="panel mapwrap">' + bubbleMap(DATA.rows) +
-      '<div class="legend"><span><i style="background:#2fd6a3"></i>P25-POSITIVE</span><span><i style="background:#4caf7d"></i>FARM</span><span><i style="background:#d9a441"></i>THIN</span><span><i style="background:#6b6f76"></i>SKIP</span><span>' + DATA.board_size + ' protocols, ' + DATA.watchlist_size + ' on the watchlist, ranked by implied token market capitalisation. P25-POSITIVE is a subset of FARM, not a separate tier.</span></div></div>';
+      '<div class="legend"><span><i style="background:#2fd6a3"></i>Board P25-positive (pre-fee)</span><span><i style="background:#4caf7d"></i>FARM</span><span><i style="background:#d9a441"></i>THIN</span><span><i style="background:#6b6f76"></i>SKIP</span><span>' + DATA.board_size + ' protocols, ' + DATA.watchlist_size + ' on the watchlist, ranked by implied token market capitalisation. Board P25-positive (pre-fee) is a subset of FARM, not a separate tier. Fully costed p25 nets all fees; 3 of 5 pre-fee P25-positive rows are negative once costs are counted (see playbooks). Watchlist total ' + fmtUsd(wlTotal) + ' is the sum of the ' + DATA.watchlist_size + ' watchlist rows\u2019 point-estimate implied values, not expected capture.</span></div></div>';
     h += calibrationStripHtml();
     h += '<div class="panel mapwrap"><h2>Where the market sits against the yardstick</h2>' + ratioScatter() + '</div>';
     h += formulaBoxHtml();
     h += bestHourHtml();
     h += sessionPlanHtml();
+    h += playbooksHtml();
     h += boardSummaryHtml();
     h += '<div class="filters">' +
       '<input id="f-q" type="search" placeholder="Search name or slug" value="' + esc(state.q) + '">' +
       '<select id="f-cat">' + catOpts + '</select>' +
       '<select id="f-chain">' + chainOpts + '</select>' +
       '<select id="f-verdict"><option value="all">All verdicts</option>' +
-      ['P25-POSITIVE', 'FARM', 'THIN', 'SKIP'].map(function (v) { return '<option' + (state.verdict === v ? ' selected' : '') + '>' + v + '</option>'; }).join('') + '</select>' +
+      ['P25-POSITIVE', 'FARM', 'THIN', 'SKIP'].map(function (v) { return '<option value="' + verdictFilterValue(v) + '"' + (verdictFromFilter(state.verdict) === v ? ' selected' : '') + '>' + verdictLabel(v) + '</option>'; }).join('') + '</select>' +
       '<input id="f-min" type="number" min="0" step="1" placeholder="Min implied $M" value="' + esc(state.minImp) + '" style="flex:0 1 130px">' +
       '<span class="count">showing ' + rows.length + ' of ' + DATA.rows.length + '</span></div>';
     h += '<table><thead><tr>' +
-      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num">P10\u2013P90</th><th class="num">P25\u2013P75</th><th class="num">Multiple</th><th class="num">Gross</th><th class="num">Cost</th><th class="num">Net EV</th><th class="num" data-sort="breakeven">BE odds</th><th class="num" data-sort="perhour">Net $/h</th><th class="num">F-Hold</th><th>Verdict</th>' +
+      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num">P10\u2013P90</th><th class="num">P25\u2013P75</th><th class="num">Multiple</th><th class="num">Gross</th><th class="num">Cost</th><th class="num">Net EV</th><th class="num" data-sort="breakeven">BE odds</th><th class="num" data-sort="perhour">Net $/h</th><th class="num">Fees &middot; Hold</th><th>Verdict</th>' +
       '</tr></thead><tbody>';
     rows.forEach(function (r) {
       var chainList = (r.chains || []);
       var chainShown = chainList.slice(0, 3).join(', ') + (chainList.length > 3 ? ' +' + (chainList.length - 3) + ' more' : '');
+      // Verdict cell: the renamed badge, the P25-FULL marker where the row
+      // still breaks even fully costed, and the fully costed p25 inline
+      // beside the pre-fee p25 — the badge is defined on board costs, so
+      // the two p25 figures sit next to each other instead of disagreeing
+      // across tabs.
+      var vTitle = r.farm.verdict === 'THIN' ? 'THIN: net EV at least $0, but under $40 or under 1.5x the cost \u2014 clears neither FARM gate.' : r.farm.verdict === 'P25-POSITIVE' ? 'Board P25-positive (pre-fee): net EV still at least $0 at the 25th percentile of the model\u2019s out-of-sample error (1 in 4 realisations is worse), on board costs (gas + opportunity cost) only \u2014 the fully costed p25 is shown beside the badge.' : r.farm.verdict === 'FARM' ? 'FARM: net EV at least $40 and at least 1.5x the cost at the median.' : 'SKIP: net EV below $0 at the median.';
+      var vCell = verdictBadge(r.farm.verdict) + p25FullMarker(r);
+      if (r.farm.verdict === 'P25-POSITIVE' && r.playbook) {
+        vCell += '<span class="p25full">pre-fee p25 ' + (r.playbook.netEvP25Board >= 0 ? '+' : '') + fmtUsd2(r.playbook.netEvP25Board) + ' \u00b7 fully costed p25 ' + (r.playbook.netEvP25Full >= 0 ? '+' : '') + fmtUsd2(r.playbook.netEvP25Full) + '</span>';
+      }
       h += '<tr data-slug="' + esc(r.slug) + '">' +
         '<td class="num">' + r.rank + '</td>' +
         '<td><b>' + esc(r.name) + '</b><span class="cat">' + esc(r.category || 'Uncategorised') + ' &middot; ' + esc(chainShown || 'no chain') + '</span><span class="slug">' + esc(r.slug) + '</span>' + (r.is_watchlist ? '<span class="wl">WATCHLIST</span>' : '') + '<span class="mech">' + esc(r.mechanism || '') + '</span></td>' +
@@ -615,11 +817,11 @@
         '<td class="num">' + fmtUsd2(r.farm.netEv) + '</td>' +
         '<td class="num">' + fmtOdds(r.farm.breakevenOdds) + '</td>' +
         '<td class="num">' + fmtPerHour(r.farm.netPerHour) + '</td>' +
-        '<td class="num">' + fmtUsd2(r.farm.feesHold) + '</td>' +
-        '<td' + (r.farm.verdict === 'THIN' ? ' title="THIN: net EV at least $0, but under $40 or under 1.5x the cost \u2014 clears neither FARM gate."' : r.farm.verdict === 'P25-POSITIVE' ? ' title="P25-POSITIVE: net EV still at least $0 at the 25th percentile of the model\u2019s out-of-sample error (1 in 4 realisations is worse)."' : r.farm.verdict === 'FARM' ? ' title="FARM: net EV at least $40 and at least 1.5x the cost at the median."' : ' title="SKIP: net EV below $0 at the median."') + '>' + verdictBadge(r.farm.verdict) + '</td></tr>';
+        '<td class="num" title="Total farm cost: gas ' + fmtUsd2(r.farm.gasTotal) + ' + opportunity cost ' + fmtUsd2(r.farm.oppCost) + '; hold ' + holdDaysFor(r.age_days) + ' days">' + fmtUsd2(r.farm.totalCost) + ' &middot; ' + holdDaysFor(r.age_days) + 'd</td>' +
+        '<td title="' + vTitle + '">' + vCell + '</td></tr>';
     });
     h += '</tbody></table>';
-    h += '<p class="small">Implied value is the entry\u2019s own claim about what a token would be worth if the protocol\u2019s record stayed as it is \u2014 not a prediction of whether or when a token launches. A protocol is said to record no token, never that it has none.</p>';
+    h += '<p class="small">Implied value is the entry\u2019s own claim about what a token would be worth if the protocol\u2019s record stayed as it is \u2014 not a prediction of whether or when a token launches. A protocol is said to record no token, never that it has none. <b>Fees &middot; Hold</b> is the row\u2019s total farm cost (gas + opportunity cost) and the hold period in days \u2014 the farm verdict costed at a glance; the full costing, with swaps, bridges and the exit, is in the playbook on each FARM row\u2019s detail view.</p>';
     return h;
   }
   function liveHtml() {
@@ -633,6 +835,26 @@
     });
     h += '</tbody></table>';
     return h;
+  }
+  // The playbook costing, for the method tab: what the board's cost model
+  // leaves out, what the playbooks add, and what survives fully costed.
+  // Every number is counted from the rows, never hardcoded.
+  function playbookMethodHtml() {
+    var rows = DATA.rows.filter(function (r) { return r.playbook; });
+    if (rows.length === 0) return '';
+    var p25rows = rows.filter(function (r) { return r.farm.verdict === 'P25-POSITIVE'; });
+    var survive = p25rows.filter(function (r) { return r.playbook.netEvP25Full >= 0; });
+    var minFull = null, maxFull = null, minExtra = null, maxExtra = null;
+    rows.forEach(function (r) {
+      if (minFull === null || r.playbook.netEvFull < minFull) minFull = r.playbook.netEvFull;
+      if (maxFull === null || r.playbook.netEvFull > maxFull) maxFull = r.playbook.netEvFull;
+      if (minExtra === null || r.playbook.extraTotal < minExtra) minExtra = r.playbook.extraTotal;
+      if (maxExtra === null || r.playbook.extraTotal > maxExtra) maxExtra = r.playbook.extraTotal;
+    });
+    return '<h3>Playbooks: the farms, fully costed</h3>' +
+      '<p>Every Board P25-positive (pre-fee) row and the top-5 FARM rows carry a complete playbook on their detail view \u2014 the entry, every fee, the hold and the exit. Playbooks cover all 5 Board P25-positive (pre-fee) rows plus the top-5 FARM rows by NetEV, deduped: the top-5 FARM by NetEV include 3 rows already Board P25-positive (pre-fee), leaving 2 pure FARM rows, so the dedup leaves 7 playbooks in total. The board\u2019s cost model counts gas and opportunity cost only. A real farm also pays to get the capital in and out: a liquidity provision swaps half the capital into the paired asset at entry and back to USDC at exit (0.30% each way, the standard AMM tier); a stake swaps the whole capital both ways; a bridge to a non-Ethereum chain costs a $2.00 flat allowance per chain touched; unwinding the position costs one transaction per chain touched. The deposit/withdrawal protocol fee is assumed $0 \u2014 the protocols on this board charge no protocol-level deposit or withdrawal fee, and the playbook says to verify that on the protocol\u2019s own page. The swap rate and the bridge allowance are stated assumptions, not measured prices: the snapshot carries no fee data.</p>' +
+      '<p>Fully costed, the ' + rows.length + ' playbook farms net ' + fmtUsd2(minFull) + ' to ' + fmtUsd2(maxFull) + ' at the median (board NetEV minus the extra fees, which run ' + fmtUsd2(minExtra) + ' to ' + fmtUsd2(maxExtra) + ' per farm). At p25, ' + survive.length + ' of the ' + p25rows.length + ' Board P25-positive (pre-fee) rows still break even (' + survive.map(function (r) { return esc(r.name); }).join(', ') + (survive.length > 0 ? '' : 'none') + '); the others clear break-even at the median but not at the 25th percentile once the extra fees are counted. Their Board P25-positive (pre-fee) badge does not change \u2014 the badge is defined on board costs \u2014 but the fully costed floor is the number a farmer actually pockets, so the playbook prints both. Each playbook also breaks its extra fees into swap / bridge (chain count) / exit gas (tx count), so a $2.05 row reads as no swap plus one $2.00 bridge plus $0.05 exit gas \u2014 a property of its mechanism, not a missing fee.</p>' +
+      playbookDisclosuresHtml();
   }
   function methodHtml() {
     var v = DATA.validation;
@@ -698,7 +920,8 @@
       '<h3>Calibration</h3>' + calibrationChart() +
       '<h3>Farm verdicts</h3>' +
       '<p>Each row\u2019s verdict is a visible subtraction, not a threshold on value. The hypothetical airdrop pool is 8% of the implied value (a stated assumption \u2014 the snapshot cannot establish whether an airdrop will happen); the farmer\u2019s share is the pool times $2,500 of capital over the protocol\u2019s TVL; the cost is the steps\u2019 gas plus 4.5% a year on the capital for 90 days. <b>FARM</b> needs a net expected value of at least $40 and at least 1.5x the cost; <b>THIN</b> needs a net expected value of at least $0; anything else is <b>SKIP</b>. The $40 threshold was set from the distribution so that it adds nothing the 1.5x ratio test has not already selected. A $2.75B-TVL curator gives a $2,500 position almost nothing \u2014 that is dilution, honestly reported, and why an impressive TVL never automatically means FARM.</p>' +
-      '<p><b>P25-POSITIVE</b> is a FARM row whose net expected value is still at least $0 at the 25th percentile of the model\u2019s out-of-sample error (1 in 4 realisations is worse \u2014 p25 is not the low end), on top of the FARM gates ($40 net EV and 1.5x the cost at the median). No row on this board clears $40 at p25; the strongest p25 case is ' + (bestP25 === null ? 'n/a' : esc(bestP25.name) + ' at +' + fmtUsd2(bestP25.farm.netEvP25)) + '. The original $40-at-p25 bar returned zero rows, so the tier is defined by the break-even floor instead \u2014 a disclosed change, not a hidden one. P25-POSITIVE is a subset of FARM (' + (vc['P25-POSITIVE'] || 0) + ' of ' + farmTotal + '), not a fourth tier. Every row also carries its <b>break-even odds</b> \u2014 the chance the token\u2019s value lands above the value at which the farm breaks even \u2014 and its <b>net $/hour</b>, the net expected value divided by the hands-on minutes the plan asks for, so a slow farm can be compared with a quick one on the same footing.</p>' +
+      '<p><b>Board P25-positive (pre-fee)</b> is a FARM row whose net expected value is still at least $0 at the 25th percentile of the model\u2019s out-of-sample error (1 in 4 realisations is worse \u2014 p25 is not the low end), on top of the FARM gates ($40 net EV and 1.5x the cost at the median). No row on this board clears $40 at p25; the strongest p25 case is ' + (bestP25 === null ? 'n/a' : esc(bestP25.name) + ' at +' + fmtUsd2(bestP25.farm.netEvP25)) + '. The original $40-at-p25 bar returned zero rows, so the tier is defined by the break-even floor instead \u2014 a disclosed change, not a hidden one. Board P25-positive (pre-fee) is a subset of FARM (' + (vc['P25-POSITIVE'] || 0) + ' of ' + farmTotal + '), not a fourth tier. The badge is defined on board costs (gas + opportunity cost) only: fully costed p25 nets all fees, and 3 of the 5 pre-fee P25-positive rows are negative once costs are counted (see playbooks). Every row also carries its <b>break-even odds</b> \u2014 the chance the token\u2019s value lands above the value at which the farm breaks even \u2014 and its <b>net $/hour</b>, the net expected value divided by the hands-on minutes the plan asks for, so a slow farm can be compared with a quick one on the same footing.</p>' +
+      playbookMethodHtml() +
       '<h3>What this does not do</h3>' +
       '<p>It does not predict whether or when a token launches. It does not use any data outside the snapshot\u2019s ten fields. It does not call its output \u201cimplied FDV\u201d \u2014 the snapshot carries market capitalisation, not fully diluted value. Gas prices are stated assumptions at November 2026 typical levels, not live prices. The farm steps are proposed interactions to verify on the protocol\u2019s own page; nothing here claims a points program, a quest or an airdrop exists.</p>' +
       '</div>';
@@ -796,6 +1019,39 @@
     h += '</tbody></table>';
     return h;
   }
+  // The fully costed playbook for one FARM row: the entry, every fee the
+  // board does not count, the hold, the exit, and the net EV at p10/p25/p50/p75
+  // after those fees. The board's NetEV is shown beside the fully costed
+  // figure at every percentile, so the two reconcile on sight: fully
+  // costed = board − extra fees. The verdict is not re-decided here — it
+  // is defined on board costs — and when the fully costed p25 goes
+  // negative on a P25-POSITIVE row, the text says so plainly.
+  function playbookHtml(row) {
+    var pb = row.playbook;
+    if (!pb) return '';
+    var f = row.farm;
+    var p25survives = pb.netEvP25Full >= 0;
+    var margin = (pb.breakevenFull > 0 && row.implied_value_usd > 0) ? (row.implied_value_usd / pb.breakevenFull) : null;
+    var h = '<h3 id="playbook">Playbook: fully costed</h3>' +
+      '<p><b>Entry:</b> $' + pb.capital.toLocaleString('en-US') + ' into ' + esc(row.name) + '\u2019s ' + esc(row.mechanism || '') + ' on ' + esc(pb.entryChain || 'its main chain') + (pb.secondChain ? ' and ' + esc(pb.secondChain) : '') + '; hold ' + pb.holdDays + ' days; ' + pb.handsOnMinutes + ' hands-on minutes. <b>Exit:</b> ' + esc(pb.exit) + '</p>' +
+      '<table class="plain"><thead><tr><th>Cost line</th><th class="num">Amount</th><th>What it is</th></tr></thead><tbody>' +
+      '<tr><td>Board gas</td><td class="num">' + fmtUsd2(pb.boardGas) + '</td><td>16 transactions at the chain\u2019s gas price (setup, deposit, weekly actions, claim)</td></tr>' +
+      '<tr><td>Board opportunity cost</td><td class="num">' + fmtUsd2(pb.boardOpp) + '</td><td>4.5% a year on the capital for ' + MODEL.holdDays + ' days</td></tr>' +
+      pb.extraFees.map(function (fee) {
+        return '<tr><td>' + esc(fee.label) + '</td><td class="num">' + fmtUsd2(fee.amountUsd) + '</td><td>' + esc(fee.basis) + '</td></tr>';
+      }).join('') +
+      '<tr><td><b>Total, fully costed</b></td><td class="num"><b>' + fmtUsd2(pb.fullyCostedTotal) + '</b></td><td>Board cost ($' + fmtUsd2(pb.boardTotal) + ') + extra fees ($' + fmtUsd2(pb.extraTotal) + ')</td></tr>' +
+      '</tbody></table>' +
+      '<p class="small"><b>Extra-fee split:</b> ' + feeSplitText(pb, row) + '. The split sums exactly to the extra fees above.</p>' +
+      '<table class="plain"><thead><tr><th>Net EV</th><th class="num">p10</th><th class="num">p25</th><th class="num">Median</th><th class="num">p75</th></tr></thead><tbody>' +
+      '<tr><td>Board costs</td><td class="num">' + (pb.netEvP10Board >= 0 ? '+' : '') + fmtUsd2(pb.netEvP10Board) + '</td><td class="num">' + (pb.netEvP25Board >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Board) + '</td><td class="num">' + (pb.netEvBoard >= 0 ? '+' : '') + fmtUsd2(pb.netEvBoard) + '</td><td class="num">' + (pb.netEvP75Board >= 0 ? '+' : '') + fmtUsd2(pb.netEvP75Board) + '</td></tr>' +
+      '<tr><td><b>Fully costed</b></td><td class="num"><b>' + (pb.netEvP10Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP10Full) + '</b></td><td class="num"><b>' + (pb.netEvP25Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Full) + '</b></td><td class="num"><b>' + (pb.netEvFull >= 0 ? '+' : '') + fmtUsd2(pb.netEvFull) + '</b></td><td class="num"><b>' + (pb.netEvP75Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP75Full) + '</b></td></tr>' +
+      '</tbody></table>' +
+      '<p class="small"><b>Break-even / Implied (market cap, fully-costed):</b> ' + fmtUsd(pb.breakevenFull) + ' / ' + fmtUsd(row.implied_value_usd) + (margin === null ? '' : ' \u2014 ' + margin.toFixed(2) + 'x safety margin') + '. The token must be worth at least the break-even for the position to pay for itself after all fees; on board costs alone the break-even is ' + fmtUsd(pb.breakevenBoard) + '. Both figures are market capitalisation, not fully diluted value \u2014 the snapshot carries market capitalisation.</p>' +
+      '<p class="small">' + (p25survives ? '<b>Fully costed, this row still breaks even at p25</b> (' + (pb.netEvP25Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Full) + ') \u2014 the plan pays even if the value lands at the 25th percentile after every fee is counted.' : '<b>Fully costed, this row no longer breaks even at p25</b> (' + fmtUsd2(pb.netEvP25Full) + ') \u2014 the ' + verdictLabel(f.verdict) + ' badge is defined on board costs (gas + opportunity cost) only, and the extra fees move the floor below zero. At the median it still pays (' + (pb.netEvFull >= 0 ? '+' : '') + fmtUsd2(pb.netEvFull) + ' fully costed), but the downside case is a loss, not a wash.') + ' The swap rate (0.30%, the standard AMM tier) and the $2.00 bridge allowance are stated assumptions, not measured prices \u2014 the snapshot carries no fee data \u2014 and the deposit/withdrawal fee is assumed $0; check the protocol\u2019s own page before farming, because a protocol that charges an exit fee breaks this arithmetic.</p>' +
+      playbookDisclosuresHtml();
+    return h;
+  }
   function detailHtml(row) {
     var b = breakdownOf(row);
     var base = row.tvl_usd * b.mult;
@@ -822,8 +1078,7 @@
     // carries them; otherwise fall back to the p25 arithmetic computed above.
     var p25ev = (f.netEvP25 !== null && f.netEvP25 !== undefined) ? f.netEvP25 : netEv25;
     var p25Note = '';
-    if (f.verdict === 'P25-POSITIVE') p25Note = ' <b>P25-POSITIVE</b> means this row clears the FARM gates at the median ($40 net EV, 1.5x the cost) and its net EV is still at least $0 at the 25th percentile of the model\u2019s out-of-sample error: net EV at p25 is ' + (p25ev === null ? 'n/a' : (p25ev >= 0 ? '+' : '') + fmtUsd2(p25ev)) + (f.netEvRatioP25 !== null && f.netEvRatioP25 !== undefined ? ' (' + f.netEvRatioP25.toFixed(2) + 'x the cost)' : '') + ' \u2014 the plan still pays even if the value lands at the 25th percentile.';
-    var beNote = '';
+    if (f.verdict === 'P25-POSITIVE') p25Note = ' <b>Board P25-positive (pre-fee)</b> means this row clears the FARM gates at the median ($40 net EV, 1.5x the cost) and its net EV is still at least $0 at the 25th percentile of the model\u2019s out-of-sample error: net EV at p25 is ' + (p25ev === null ? 'n/a' : (p25ev >= 0 ? '+' : '') + fmtUsd2(p25ev)) + (f.netEvRatioP25 !== null && f.netEvRatioP25 !== undefined ? ' (' + f.netEvRatioP25.toFixed(2) + 'x the cost)' : '') + ' \u2014 the plan still pays even if the value lands at the 25th percentile. The badge is defined on board costs only; the fully costed p25 is in the playbook below.';    var beNote = '';
     if (f.breakevenOdds !== null && f.breakevenOdds !== undefined) {
       beNote = ' Break-even odds ' + fmtOdds(f.breakevenOdds) + (f.breakevenValue !== null && f.breakevenValue !== undefined ? ' \u2014 the farm breaks even at an implied value of ' + fmtUsd(f.breakevenValue) : '') + (f.netPerHour !== null && f.netPerHour !== undefined ? '; net ' + fmtPerHour(f.netPerHour) + ' per hands-on hour' : '') + '.';
     }
@@ -874,12 +1129,13 @@
         return '<tr><td>' + esc(q.p.name) + '</td><td class="num">' + fmtUsd(q.p.tvl_usd) + '</td><td class="num">' + fmtUsd(q.p.mcap_usd) + '</td><td class="num">' + (oof === null || oof === undefined ? 'n/a' : fmtUsd(oof)) + '</td><td class="num">' + (ratio === null ? 'n/a' : fmtMult(ratio)) + '</td></tr>';
       }).join('') + '</tbody></table>' +
       '<h3>Farm plan</h3>' +
-      '<div class="verdictbox ' + f.verdict + '"><b>' + f.verdict + '</b> &middot; net expected value <span class="net">' + (f.netEv >= 0 ? '+' : '') + fmtUsd2(f.netEv) + '</span> on $' + f.capital.toLocaleString('en-US') + ' of capital' +
+      '<div class="verdictbox ' + verdictClass(f.verdict) + '"><b>' + verdictLabel(f.verdict) + '</b>' + p25FullMarker(row) + ' &middot; net expected value <span class="net">' + (f.netEv >= 0 ? '+' : '') + fmtUsd2(f.netEv) + '</span> on $' + f.capital.toLocaleString('en-US') + ' of capital' +
       '<br><span class="small">Hypothetical pool 8% of implied value = ' + fmtUsd(f.pool) + '; your share (pool x $' + f.capital.toLocaleString('en-US') + ' / ' + fmtUsd(row.tvl_usd) + ' TVL) = ' + fmtUsd2(f.share) + '; gas ' + fmtUsd2(f.gasTotal) + ' + opportunity cost ' + fmtUsd2(f.oppCost) + ' = ' + fmtUsd2(f.totalCost) + ' total; share &minus; cost = ' + fmtUsd2(f.netEv) + ' (' + f.netEvRatio.toFixed(2) + 'x the cost). FARM needs at least $40 and 1.5x; THIN needs at least $0.' + p25Note + beNote + '</span></div>' +
       '<ol class="steps">' + row.farm_steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
       '<p class="small"><b>Downside:</b> at the 25th percentile (p25 ' + (p25 === null ? 'n/a' : fmtUsd(p25)) + ') the pool is ' + (pool25 === null ? 'n/a' : fmtUsd(pool25)) + ', your share ' + (share25 === null ? 'n/a' : fmtUsd2(share25)) + ', the same cost ' + fmtUsd2(f.totalCost) + ', so net EV ' + (netEv25 === null ? 'n/a' : (netEv25 >= 0 ? '+' : '') + fmtUsd2(netEv25)) + '. Judged at the median; p25 is the 25th percentile of the model\u2019s out-of-sample error \u2014 1 in 4 realisations is worse, not the low end.</p>' +
       (f.verdict === 'FARM' || f.verdict === 'P25-POSITIVE' ? '<p class="small"><b>P10:</b> ' + fmtUsd(p10) + ' net EV ' + (netEv10 >= 0 ? '+' : '') + fmtUsd2(netEv10) + '. Farm only if it clears p10.</p>' : '') +
       '<p class="small"><b>Risk:</b> the implied value is a yardstick, not a price target; the 80% band spans ' + (width80 === null ? 'n/a' : width80.toFixed(0) + 'x') + ', so the token could land far from the median. The airdrop pool is hypothetical (8% of implied value, a stated assumption) \u2014 the snapshot cannot establish that a token or an airdrop will happen. ' + ((f.verdict === 'FARM' || f.verdict === 'P25-POSITIVE') ? 'Even a FARM row is a bet on an uncertain launch, not a guaranteed return.' : 'This row does not clear FARM at the median value, and the downside is thinner still.') + '</p>' +
+      playbookHtml(row) +
       '<p class="small">Gas at November 2026 typical levels (Ethereum $4.00/tx, L2s $0.30, Solana-class $0.05, Bitcoin L2s $2.00); opportunity cost 4.5% a year on the capital for 90 days. The steps are proposed interactions to verify on the protocol\u2019s own page; nothing here claims a points program, a quest or an airdrop exists. Claim only from a link the protocol itself publishes; never pay to claim.</p>' +
       '</div></div>';
     return h;
@@ -890,13 +1146,13 @@
     var v = DATA.validation;
     var vc = verdictCounts();
     var warn = '';
-    if (recomputeBad > 0 || farmBad > 0) {
-      warn = '<div class="warn" id="recompute-warn">Warning: this page recomputed ' + recomputeBad + ' implied values and ' + farmBad + ' farm plans that do not match the board\u2019s data. The screenshots and the code do not agree.</div>';
+    if (recomputeBad > 0 || farmBad > 0 || playbookBad > 0) {
+      warn = '<div class="warn" id="recompute-warn">Warning: this page recomputed ' + recomputeBad + ' implied values, ' + farmBad + ' farm plans and ' + playbookBad + ' playbooks that do not match the board\u2019s data. The screenshots and the code do not agree.</div>';
     }
     var h = '<div class="wrap">' +
       '<header><h1>Tidegauge<span class="dot">.</span></h1>' +
       '<p class="sub">Pre-token protocols, ranked by implied token market capitalisation \u2014 fitted from ' + FIT.peerCount + ' live-token peers, blind-tested against a flat baseline, and costed to the dollar. As of ' + esc(DATA.as_of) + '.</p>' +
-      '<div class="kpi"><span>Blind median error <b>x' + fnum(v.blindMedianMaxRatio, '', 2, '') + ' vs x' + fnum(v.flatBlindMedianMaxRatio, '', 2, '') + ' flat</b></span><span><b>' + DATA.board_size + '</b> protocols</span><span><b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>80% band covers <b>' + (v.bands.blindCov80 * 100).toFixed(0) + '%</b> blind</span><span>LOO median error <b>x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' vs x' + (looFlatRow() === null ? 'n/a' : fnum(looFlatRow().medianMaxRatio, '', 2, '')) + ' flat</b></span><span>LOO within-3x <b>' + (v.adoptedWithin3 === null || v.adoptedWithin3 === undefined ? 'n/a' : v.adoptedWithin3.toFixed(1) + '% (n=' + (v.peerCount || FIT.peerCount) + ' of ' + (fitUniverse() || (v.peerCount || FIT.peerCount)) + ')') + '</b></span><span>FARM <b>' + ((vc['P25-POSITIVE'] || 0) + vc.FARM) + '</b>, incl. <b>' + (vc['P25-POSITIVE'] || 0) + '</b> P25-positive</span></div></header>' +
+      '<div class="kpi"><span>Blind median error <b>x' + fnum(v.blindMedianMaxRatio, '', 2, '') + ' vs x' + fnum(v.flatBlindMedianMaxRatio, '', 2, '') + ' flat</b></span><span><b>' + DATA.board_size + '</b> protocols</span><span><b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>80% band covers <b>' + (v.bands.blindCov80 * 100).toFixed(0) + '%</b> blind</span><span>LOO median error <b>x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' vs x' + (looFlatRow() === null ? 'n/a' : fnum(looFlatRow().medianMaxRatio, '', 2, '')) + ' flat</b></span><span>LOO within-3x <b>' + (v.adoptedWithin3 === null || v.adoptedWithin3 === undefined ? 'n/a' : v.adoptedWithin3.toFixed(1) + '% (n=' + (v.peerCount || FIT.peerCount) + ' of ' + (fitUniverse() || (v.peerCount || FIT.peerCount)) + ')') + '</b></span><span>FARM <b>' + ((vc['P25-POSITIVE'] || 0) + vc.FARM) + '</b>, incl. <b>' + (vc['P25-POSITIVE'] || 0) + '</b> Board P25-positive (pre-fee)</span></div></header>' +
       '<nav class="tabs">' +
       '<button data-tab="board"' + (state.tab === 'board' ? ' class="on"' : '') + '>Board</button>' +
       '<button data-tab="live"' + (state.tab === 'live' ? ' class="on"' : '') + '>Live tokens (' + DATA.live_size + ')</button>' +
@@ -1025,9 +1281,10 @@
     if (state.tab !== 'anchors' && ak2) { state.sort = 'implied'; state.dir = -1; }
     // Close any open detail overlay: it lives on body, render() won't.
     closeDetail();
-    // Deep-link a filtered board, e.g. #/board?verdict=FARM.
-    var vm = hash.match(/verdict=(P25-POSITIVE|FARM|THIN|SKIP)/);
-    if (vm) state.verdict = vm[1];
+    // Deep-link a filtered board, e.g. #/board?verdict=FARM. The old
+    // P25-POSITIVE spelling still links: it is normalised to the filter slug.
+    var vm = hash.match(/verdict=(P25-POSITIVE|p25p|FARM|THIN|SKIP)/);
+    if (vm) state.verdict = verdictFilterValue(vm[1]);
     render();
   }
   window.addEventListener('hashchange', route);
