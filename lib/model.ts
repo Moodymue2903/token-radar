@@ -8,47 +8,75 @@
 // own values, never mixed into the ranked board.
 //
 // Implied token market capitalisation follows only from the snapshot's own
-// figures, through a hierarchical (partial-pooling) comps model:
+// figures, through a jointly-fit ridge regression on the live-token peers:
 //
-//   cat_mult    = shrunk category multiple (w = n/(n+5) toward the global
-//                 median 0.204; w = 0 when the category has fewer than 3
-//                 live peers, so Risk Curators falls back to global)
-//   size_factor = (tvl / median_tvl_of_category) ^ (0.508 - 1), the fitted
-//                 size curve anchored to the category's typical size
+//   log10(mcap) = a + b * log10(tvl) + offset[category]
+//
+// The size slope b and the per-category offsets are fitted TOGETHER (one
+// ridge solve), with the ridge penalty (lambda = 4) on the category offsets
+// only — the intercept and the slope are unpenalised — and the fit is
+// Huber-weighted (IRLS, delta = 1.0 in log10 units) so a few far-off peers
+// do not drag the slope. A category with fewer than 3 live peers gets
+// offset 0 and falls back to the global fit, so Risk Curators falls back
+// to the size curve, not to its single peer. The slope comes out at 0.516
+// (the Huber-weighted ridge fit), matching the top tier's fitted slope.
+//
+// Why ridge, not the old two-stage model (round 6 and earlier fitted a
+// shrunk category median separately, then a Huber size curve anchored to
+// the category's median TVL): the two-stage category multiple helps
+// leave-one-out and HURTS walk-forward — a category's median multiple
+// fitted on older tokens does not carry to newer tokens (measured: the
+// old model scores walk-forward x3.43 on the 2025 cutoff and x4.05 on
+// older-half/newer-half, against x2.96 leave-one-out). The ridge fit
+// closes most of that gap (walk-forward x2.65 on the 2025 cutoff, x3.01
+// on older-half/newer-half; leave-one-out x2.77, within-3x 51.6%) while
+// keeping leave-one-out unchanged. Whether to Huber-weight the ridge was
+// itself tested in both tests: Huber wins leave-one-out (x2.77 vs x2.98
+// for OLS ridge) and the 2025-cutoff walk-forward (x2.65 vs x2.79), and
+// wins Spearman on every split; it loses the older-half/newer-half
+// walk-forward (x3.01 vs x2.83 for OLS ridge) — a real caveat, stated
+// in the method tab, not hidden. The headline walk-forward is the 2025
+// cutoff, the split the model has always used for its time split.
+//
+// For display the ridge prediction is factored through the category's
+// median TVL, so the board keeps its familiar multiplicative form:
+//
+//   cat_mult    = 10^(a + b*log10(median_tvl_of_category) + offset) / median_tvl
+//                 (the multiple at the category's typical size)
+//   size_factor = (tvl / median_tvl_of_category) ^ (b - 1)
 //   growth      = 1 + clamp(change_7d, -60, 120)/100 * 0.5
 //   maturity    = 0.6 + min(age_days, 1095)/1095 * 0.4
 //   implied     = max(1, round(tvl * cat_mult * size_factor * growth * maturity))
 //
-// The sub-linear curve (beta = 0.508) compresses the multiple of a protocol
+// The sub-linear curve (beta = 0.516) compresses the multiple of a protocol
 // far above its category's median TVL: Steakhouse Financial at $2.75B TVL is
 // 82x the $33.4M global median peer TVL, so its size factor is 0.114x and its
 // multiple is 0.018x, not the raw 0.204x -- the board's multiples are
 // post-dampening, not raw category multiples.
 //
 // The fit is recomputed from the snapshot every run (nothing is hardcoded
-// except the priors: k = 5, the growth weight and the maturity floor; the
-// slope comes from the Huber fit below). The size curve is a Huber fit
-// (delta = 1.0, IRLS from OLS): the peer residuals are heavy-tailed, so OLS
-// lets a few far-off peers drag the slope. The fit peers are the 95 peers
-// with a listing date, out of the 128-peer universe: a protocol with no
-// listed_at cannot have a seasoning / maturity term — its age is unknowable,
-// not zero — so the 33 dateless peers are excluded from every fit,
-// validation and band, while the universe stays 128 for reporting. No
-// protocol name is ever special-cased: the same function scores every row.
-// The model is a pricing yardstick, not a price target: its blind error —
-// fit on 80% of the 95 fit peers, evaluated on the held-out 20%, repeated
-// five times with fixed seeds, no tuning on the test set — is a median of
-// x1.90 (1 + MdAPE, the median absolute percentage error), 50.5% within 3x
-// on leave-one-out (median x1.82). Every row carries a bootstrap predictive
-// band (200 resamples of the peer set, refit, plus one draw from the
-// leave-one-out residual distribution): the 80% band covers 82% of held-out
-// market caps on the blind splits, and it is wide — typically ~130x —
-// because the error distribution is heavy-tailed (the 90th-percentile
-// leave-one-out error is x21.2, far above the x1.82 median; the methodology
-// panel states it). A FARM row whose net EV is still ≥ $0 at the P25 implied value promotes to
-// P25-POSITIVE in the post-band step: it still pays (does not lose money) at the low end of its band.
-// The $40 farm threshold at P25 is unreachable — the P25 band is wide (p25/implied is 0.24–0.41
-// on FARM rows), so the best row on the board reaches only ~$9 at P25 — and "pays at the low
+// except the priors: lambda = 4, the Huber delta, the growth weight and
+// the maturity floor). The fit peers are the 95 peers with a listing date,
+// out of the 128-peer universe: a protocol with no listed_at cannot have a
+// seasoning / maturity term — its age is unknowable, not zero — so the 33
+// dateless peers are excluded from every fit, validation and band, while
+// the universe stays 128 for reporting. No protocol name is ever
+// special-cased: the same function scores every row. The model is a pricing
+// yardstick, not a price target: its blind error — fit on 80% of the 95 fit
+// peers, evaluated on the held-out 20%, repeated five times with fixed
+// seeds, no tuning on the test set — is a median of x1.90 (1 + MdAPE, the
+// median absolute percentage error), 50.5% within 3x on leave-one-out
+// (median x1.82). Every row carries a bootstrap predictive band (200
+// resamples of the peer set, refit, plus one draw from the leave-one-out
+// residual distribution): the 80% band covers 82% of held-out market caps
+// on the blind splits, and it is wide — typically ~130x — because the error
+// distribution is heavy-tailed (the 90th-percentile leave-one-out error is
+// x21.2, far above the x1.82 median; the methodology panel states it). A
+// FARM row whose net EV is still ≥ $0 at the P25 implied value promotes to
+// P25-POSITIVE in the post-band step: it still pays (does not lose money)
+// at the low end of its band. The $40 farm threshold at P25 is unreachable
+// — the P25 band is wide (p25/implied is 0.24–0.41 on FARM rows), so the
+// best row on the board reaches only ~$9 at P25 — and "pays at the low
 // end" means breaking even there, not clearing the median's $40 bar.
 // The band is the honest uncertainty, shown next to the value, not hidden.
 
@@ -83,6 +111,13 @@ export interface CategoryFit {
   n: number;
 }
 
+/** One category's ridge offset: its fitted log10 offset, its peer count. Categories with fewer than 3 peers get offset 0. */
+export interface RidgeOffset {
+  category: string | null;
+  offset: number;
+  n: number;
+}
+
 /** Everything the fit computes from the peer set, once per run. */
 export interface FittedModel {
   peerCount: number;
@@ -95,17 +130,27 @@ export interface FittedModel {
   globalMedian: number;
   globalMedianTvl: number;
   categories: CategoryFit[];
+  /** The ridge size curve: log10(mcap) = sizeA + sizeB * log10(tvl) + offset[category]. */
   sizeA: number;
   sizeB: number;
   sizeR2: number;
   sizeSeB: number;
   residualSd: number;
+  /** The ridge penalty (lambda) the offsets were fitted with. */
+  ridgeLambda: number;
+  /** Whether the ridge fit is Huber-weighted (IRLS, delta = 1.0). */
+  ridgeHuber: boolean;
+  /** One fitted log10 offset per category with >= 3 peers (offset 0 otherwise). */
+  ridgeOffsets: RidgeOffset[];
 }
 
 /** The model's constants: the priors the dashboard states and the page recomputes with. */
 export interface ModelConstants {
-  shrinkK: number;
   minPeers: number;
+  /** The ridge penalty (lambda) on the category offsets. */
+  ridgeLambda: number;
+  /** The Huber delta (log10 units) for the ridge fit's IRLS weights. */
+  ridgeHuberDelta: number;
   growthWeight: number;
   growthFloor: number;
   growthCap: number;
@@ -125,8 +170,12 @@ export interface ModelConstants {
 }
 
 export const MODEL: ModelConstants = {
-  shrinkK: 5,
   minPeers: 3,
+  // Ridge penalty lambda = 4: the best on both walk-forward splits in the
+  // round-7 two-test check (benchmark/ridge-test.ts), robust across 1-64.
+  ridgeLambda: 4,
+  // Huber delta = 1.0 in log10 units, the same delta the old size curve used.
+  ridgeHuberDelta: 1.0,
   growthWeight: 0.5,
   growthFloor: -60,
   growthCap: 120,
@@ -157,7 +206,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-5-huber';
+export const MODEL_VERSION = 'radar-7-ridge';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
@@ -224,6 +273,9 @@ export interface BoardRow {
   age_days: number | null;
   is_watchlist: boolean;
   implied_value_usd: number;
+  /** P(protocol ever records a token) under the fitted odds model. The
+   * implied value is the value-if-launches multiplied by these odds. */
+  odds: number;
   multiple: number;
   /** The bootstrap predictive interval (whole dollars, growth and maturity applied): p10/p90 is the 80% band, p25/p75 the 50% band. Attached by attachBands in buildRadar, not by buildBoard. */
   uncertainty?: { p10: number; p25: number; p75: number; p90: number };
@@ -241,6 +293,10 @@ export interface BoardRow {
     growth_multiplier: number;
     maturity_multiplier: number;
     age_days: number | null;
+    /** The token odds the implied value was multiplied by (1 when no odds model). */
+    odds: number;
+    /** The value if a token launches, before the odds weighting (whole dollars). */
+    value_if_launches: number;
   };
   farm: Verdict;
   farm_steps: string[];
@@ -397,6 +453,24 @@ export interface Validation {
   timeSplitWithin3: number | null;
   timeSplitSpearman: number | null;
   timeSplitN: number;
+  /**
+   * The second walk-forward split: fit on the older half of the fit peers
+   * (by listing date), test on the newer half. The Huber-weighted ridge
+   * loses this split to OLS ridge (x3.01 vs x2.83 at lambda 4) while
+   * winning leave-one-out and the 2025-cutoff walk-forward — a real caveat,
+   * published here rather than hidden.
+   */
+  wfHalfMedian: number | null;
+  wfHalfMedianMaxRatio: number | null;
+  wfHalfWithin2: number | null;
+  wfHalfWithin3: number | null;
+  wfHalfSpearman: number | null;
+  wfHalfN: number;
+  flatWfHalfMedian: number | null;
+  flatWfHalfMedianMaxRatio: number | null;
+  flatWfHalfWithin2: number | null;
+  flatWfHalfWithin3: number | null;
+  flatWfHalfSpearman: number | null;
   blindMedian: number | null;
   blindMedianMaxRatio: number | null;
   blindWithin2: number | null;
@@ -435,6 +509,10 @@ export interface RadarData {
   early_size: number;
   live_size: number;
   fit: FittedModel;
+  /** The token-odds model the board's implied values are weighted by. */
+  odds: OddsFit;
+  /** The accounting of all 758 snapshot protocols, in exactly one group each. */
+  accounting: Accounting;
   validation: Validation;
   rows: BoardRow[];
   live: LiveRow[];
@@ -644,14 +722,112 @@ export function fitPeersOf(snapshot: Snapshot): SnapshotProtocol[] {
 }
 
 /**
+ * Solve A x = b by Gaussian elimination with partial pivoting. A is a
+ * square matrix (modified in place via a copy); returns the solution, or
+ * a zero vector when a pivot is degenerate. Deterministic: the same A and
+ * b always give the same x.
+ */
+export function solveLinear(Ain: number[][], bin: number[]): number[] {
+  const d = bin.length;
+  const M = Ain.map((row, i) => [...row, bin[i]!]);
+  for (let col = 0; col < d; col++) {
+    let piv = col;
+    for (let r = col + 1; r < d; r++) if (Math.abs(M[r]![col]!) > Math.abs(M[piv]![col]!)) piv = r;
+    [M[col], M[piv]] = [M[piv]!, M[col]!];
+    const pv = M[col]![col]!;
+    if (Math.abs(pv) < 1e-12) continue;
+    for (let r = 0; r < d; r++) {
+      if (r === col) continue;
+      const fac = M[r]![col]! / pv;
+      for (let c = col; c <= d; c++) M[r]![c]! -= fac * M[col]![c]!;
+    }
+  }
+  return M.map((row, i) => row[d]! / (Math.abs(M[i]![i]!) < 1e-12 ? 1 : M[i]![i]!));
+}
+
+/**
+ * The ridge fit: log10(mcap) = a + b * log10(tvl) + offset[category],
+ * fitted jointly. The ridge penalty lambda applies to the category
+ * offsets only (intercept and slope unpenalised). Categories with fewer
+ * than minPeers peers get offset 0. When huber is true, the fit is
+ * Huber-weighted (IRLS, weights min(1, delta/|r|) in log10 units, 20
+ * iterations from the OLS start) so a few far-off peers do not drag the
+ * slope; when false it is plain OLS ridge. Pure: the same peers, lambda
+ * and huber always give the same fit.
+ */
+export function ridgeFit(
+  peers: SnapshotProtocol[],
+  lambda: number,
+  huber: boolean,
+  delta: number,
+  model: ModelConstants = MODEL,
+): { a: number; b: number; offsets: RidgeOffset[] } {
+  const cats = [...new Set(peers.map((p) => p.category))]
+    .filter((c) => peers.filter((p) => p.category === c).length >= model.minPeers)
+    .sort((a, b) => {
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+  const k = cats.length;
+  const idx = new Map<string | null, number>(cats.map((c, i) => [c, i]));
+  const d = 2 + k;
+  const X = peers.map((p) => {
+    const row = new Array<number>(d).fill(0);
+    row[0] = 1;
+    row[1] = Math.log10(p.tvl_usd);
+    const ci = idx.get(p.category);
+    if (ci !== undefined) row[2 + ci] = 1;
+    return row;
+  });
+  const y = peers.map((p) => Math.log10(p.mcap_usd!));
+  const solve = (weights: number[]): number[] => {
+    const A = Array.from({ length: d }, () => new Array<number>(d).fill(0));
+    const bvec = new Array<number>(d).fill(0);
+    for (let i = 0; i < peers.length; i++) {
+      const w = weights[i]!;
+      for (let r = 0; r < d; r++) {
+        bvec[r] += w * X[i]![r]! * y[i]!;
+        for (let c = 0; c < d; c++) A[r]![c]! += w * X[i]![r]! * X[i]![c]!;
+      }
+    }
+    for (let j = 2; j < d; j++) A[j]![j]! += lambda;
+    return solveLinear(A, bvec);
+  };
+  let beta = solve(new Array<number>(peers.length).fill(1));
+  if (huber) {
+    for (let it = 0; it < 20; it++) {
+      const ws = peers.map((p, i) => {
+        let pred = beta[0]! + beta[1]! * Math.log10(p.tvl_usd);
+        const ci = idx.get(p.category);
+        if (ci !== undefined) pred += beta[2 + ci]!;
+        const r = Math.abs(y[i]! - pred);
+        return r <= delta ? 1 : delta / r;
+      });
+      const next = solve(ws);
+      const change = Math.max(...next.map((v, i) => Math.abs(v - beta[i]!)));
+      beta = next;
+      if (change < 1e-12) break;
+    }
+  }
+  const offsets: RidgeOffset[] = cats.map((c, i) => ({
+    category: c,
+    offset: beta[2 + i]!,
+    n: peers.filter((p) => p.category === c).length,
+  }));
+  return { a: beta[0]!, b: beta[1]!, offsets };
+}
+
+/**
  * Fit the model on a peer list: winsor bounds, the global median, one
- * shrunk multiple per category, and the log-log size curve. Pure: the same
- * peers always give the same fit.
+ * reference multiple per category, and the jointly-fit ridge regression
+ * (log10(mcap) on log10(tvl) plus ridge-shrunk category offsets). Pure: the
+ * same peers always give the same fit.
  *
- * The size curve is a Huber fit (delta = 1.0, IRLS from OLS): the peer
- * residuals are heavy-tailed, so OLS lets a few far-off peers drag the
- * slope. sizeR2 and residualSd are computed from the Huber fit's own
- * predictions (R2 = 1 - SSE/SST; residualSd = sqrt(SSE/(n-2))); sizeSeB is
+ * The ridge fit is Huber-weighted (IRLS, delta = 1.0): the peer residuals
+ * are heavy-tailed, so OLS lets a few far-off peers drag the slope.
+ * sizeR2 and residualSd are computed from the ridge fit's own predictions
+ * (R2 = 1 - SSE/SST; residualSd = sqrt(SSE/(n-2))); sizeSeB is
  * residualSd / sqrt(Sxx) on the same fit — the Huber analogue of the OLS
  * standard error, not an OLS quantity mixed into a Huber fit.
  * `universe`, when given, is the peer universe the fit peers were drawn
@@ -688,10 +864,9 @@ export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODE
       if (b.category === null) return -1;
       return a.category < b.category ? -1 : a.category > b.category ? 1 : 0;
     });
+  const ridge = ridgeFit(peers, model.ridgeLambda, true, model.ridgeHuberDelta, model);
   const xs = peers.map((p) => Math.log10(p.tvl_usd));
   const ys = peers.map((p) => Math.log10(p.mcap_usd!));
-  const hub = huberLin(xs, ys, 1.0);
-  // R2 / residual SD / SE(slope) from the Huber fit's own predictions.
   const n = xs.length;
   const my = ys.reduce((s, y) => s + y, 0) / n;
   const mx = xs.reduce((s, x) => s + x, 0) / n;
@@ -699,7 +874,8 @@ export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODE
   let sst = 0;
   let sxx = 0;
   for (let i = 0; i < n; i++) {
-    const r = ys[i]! - (hub.a + hub.b * xs[i]!);
+    const off = ridge.offsets.find((o) => o.category === peers[i]!.category)?.offset ?? 0;
+    const r = ys[i]! - (ridge.a + ridge.b * xs[i]! + off);
     sse += r * r;
     sst += (ys[i]! - my) ** 2;
     sxx += (xs[i]! - mx) ** 2;
@@ -716,22 +892,22 @@ export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODE
     globalMedian,
     globalMedianTvl,
     categories,
-    sizeA: hub.a,
-    sizeB: hub.b,
+    sizeA: ridge.a,
+    sizeB: ridge.b,
     sizeR2,
     sizeSeB,
     residualSd: residSd,
+    ridgeLambda: model.ridgeLambda,
+    ridgeHuber: true,
+    ridgeOffsets: ridge.offsets,
   };
 }
 
-/** The shrunk category multiple for a category: w * median + (1 - w) * global; w = 0 when n < 3. */
-export function categoryMultiple(fit: FittedModel, category: string | null, model: ModelConstants = MODEL): { mult: number; n: number; rawMedian: number } {
-  const c = fit.categories.find((x) => x.category === category);
-  if (c === undefined || c.n < model.minPeers) {
-    return { mult: fit.globalMedian, n: c === undefined ? 0 : c.n, rawMedian: c === undefined ? fit.globalMedian : c.median };
-  }
-  const w = c.n / (c.n + model.shrinkK);
-  return { mult: w * c.median + (1 - w) * fit.globalMedian, n: c.n, rawMedian: c.median };
+/** The ridge offset for a category: the fitted log10 offset, or 0 when the category has fewer than minPeers peers (or is unseen). */
+export function ridgeOffsetFor(fit: FittedModel, category: string | null, model: ModelConstants = MODEL): number {
+  const o = fit.ridgeOffsets.find((x) => x.category === category);
+  if (o === undefined || o.n < model.minPeers) return 0;
+  return o.offset;
 }
 
 /** The median TVL a category's size factor anchors to; the global median peer TVL when n < 3. */
@@ -739,6 +915,22 @@ export function medianTvlFor(fit: FittedModel, category: string | null, model: M
   const c = fit.categories.find((x) => x.category === category);
   if (c === undefined || c.n < model.minPeers) return fit.globalMedianTvl;
   return c.medianTvl;
+}
+
+/**
+ * The anchor multiple for a category: the multiple at the category's
+ * median TVL, from the ridge fit — 10^(a + b*log10(medianTvl) + offset) /
+ * medianTvl — so the board keeps its multiplicative form (implied = tvl *
+ * cat_mult * size_factor) while the underlying fit is the joint ridge.
+ * n is the category's peer count; rawMedian is the category's winsorized
+ * median multiple (reference only — the fit does not use it).
+ */
+export function anchorMultiple(fit: FittedModel, category: string | null, model: ModelConstants = MODEL): { mult: number; n: number; rawMedian: number; medianTvl: number } {
+  const c = fit.categories.find((x) => x.category === category);
+  const medTvl = medianTvlFor(fit, category, model);
+  const off = ridgeOffsetFor(fit, category, model);
+  const mult = Math.pow(10, fit.sizeA + fit.sizeB * Math.log10(medTvl) + off) / medTvl;
+  return { mult, n: c === undefined ? 0 : c.n, rawMedian: c === undefined ? fit.globalMedian : c.median, medianTvl: medTvl };
 }
 
 /** The growth multiplier from a seven-day change in per cent (null counts as 0). */
@@ -756,9 +948,13 @@ export function maturityMultiplier(age: number | null, model: ModelConstants = M
 /**
  * The implied token market capitalisation of one protocol under a fit:
  * the raw (unrounded) value the leave-one-out test uses, and the rounded
- * whole-dollar value the board carries. Growth and maturity are included
- * unless `withGm` is false (the LOO test excludes them: they are priors
- * on the watchlist, not fitted).
+ * whole-dollar value the board carries. The core is the ridge prediction
+ * log10(mcap) = a + b*log10(tvl) + offset[category], factored through the
+ * category's median TVL so the board keeps its multiplicative form
+ * (tvl * cat_mult * size_factor); slopeScale damps the size factor toward
+ * a flat multiple (the LOO table's "damped" variant). Growth and maturity
+ * are included unless `withGm` is false (the LOO test excludes them: they
+ * are priors on the watchlist, not fitted).
  */
 export function impliedValue(
   p: SnapshotProtocol,
@@ -780,22 +976,21 @@ export function impliedValue(
   maturityMult: number;
   age: number | null;
 } {
-  const cat = categoryMultiple(fit, p.category, model);
-  const medTvl = medianTvlFor(fit, p.category, model);
-  const sizeFactor = Math.pow(p.tvl_usd / medTvl, (fit.sizeB - 1) * slopeScale);
+  const anchor = anchorMultiple(fit, p.category, model);
+  const sizeFactor = Math.pow(p.tvl_usd / anchor.medianTvl, (fit.sizeB - 1) * slopeScale);
   const growth = growthMultiplier(p.change_7d, model);
   const age = ageDays(asOf, p.listed_at);
   const maturityMult = maturityMultiplier(age, model);
-  let raw = p.tvl_usd * cat.mult * sizeFactor;
+  let raw = p.tvl_usd * anchor.mult * sizeFactor;
   if (withGm) raw *= growth.mult * maturityMult;
   raw = Math.max(1, raw);
   return {
     raw,
     implied: Math.max(1, Math.round(raw)),
-    catMult: cat.mult,
-    catN: cat.n,
-    catMedianRaw: cat.rawMedian,
-    medianTvl: medTvl,
+    catMult: anchor.mult,
+    catN: anchor.n,
+    catMedianRaw: anchor.rawMedian,
+    medianTvl: anchor.medianTvl,
     sizeFactor,
     growthPct: growth.pct,
     growthMult: growth.mult,
@@ -1199,13 +1394,238 @@ export function attachPlaybooks(board: BoardRow[], snapshot: Snapshot, model: Mo
   }
 }
 
+/** One row of the odds-model term table: a candidate term set, its
+ * leave-one-out and walk-forward Brier scores, and whether it was kept.
+ * A term is kept only when it lowers the Brier score in BOTH tests. */
+export interface OddsTermRow {
+  terms: string;
+  brierLoo: number | null;
+  brierWf: number | null;
+  calledRightLoo: number | null;
+  calledRightWf: number | null;
+  status: 'kept' | 'tested, not kept' | 'must not help';
+}
+
+/** The token-odds model: P(protocol ever records a token), a logistic
+ * regression on the snapshot's own record. Kept terms (age + size) passed
+ * the two-test rule — each lowers the Brier score in BOTH leave-one-out
+ * and walk-forward. Family, growth, chain count and the control term were
+ * tested and NOT kept (family improves LOO only, WF ties; growth does not
+ * lower WF Brier; chain count and the control do not help). See
+ * benchmark/odds-test.ts for the full term table. */
+export interface OddsFit {
+  /** Logistic coefficients: logit(P) = intercept + ageCoef * ageYears + sizeCoef * (ln(TVL) - ln(1e8)). */
+  intercept: number;
+  ageCoef: number;
+  sizeCoef: number;
+  /** The training set: rankable-type protocols with a listing date. */
+  trainN: number;
+  /** The base rate (fraction recording a token) on the training set. */
+  baseRate: number;
+  /** Brier score of the base rate (predict the base rate for all). */
+  baseBrierLoo: number;
+  baseBrierWf: number;
+  /** Brier score of the fitted model, leave-one-out and walk-forward. */
+  brierLoo: number;
+  brierWf: number;
+  /** Share called right (p > 0.5 predicts a token), leave-one-out and walk-forward. */
+  calledRightLoo: number;
+  calledRightWf: number;
+  /** The walk-forward test size (listed on/after 2025-01-01). */
+  wfTestN: number;
+  /** The two-test term table, computed from the snapshot every run. */
+  termTable: OddsTermRow[];
+}
+
+/** A protocol's age in years at asOf, from its listing date. */
+export function ageYears(asOf: string, listedAt: string | null): number {
+  const days = ageDays(asOf, listedAt);
+  return days === null ? 1.0 : days / 365.25;
+}
+
+/** The first word of a protocol's name, lowercased — the name-stem family. */
+function nameStem(p: SnapshotProtocol): string {
+  const w = p.name.trim().toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  return w.length > 0 ? w[0]! : p.slug;
+}
+
+/**
+ * Fit the token-odds model: a logistic regression for P(records a token)
+ * on the rankable-type protocols with a listing date (age needs listed_at;
+ * CEX and versioned-name protocols are never board candidates, so they
+ * are not training examples — but a protocol that already records a token
+ * IS a training example, with y=1: the outcome is "records a token", and
+ * rankable-type is about the category/name, not the token status).
+ * Features: age in years, ln(TVL) centred at ln(1e8). Fitted by IRLS
+ * (Newton-Raphson) with a 1e-6 ridge on the coefficients (stability
+ * only), intercept unpenalised. The validation — leave-one-out and
+ * walk-forward (fit listed before 2025-01-01, test listed on/after)
+ * Brier scores and shares called right — is computed here from the
+ * snapshot every run, so the dashboard shows measured numbers, never
+ * hardcoded ones. The two-test term table is computed the same way: each
+ * candidate term set is scored in LOO and walk-forward, and a term is
+ * kept only when it lowers the Brier score in BOTH.
+ */
+export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): OddsFit {
+  const rankableType = (p: SnapshotProtocol): boolean => p.category !== 'CEX' && !VERSIONED.test(p.name);
+  const train = snapshot.protocols.filter((p) => p.listed_at !== null && rankableType(p));
+  const ys = train.map((p) => (isPreToken(p) ? 0 : 1));
+  const baseRate = ys.reduce((s, v) => s + v, 0) / ys.length;
+  // The control term: the 7-day growth of another row (the next protocol
+  // in listing order) — a placebo that must not help.
+  const byListed = [...train].sort((a, b) => (a.listed_at! < b.listed_at! ? -1 : 1));
+  const controlGrowth = new Map<string, number>();
+  byListed.forEach((p, i) => {
+    controlGrowth.set(p.slug, clamp(byListed[(i + 1) % byListed.length]!.change_7d ?? 0, -60, 120) / 100);
+  });
+  const familyStems = (set: SnapshotProtocol[]): string[] => {
+    const counts = new Map<string, number>();
+    for (const p of set) counts.set(nameStem(p), (counts.get(nameStem(p)) ?? 0) + 1);
+    return [...counts.entries()].filter(([, n]) => n >= 3).map(([s]) => s).sort();
+  };
+  // The design columns for one protocol under a term set (excluding the
+  // intercept, always column 0). Family columns are one-hot dummies for
+  // stems with >= 3 members in the FIT set, ridge-shrunk at lambda 16.
+  const features = (p: SnapshotProtocol, stems: string[], terms: string[]): number[] => {
+    const cols: number[] = [];
+    if (terms.includes('age')) cols.push(ageYears(snapshot.as_of, p.listed_at));
+    if (terms.includes('size')) cols.push(Math.log(p.tvl_usd) - Math.log(1e8));
+    if (terms.includes('growth')) cols.push(clamp(p.change_7d ?? 0, -60, 120) / 100);
+    if (terms.includes('chain')) cols.push(Math.log(Math.max(1, p.chains.length)) - Math.log(2));
+    if (terms.includes('control')) cols.push(controlGrowth.get(p.slug) ?? 0);
+    if (terms.includes('family')) {
+      const s = nameStem(p);
+      for (const fam of stems) cols.push(s === fam ? 1 : 0);
+    }
+    return cols;
+  };
+  const FAMILY_LAMBDA = 16;
+  const logit = (z: number): number => 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, z))));
+  const fitLogit = (set: SnapshotProtocol[], setY: number[], terms: string[]): { beta: number[]; stems: string[]; terms: string[] } => {
+    const stems = terms.includes('family') ? familyStems(set) : [];
+    const nFam = stems.length;
+    const nMain = features(set[0]!, stems, terms).length - nFam;
+    const d = 1 + nMain + nFam;
+    const X = set.map((p) => [1, ...features(p, stems, terms)]);
+    const base = setY.reduce((s, v) => s + v, 0) / setY.length;
+    let beta = new Array<number>(d).fill(0);
+    beta[0] = Math.log(base / (1 - base));
+    for (let it = 0; it < 50; it++) {
+      const ps = X.map((row) => logit(row.reduce((s, v, j) => s + v * beta[j]!, 0)));
+      const A = Array.from({ length: d }, () => new Array<number>(d).fill(0));
+      const g = new Array<number>(d).fill(0);
+      for (let i = 0; i < set.length; i++) {
+        const w = Math.max(1e-6, ps[i]! * (1 - ps[i]!));
+        const r = setY[i]! - ps[i]!;
+        for (let a = 0; a < d; a++) {
+          g[a]! += X[i]![a]! * r;
+          for (let b = 0; b < d; b++) A[a]![b]! += w * X[i]![a]! * X[i]![b]!;
+        }
+      }
+      for (let j = 1; j < 1 + nMain; j++) A[j]![j]! += 1e-6;
+      for (let j = 1 + nMain; j < d; j++) A[j]![j]! += FAMILY_LAMBDA;
+      const step = solveLinear(A, g);
+      let maxStep = 0;
+      for (let j = 0; j < d; j++) {
+        beta[j]! += step[j]!;
+        maxStep = Math.max(maxStep, Math.abs(step[j]!));
+      }
+      if (maxStep < 1e-9) break;
+    }
+    return { beta, stems, terms };
+  };
+  const predict = (fitted: { beta: number[]; stems: string[]; terms: string[] }, p: SnapshotProtocol): number => {
+    const cols = [1, ...features(p, fitted.stems, fitted.terms)];
+    return logit(cols.reduce((s, v, j) => s + v * fitted.beta[j]!, 0));
+  };
+  const brier = (preds: number[], actual: number[]): number =>
+    preds.reduce((s, p, i) => s + (p - actual[i]!) ** 2, 0) / actual.length;
+  const calledRight = (preds: number[], actual: number[]): number =>
+    preds.filter((p, i) => (p > 0.5 ? 1 : 0) === actual[i]!).length / actual.length;
+  // Walk-forward split: fit listed before 2025-01-01, test listed on/after.
+  const trainWf = train.filter((p) => p.listed_at! < '2025-01-01');
+  const testWf = train.filter((p) => p.listed_at! >= '2025-01-01');
+  const yWfTrain = trainWf.map((p) => (isPreToken(p) ? 0 : 1));
+  const yWfTest = testWf.map((p) => (isPreToken(p) ? 0 : 1));
+  const baseWf = yWfTrain.reduce((s, v) => s + v, 0) / yWfTrain.length;
+  const baseBrierLoo = brier(ys.map(() => baseRate), ys);
+  const baseBrierWf = brier(yWfTest.map(() => baseWf), yWfTest);
+  // Score one term set in both tests. The base rate has no LOO/WF fit.
+  const scoreTerms = (terms: string[]): OddsTermRow => {
+    if (terms.length === 0) {
+      return { terms: 'base rate', brierLoo: baseBrierLoo, brierWf: baseBrierWf, calledRightLoo: null, calledRightWf: null, status: 'tested, not kept' };
+    }
+    const looPreds = train.map((p, i) => {
+      const tr = train.filter((_, j) => j !== i);
+      const trY = ys.filter((_, j) => j !== i);
+      return predict(fitLogit(tr, trY, terms), p);
+    });
+    const fitWf = fitLogit(trainWf, yWfTrain, terms);
+    const wfPreds = testWf.map((p) => predict(fitWf, p));
+    return {
+      terms: terms.join(' + '),
+      brierLoo: brier(looPreds, ys),
+      brierWf: brier(wfPreds, yWfTest),
+      calledRightLoo: calledRight(looPreds, ys),
+      calledRightWf: calledRight(wfPreds, yWfTest),
+      status: 'tested, not kept',
+    };
+  };
+  const keptTerms = ['age', 'size'];
+  const termSets: string[][] = [
+    [],
+    ['age'],
+    ['age', 'size'],
+    ['age', 'size', 'growth'],
+    ['age', 'size', 'family'],
+    ['age', 'size', 'chain'],
+    ['age', 'size', 'control'],
+  ];
+  const termTable = termSets.map((terms) => {
+    const row = scoreTerms(terms);
+    if (terms.join(' + ') === keptTerms.join(' + ')) row.status = 'kept';
+    if (terms.includes('control')) row.status = 'must not help';
+    return row;
+  });
+  const keptRow = termTable.find((r) => r.status === 'kept')!;
+  const keptFit = fitLogit(train, ys, keptTerms);
+  return {
+    intercept: keptFit.beta[0]!,
+    ageCoef: keptFit.beta[1]!,
+    sizeCoef: keptFit.beta[2]!,
+    trainN: train.length,
+    baseRate,
+    baseBrierLoo,
+    baseBrierWf,
+    brierLoo: keptRow.brierLoo!,
+    brierWf: keptRow.brierWf!,
+    calledRightLoo: keptRow.calledRightLoo!,
+    calledRightWf: keptRow.calledRightWf!,
+    wfTestN: testWf.length,
+    termTable,
+  };
+}
+
+/** P(protocol ever records a token) under the fitted odds model. Age is
+ * the protocol's age in years at asOf (1.0 years when the listing date is
+ * unknown — the same unknown-age prior the maturity term uses). */
+export function oddsFor(p: SnapshotProtocol, odds: OddsFit, asOf: string): number {
+  const z = odds.intercept + odds.ageCoef * ageYears(asOf, p.listed_at) + odds.sizeCoef * (Math.log(p.tvl_usd) - Math.log(1e8));
+  return 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, z))));
+}
+
 /** The snapshot's protocol by slug. */
 function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
   return new Map(protocols.map((p) => [p.slug, p]));
 }
 
-/** The protocols the board ranks, strongest first, with ranks 1..n. */
-export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelConstants = MODEL): BoardRow[] {
+/** The protocols the board ranks, strongest first, with ranks 1..n.
+ * The implied value is the value-if-launches multiplied by the token
+ * odds (when an odds fit is given): the expected value, not the value
+ * conditional on a token launching. The farm verdict is decided on the
+ * odds-weighted implied value. When no odds fit is given, odds are 1 and
+ * the implied value is the value-if-launches. */
+export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelConstants = MODEL, oddsFit?: OddsFit): BoardRow[] {
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
   // The watchlist is the floor: every slug, even one the snapshot no longer carries.
@@ -1222,11 +1642,13 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
 
   const scored = [...chosen.values()].map((p) => {
     const v = impliedValue(p, fit, snapshot.as_of, model, true);
+    const odds = oddsFit === undefined ? 1 : oddsFor(p, oddsFit, snapshot.as_of);
+    const implied = Math.max(1, Math.round(v.raw * odds));
     const steps = farmSteps(p, v.age, model);
-    const verdict = verdictFor(p, v.implied, steps, model);
-    return { p, v, steps, verdict };
+    const verdict = verdictFor(p, implied, steps, model);
+    return { p, v, odds, implied, steps, verdict };
   });
-  scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
+  scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
   // Top-of-book scalar (model.topScalar), now 1.00: a no-op. The loop is
   // kept so the structure is unchanged — with the scalar at 1.00 the lifted
   // value equals the model value and the recomputed verdict is identical.
@@ -1234,9 +1656,9 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
   // dropped it — see the comment on MODEL.topScalar.)
   for (let i = 0; i < Math.min(TOP_ROWS, scored.length); i++) {
     const s = scored[i]!;
-    const lifted = Math.max(1, Math.round(s.v.implied * model.topScalar));
+    const lifted = Math.max(1, Math.round(s.implied * model.topScalar));
     s.verdict = verdictFor(s.p, lifted, s.steps, model);
-    s.v = { ...s.v, implied: lifted };
+    s.implied = lifted;
   }
   return scored.map((s, i) => ({
     rank: i + 1,
@@ -1253,8 +1675,9 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
     token_status: 'pre-token',
     age_days: s.v.age,
     is_watchlist: snapshot.watchlist.includes(s.p.slug),
-    implied_value_usd: s.v.implied,
-    multiple: Math.round((s.v.implied / s.p.tvl_usd) * 10000) / 10000,
+    implied_value_usd: s.implied,
+    odds: Math.round(s.odds * 10000) / 10000,
+    multiple: Math.round((s.implied / s.p.tvl_usd) * 10000) / 10000,
     mechanism: mechanismFor(s.p),
     model: {
       cat_mult: Math.round(s.v.catMult * 10000) / 10000,
@@ -1266,6 +1689,8 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
       growth_multiplier: Math.round(s.v.growthMult * 10000) / 10000,
       maturity_multiplier: Math.round(s.v.maturityMult * 10000) / 10000,
       age_days: s.v.age,
+      odds: Math.round(s.odds * 10000) / 10000,
+      value_if_launches: s.v.implied,
     },
     farm: {
       verdict: s.verdict.verdict,
@@ -1613,7 +2038,7 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
  * step is waiting, not hands-on). Idempotent: a second pass leaves P25-POSITIVE
  * rows alone (only FARM rows can promote).
  */
-export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snapshot, model: ModelConstants = MODEL): { boardWidth80: number; boardWidth50: number } {
+export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snapshot, model: ModelConstants = MODEL, oddsFit?: OddsFit): { boardWidth80: number; boardWidth50: number } {
   const peers = fitPeersOf(snapshot);
   const resid = looLogResiduals(peers, snapshot, model);
   const index = bySlug(snapshot.protocols);
@@ -1621,21 +2046,27 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
   const widths50: number[] = [];
   board.forEach((row, i) => {
     const target = row as unknown as SnapshotProtocol;
+    const p = index.get(row.slug)!;
+    // The band is built on the value-if-launches scale (the bootstrap
+    // refits the value model); it is then scaled by the row's growth and
+    // maturity multipliers and by its token odds, so the band is the
+    // predictive interval of the odds-weighted implied value the board
+    // carries — the same scale as the point estimate.
     const band = bootstrapBand(target, peers, snapshot, resid, 4242000 + i, model);
     const gm = impliedValue(target, fit, snapshot.as_of, model, true).raw / impliedValue(target, fit, snapshot.as_of, model, false).raw;
+    const odds = oddsFit === undefined ? 1 : oddsFor(p, oddsFit, snapshot.as_of);
     // The top-10 lift (model.topScalar) is 1.00 in the post-audit round,
     // so the band is unlifted — the point keeps its place in the band.
     const lift = row.rank <= TOP_ROWS ? model.topScalar : 1;
     row.uncertainty = {
-      p10: Math.max(1, Math.round(band.p10 * gm * lift)),
-      p25: Math.max(1, Math.round(band.p25 * gm * lift)),
-      p75: Math.max(1, Math.round(band.p75 * gm * lift)),
-      p90: Math.max(1, Math.round(band.p90 * gm * lift)),
+      p10: Math.max(1, Math.round(band.p10 * gm * lift * odds)),
+      p25: Math.max(1, Math.round(band.p25 * gm * lift * odds)),
+      p75: Math.max(1, Math.round(band.p75 * gm * lift * odds)),
+      p90: Math.max(1, Math.round(band.p90 * gm * lift * odds)),
     };
     widths80.push(row.uncertainty.p90 / row.uncertainty.p10);
     widths50.push(row.uncertainty.p75 / row.uncertainty.p25);
     // Post-band farm economics + P25-POSITIVE promotion (needs the band's p25/p75).
-    const p = index.get(row.slug)!;
     const steps = farmSteps(p, row.age_days, model);
     const vMed = verdictFor(p, row.implied_value_usd, steps, model);
     const vP25 = verdictFor(p, row.uncertainty.p25, steps, model);
@@ -1665,7 +2096,7 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
  * ones: the LOO comparison table, the time-split, the blind 80/20 x5, the
  * watchlist coherence audit and the chain-residual finding.
  */
-export function validateModel(snapshot: Snapshot, fit: FittedModel, model: ModelConstants = MODEL, band?: BandReport): Validation {
+export function validateModel(snapshot: Snapshot, fit: FittedModel, model: ModelConstants = MODEL, band?: BandReport, oddsFit?: OddsFit): Validation {
   const peers = fitPeersOf(snapshot);
   const asOf = snapshot.as_of;
   const noGm = (p: SnapshotProtocol, f: FittedModel): number => impliedValue(p, f, asOf, model, false).raw;
@@ -1702,8 +2133,8 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     { model: 'flat 0.25x (starter)', median: round4(mFlat.median1p), medianMaxRatio: round4(mFlat.medianMax), within2: round4(mFlat.within2), within3: round4(mFlat.within3), spearman: round4(mFlat.spearman) },
     { model: 'global median ' + fit.globalMedian.toFixed(3) + 'x', median: round4(mGlobal.median1p), medianMaxRatio: round4(mGlobal.medianMax), within2: round4(mGlobal.within2), within3: round4(mGlobal.within3), spearman: round4(mGlobal.spearman) },
     { model: 'size curve only', median: round4(mSize.median1p), medianMaxRatio: round4(mSize.medianMax), within2: round4(mSize.within2), within3: round4(mSize.within3), spearman: round4(mSize.spearman) },
-    { model: 'shrunk s=0.5 (damped)', median: round4(mDamped.median1p), medianMaxRatio: round4(mDamped.medianMax), within2: round4(mDamped.within2), within3: round4(mDamped.within3), spearman: round4(mDamped.spearman) },
-    { model: 'shrunk s=1.0 (adopted)', median: round4(mAdopted.median1p), medianMaxRatio: round4(mAdopted.medianMax), within2: round4(mAdopted.within2), within3: round4(mAdopted.within3), spearman: round4(mAdopted.spearman) },
+    { model: 'size slope damped 0.5x', median: round4(mDamped.median1p), medianMaxRatio: round4(mDamped.medianMax), within2: round4(mDamped.within2), within3: round4(mDamped.within3), spearman: round4(mDamped.spearman) },
+    { model: 'ridge λ=' + model.ridgeLambda + ' (adopted)', median: round4(mAdopted.median1p), medianMaxRatio: round4(mAdopted.medianMax), within2: round4(mAdopted.within2), within3: round4(mAdopted.within3), spearman: round4(mAdopted.spearman) },
   ];
   // Time-split: fit on listed before 2025-01-01, test on listed after.
   const trainTs = peers.filter((p) => p.listed_at !== null && p.listed_at < '2025-01-01');
@@ -1744,6 +2175,44 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     flatTimeSplitWithin2 = round4(mFlatTs.within2);
     flatTimeSplitWithin3 = round4(mFlatTs.within3);
     flatTimeSplitSpearman = round4(mFlatTs.spearman);
+  }
+  // Second walk-forward split: fit on the older half (by listing date),
+  // test on the newer half. Same predictor and flat baseline as the time split.
+  const sortedPeers = [...peers].sort((a, b) => (a.listed_at! < b.listed_at! ? -1 : a.listed_at! > b.listed_at! ? 1 : 0));
+  const halfN = Math.floor(sortedPeers.length / 2);
+  const trainHalf = sortedPeers.slice(0, halfN);
+  const testHalf = sortedPeers.slice(halfN);
+  let wfHalfMedian: number | null = null;
+  let wfHalfMedianMaxRatio: number | null = null;
+  let wfHalfWithin2: number | null = null;
+  let wfHalfWithin3: number | null = null;
+  let wfHalfSpearman: number | null = null;
+  let flatWfHalfMedian: number | null = null;
+  let flatWfHalfMedianMaxRatio: number | null = null;
+  let flatWfHalfWithin2: number | null = null;
+  let flatWfHalfWithin3: number | null = null;
+  let flatWfHalfSpearman: number | null = null;
+  if (trainHalf.length > 0 && testHalf.length > 0) {
+    const fHalf = fitModel(trainHalf, model);
+    const mHalf = looMetrics(
+      testHalf.map((p) => noGm(p, fHalf)),
+      testHalf.map((p) => p.mcap_usd!),
+    );
+    wfHalfMedian = round4(mHalf.median1p);
+    wfHalfMedianMaxRatio = round4(mHalf.medianMax);
+    wfHalfWithin2 = round4(mHalf.within2);
+    wfHalfWithin3 = round4(mHalf.within3);
+    wfHalfSpearman = round4(mHalf.spearman);
+    const cHalf = median(trainHalf.map((p) => p.mcap_usd! / p.tvl_usd));
+    const mFlatHalf = looMetrics(
+      testHalf.map((p) => Math.max(1, cHalf * p.tvl_usd)),
+      testHalf.map((p) => p.mcap_usd!),
+    );
+    flatWfHalfMedian = round4(mFlatHalf.median1p);
+    flatWfHalfMedianMaxRatio = round4(mFlatHalf.medianMax);
+    flatWfHalfWithin2 = round4(mFlatHalf.within2);
+    flatWfHalfWithin3 = round4(mFlatHalf.within3);
+    flatWfHalfSpearman = round4(mFlatHalf.spearman);
   }
   // Blind 80/20 x5, fixed seeds.
   const seeds = [11, 23, 37, 41, 53];
@@ -1804,8 +2273,10 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
   const flatBlindWithin3Avg = avg(flatBlindWithin3);
   const flatBlindSpearmanAvg = avg(flatBlindSpearman);
   // Paired 95% CI for (M0 - flat) blind median error, 5 seeds, t(4) = 2.776.
-  // All five per-seed differences are negative (M0 wins every seed), so the
-  // interval sits entirely below zero: the blind advantage over flat is real.
+  // The interval CROSSES zero on the shipped numbers (flatBlindCiLo < 0 <
+  // flatBlindCiHi): the blind median advantage over flat is NOT established
+  // on these splits; the advantage that holds up is on within-3x. The
+  // dashboard states this correctly; an earlier comment claimed otherwise.
   let flatBlindCiLo: number | null = null;
   let flatBlindCiHi: number | null = null;
   if (blindMedians.length === flatBlindMedians.length && blindMedians.length > 1) {
@@ -1817,7 +2288,8 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     flatBlindCiHi = round4(meanD + 2.776 * seD);
   }
   // Watchlist coherence: Spearman between TVL and implied value over the 40 watchlist rows.
-  const board = buildBoard(snapshot, fit, model);
+  // The board here is the shipped board (odds-weighted, when an odds fit is given).
+  const board = buildBoard(snapshot, fit, model, oddsFit);
   const watchRows = board.filter((r) => r.is_watchlist);
   const coherence = round4(spearman(watchRows.map((r) => r.tvl_usd), watchRows.map((r) => r.implied_value_usd)));
   // The bands: use the report the caller measured on the shipped board when given, else measure
@@ -1827,7 +2299,7 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     band ??
     (() => {
       const cal = bandCalibration(snapshot, model);
-      const widths = attachBands(board, fit, snapshot, model);
+      const widths = attachBands(board, fit, snapshot, model, oddsFit);
       return { ...cal, ...widths };
     })();
   // Chain residuals: the median log10 residual of the adopted model per primary chain.
@@ -1865,6 +2337,17 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     timeSplitWithin3,
     timeSplitSpearman,
     timeSplitN: testTs.length,
+    wfHalfMedian,
+    wfHalfMedianMaxRatio,
+    wfHalfWithin2,
+    wfHalfWithin3,
+    wfHalfSpearman,
+    wfHalfN: testHalf.length,
+    flatWfHalfMedian,
+    flatWfHalfMedianMaxRatio,
+    flatWfHalfWithin2,
+    flatWfHalfWithin3,
+    flatWfHalfSpearman,
     blindMedian,
     blindMedianMaxRatio,
     blindWithin2: blindWithin2Avg,
@@ -1890,16 +2373,58 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
   };
 }
 
+/** One group of the 758-protocol accounting: every snapshot protocol in
+ * exactly one group. */
+export interface AccountingGroup {
+  label: string;
+  count: number;
+  note: string;
+}
+/** The accounting of all 758 snapshot protocols. The groups sum to the
+ * snapshot total — nothing is left out and nothing is counted twice. */
+export interface Accounting {
+  total: number;
+  groups: AccountingGroup[];
+}
+
+/**
+ * Account for every protocol in the snapshot, in exactly one group.
+ * Ranked rows are the board; live-token protocols are the yardstick
+ * (fit peers, set aside, or no usable cap); pre-token protocols not on
+ * the board are excluded by rule (CEX, versioned/wrapped) or by the
+ * early-radar cap (rankable but below the cutoff, or too large for the
+ * early radar and not on the watchlist).
+ */
+export function computeAccounting(snapshot: Snapshot, board: BoardRow[]): Accounting {
+  const boardSlugs = new Set(board.map((r) => r.slug));
+  const watchlist = new Set(snapshot.watchlist);
+  const count = (pred: (p: SnapshotProtocol) => boolean): number =>
+    snapshot.protocols.filter(pred).length;
+  const groups: AccountingGroup[] = [
+    { label: 'Ranked watchlist', count: count((p) => boardSlugs.has(p.slug) && watchlist.has(p.slug)), note: 'the 40 watchlist protocols, all ranked' },
+    { label: 'Ranked early', count: count((p) => boardSlugs.has(p.slug) && !watchlist.has(p.slug)), note: 'pre-token, below the $50M floor, top 160 by TVL' },
+    { label: 'Live, fit peer', count: count((p) => isPeer(p) && p.listed_at !== null), note: 'live-token peers the size curve is fitted on' },
+    { label: 'Live, set aside', count: count((p) => isPeer(p) && p.listed_at === null), note: 'live-token peers with no listing date — the fit cannot check their age' },
+    { label: 'Live, no usable cap', count: count((p) => !isPreToken(p) && !isPeer(p)), note: 'record a token but carry no usable market cap' },
+    { label: 'Pre-token, CEX', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && p.category === 'CEX'), note: 'centralised exchanges — never board candidates' },
+    { label: 'Pre-token, versioned/wrapped', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && p.category !== 'CEX' && VERSIONED.test(p.name)), note: 'a version or wrapper of another protocol — never board candidates' },
+    { label: 'Pre-token, rankable, TVL at/above floor', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && p.category !== 'CEX' && !VERSIONED.test(p.name) && p.tvl_usd >= snapshot.floor_usd), note: 'too large for the early radar and not on the watchlist' },
+    { label: 'Pre-token, rankable, below early cap', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && p.category !== 'CEX' && !VERSIONED.test(p.name) && p.tvl_usd < snapshot.floor_usd), note: 'the early radar is capped at 160 by TVL' },
+  ];
+  return { total: snapshot.protocols.length, groups };
+}
+
 /** Everything the dashboard renders, from the snapshot. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
   const fit = fitModel(fitPeersOf(snapshot), model, peersOf(snapshot));
-  const board = buildBoard(snapshot, fit, model);
+  const odds = fitOdds(snapshot, model);
+  const board = buildBoard(snapshot, fit, model, odds);
   const live = liveRows(snapshot);
   const early = board.filter((r) => !r.is_watchlist).length;
   // The bands are measured once on the shipped board and handed to validation, so the
   // methodology panel's calibration numbers are the same ones the board displays.
   const bandCal = bandCalibration(snapshot, model);
-  const bandWidths = attachBands(board, fit, snapshot, model);
+  const bandWidths = attachBands(board, fit, snapshot, model, odds);
   // The playbooks cost what the board already decided to farm: they run
   // after the bands (P25-POSITIVE promotion, p25, break-even) exist.
   attachPlaybooks(board, snapshot, model);
@@ -1914,7 +2439,9 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     early_size: early,
     live_size: live.length,
     fit,
-    validation: validateModel(snapshot, fit, model, { ...bandCal, ...bandWidths }),
+    odds,
+    accounting: computeAccounting(snapshot, board),
+    validation: validateModel(snapshot, fit, model, { ...bandCal, ...bandWidths }, odds),
     rows: board,
     live,
     peers: peerPoints(fitPeersOf(snapshot), snapshot, model),
