@@ -18,8 +18,10 @@
 // Huber-weighted (IRLS, delta = 1.0 in log10 units) so a few far-off peers
 // do not drag the slope. A category with fewer than 3 live peers gets
 // offset 0 and falls back to the global fit, so Risk Curators falls back
-// to the size curve, not to its single peer. The slope comes out at 0.516
-// (the Huber-weighted ridge fit), matching the top tier's fitted slope.
+// to the size curve, not to its single peer. The slope comes out at 0.414
+// (the Huber-weighted, winsorized ridge fit); the top tier's fitted slope
+// is 0.516 — the winsorization clips the far-off peers that pulled the
+// slope up, and the flatter slope is what the walk-forward gain buys.
 //
 // Why ridge, not the old two-stage model (round 6 and earlier fitted a
 // shrunk category median separately, then a Huber size curve anchored to
@@ -28,15 +30,18 @@
 // fitted on older tokens does not carry to newer tokens (measured: the
 // old model scores walk-forward x3.43 on the 2025 cutoff and x4.05 on
 // older-half/newer-half, against x2.96 leave-one-out). The ridge fit
-// closes most of that gap (walk-forward x2.65 on the 2025 cutoff, x3.01
-// on older-half/newer-half; leave-one-out x2.77, within-3x 51.6%) while
-// keeping leave-one-out unchanged. Whether to Huber-weight the ridge was
-// itself tested in both tests: Huber wins leave-one-out (x2.77 vs x2.98
-// for OLS ridge) and the 2025-cutoff walk-forward (x2.65 vs x2.79), and
-// wins Spearman on every split; it loses the older-half/newer-half
-// walk-forward (x3.01 vs x2.83 for OLS ridge) — a real caveat, stated
-// in the method tab, not hidden. The headline walk-forward is the 2025
-// cutoff, the split the model has always used for its time split.
+// closes most of that gap (walk-forward x2.19 on the 2025 cutoff, x2.59
+// on older-half/newer-half; leave-one-out x2.74, within-3x 50.5%). The
+// ridge outcome is winsorized at the train set's 5th/95th percentiles of
+// log10(market cap) before the solve — the winsorization alone takes the
+// headline walk-forward from x2.65 (round 7, unwinsorized) to x2.19.
+// Whether to Huber-weight the ridge was itself tested in both tests:
+// Huber wins leave-one-out (x2.74 vs x2.76 for OLS ridge), the 2025-cutoff
+// walk-forward (x2.19 vs x2.28), and the older-half/newer-half walk-forward
+// (x2.59 vs x2.61); it loses the blind test (x3.73 vs x3.48 for OLS ridge)
+// — a real caveat, stated in the method tab, not hidden. The headline
+// walk-forward is the 2025 cutoff, the split the model has always used for
+// its time split.
 //
 // For display the ridge prediction is factored through the category's
 // median TVL, so the board keeps its familiar multiplicative form:
@@ -44,39 +49,41 @@
 //   cat_mult    = 10^(a + b*log10(median_tvl_of_category) + offset) / median_tvl
 //                 (the multiple at the category's typical size)
 //   size_factor = (tvl / median_tvl_of_category) ^ (b - 1)
-//   growth      = 1 + clamp(change_7d, -60, 120)/100 * 0.5
-//   maturity    = 0.6 + min(age_days, 1095)/1095 * 0.4
+//   growth      = 1 + clamp(change_7d, -60, 120)/100 * 0   (dropped in round 8)
+//   maturity    = 1                                        (dropped in round 8)
 //   implied     = max(1, round(tvl * cat_mult * size_factor * growth * maturity))
 //
-// The sub-linear curve (beta = 0.516) compresses the multiple of a protocol
+// The sub-linear curve (beta = 0.414) compresses the multiple of a protocol
 // far above its category's median TVL: Steakhouse Financial at $2.75B TVL is
-// 82x the $33.4M global median peer TVL, so its size factor is 0.114x and its
-// multiple is 0.018x, not the raw 0.204x -- the board's multiples are
+// 82x the $33.4M global median peer TVL, so its size factor is 0.075x and its
+// multiple is 0.014x, not the raw 0.204x -- the board's multiples are
 // post-dampening, not raw category multiples.
 //
 // The fit is recomputed from the snapshot every run (nothing is hardcoded
-// except the priors: lambda = 4, the Huber delta, the growth weight and
-// the maturity floor). The fit peers are the 95 peers with a listing date,
-// out of the 128-peer universe: a protocol with no listed_at cannot have a
-// seasoning / maturity term — its age is unknowable, not zero — so the 33
-// dateless peers are excluded from every fit, validation and band, while
-// the universe stays 128 for reporting. No protocol name is ever
-// special-cased: the same function scores every row. The model is a pricing
-// yardstick, not a price target: its blind error — fit on 80% of the 95 fit
-// peers, evaluated on the held-out 20%, repeated five times with fixed
-// seeds, no tuning on the test set — is a median of x1.90 (1 + MdAPE, the
-// median absolute percentage error), 50.5% within 3x on leave-one-out
-// (median x1.82). Every row carries a bootstrap predictive band (200
+// except the constants: lambda = 4, the Huber delta, the winsor quantiles
+// 5/95). The fit peers are the 95 peers with a listing date,
+// out of the 128-peer universe: a protocol with no listed_at cannot be
+// placed in the time split — its listing date is unknowable, not zero —
+// and including the 33 dateless peers worsens the headline walk-forward
+// (x2.19 to x2.80, measured), so the 33 dateless peers are excluded from
+// every fit, validation and band, while the universe stays 128 for
+// reporting. No protocol name is ever special-cased: the same function
+// scores every row. The model is a pricing yardstick, not a price target:
+// its blind error — fit on 80% of the 95 fit peers, evaluated on the
+// held-out 20%, repeated five times with fixed seeds, no tuning on the
+// test set — is a median max-ratio of x3.73 (45.3% within 3x); leave-one-out
+// is x2.74 median, 50.5% within 3x. Every row carries a bootstrap predictive band (200
 // resamples of the peer set, refit, plus one draw from the leave-one-out
-// residual distribution): the 80% band covers 82% of held-out market caps
-// on the blind splits, and it is wide — typically ~130x — because the error
-// distribution is heavy-tailed (the 90th-percentile leave-one-out error is
-// x21.2, far above the x1.82 median; the methodology panel states it). A
+// residual distribution): the 80% band covers 81% of held-out market caps
+// on the blind splits, and it is wide — typically ~107x (median p90/p10
+// across the board) — because the error distribution is heavy-tailed (the
+// 90th-percentile leave-one-out error is x29.1, far above the x2.74 median;
+// the methodology panel states it). A
 // FARM row whose net EV is still ≥ $0 at the P25 implied value promotes to
 // P25-POSITIVE in the post-band step: it still pays (does not lose money)
 // at the low end of its band. The $40 farm threshold at P25 is unreachable
-// — the P25 band is wide (p25/implied is 0.24–0.41 on FARM rows), so the
-// best row on the board reaches only ~$9 at P25 — and "pays at the low
+// — the P25 band is wide (p25/implied is 0.17–0.35 on FARM rows), so the
+// best row on the board reaches only ~$8 at P25 — and "pays at the low
 // end" means breaking even there, not clearing the median's $40 bar.
 // The band is the honest uncertainty, shown next to the value, not hidden.
 
@@ -140,6 +147,9 @@ export interface FittedModel {
   ridgeLambda: number;
   /** Whether the ridge fit is Huber-weighted (IRLS, delta = 1.0). */
   ridgeHuber: boolean;
+  /** The winsor bounds actually applied to the ridge fit's log10(mcap): the train set's ridgeWinsorLoQ/ridgeWinsorHiQ quantiles. */
+  ridgeWinsorLo: number;
+  ridgeWinsorHi: number;
   /** One fitted log10 offset per category with >= 3 peers (offset 0 otherwise). */
   ridgeOffsets: RidgeOffset[];
 }
@@ -149,8 +159,13 @@ export interface ModelConstants {
   minPeers: number;
   /** The ridge penalty (lambda) on the category offsets. */
   ridgeLambda: number;
+  /** Whether the ridge fit is Huber-weighted (IRLS). Honoured by fitModel — round 7 hardcoded true and the flag did nothing; fixed in round 8. */
+  ridgeHuber: boolean;
   /** The Huber delta (log10 units) for the ridge fit's IRLS weights. */
   ridgeHuberDelta: number;
+  /** Winsor quantiles for the ridge fit's log10(mcap): the outcome is clipped to the train set's [lo, hi] quantiles before the ridge solve (round 8, measured in benchmark/path-to-number-one.md §1.3 — the single best change available: it improves the median max-ratio on all four splits). */
+  ridgeWinsorLoQ: number;
+  ridgeWinsorHiQ: number;
   growthWeight: number;
   growthFloor: number;
   growthCap: number;
@@ -174,13 +189,36 @@ export const MODEL: ModelConstants = {
   // Ridge penalty lambda = 4: the best on both walk-forward splits in the
   // round-7 two-test check (benchmark/ridge-test.ts), robust across 1-64.
   ridgeLambda: 4,
+  // Huber weighting on: the flag is honoured by fitModel (round 7 hardcoded
+  // true). With the winsorized fit Huber wins or ties on the three splits
+  // the research measured for OLS+winsor (LOO x2.74 vs x2.76, WF-cutoff
+  // x2.19 vs x2.28, WF-half x2.59 vs x2.61; benchmark/path-to-number-one.md
+  // §4). Without winsor Huber lost the half/half split to OLS (x3.01 vs
+  // x2.83) — the winsorization, not the weighting, is what fixed that split.
+  ridgeHuber: true,
   // Huber delta = 1.0 in log10 units, the same delta the old size curve used.
   ridgeHuberDelta: 1.0,
-  growthWeight: 0.5,
+  // Winsor 5/95 on the ridge fit's log10(mcap): measured in
+  // benchmark/path-to-number-one.md §1.3 — the only variant that improves
+  // the median max-ratio on all four splits (LOO, blind, WF-cutoff,
+  // WF-half). 10/90 is too aggressive (LOO worsens to x2.97); 5/95 is the
+  // sweet spot. The quantiles come from the TRAIN set only; test peers are
+  // predicted as-is.
+  ridgeWinsorLoQ: 0.05,
+  ridgeWinsorHiQ: 0.95,
+  // Growth weight 0 and maturity 1.0: BOTH DROPPED in round 8 (measured in
+  // benchmark/path-to-number-one.md §2). Maturity worsens the headline
+  // walk-forward from x2.65 to x3.05 when applied to peers, and kiencx and
+  // europa-nova both tested age for value and rejected it; growth alone is
+  // roughly neutral on prediction (WF-cut x2.61 vs x2.65, LOO x2.81 vs
+  // x2.77) and dropping it raises the FARM count (6 -> 8 with the winsor
+  // fit). The board is the fitted model, no priors: growthMult and
+  // maturityMult are identically 1.0 for every row.
+  growthWeight: 0,
   growthFloor: -60,
   growthCap: 120,
-  maturityFloor: 0.6,
-  maturityRange: 0.4,
+  maturityFloor: 1,
+  maturityRange: 0,
   maturityDays: 1095,
   unknownAgeDays: 365,
   poolShare: 0.08,
@@ -190,8 +228,8 @@ export const MODEL: ModelConstants = {
   holdDays: 90,
   // Build-time retune (plan 3.4 / 5 step 3): the $75 threshold gave 4 FARM
   // rows on the 200-row board (2%) and 0 on the watchlist. The net-EV ratio
-  // (>= 1.5x) caps FARM at 15 rows however low the threshold goes, so $40
-  // takes every row that passes the ratio test: 15 FARM (7.5%), the closest
+  // (>= 1.5x) caps FARM at 8 rows however low the threshold goes, so $40
+  // takes every row that passes the ratio test: 8 FARM (4.0%), the closest
   // the rule can come to the top decile without touching its structure.
   farmThreshold: 40,
   farmRatio: 1.5,
@@ -206,7 +244,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-7-ridge';
+export const MODEL_VERSION = 'radar-8-winsor';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
@@ -495,6 +533,18 @@ export interface Validation {
   coherence: number;
   chainEthDex: number;
   chainSolDex: number;
+  /** The value-model two-test term table, computed from the snapshot every run (see valueTermTable). */
+  valueTermTable: ValueTermRow[];
+}
+
+/** One row of the value-model two-test term table: a candidate value term (or term set), scored in leave-one-out and walk-forward (2025 cutoff) on the median max-ratio. A term is kept only when it lowers the miss in BOTH tests relative to the adopted model. Computed from the snapshot every run, like the odds term table — never hardcoded. */
+export interface ValueTermRow {
+  terms: string;
+  missLoo: number | null;
+  within3Loo: number | null;
+  missWf: number | null;
+  within3Wf: number | null;
+  status: 'kept' | 'tested, not kept' | 'must not help';
 }
 
 /** Everything the dashboard needs: the board, the live set, the peers and the model it runs. */
@@ -712,10 +762,13 @@ export function peersOf(snapshot: Snapshot): SnapshotProtocol[] {
 
 /**
  * The fit peers: the peer universe minus the 33 protocols with no listing
- * date (n=95). A protocol with no `listed_at` cannot have a seasoning /
- * maturity term — its age is unknowable, not zero — so it is excluded from
- * every fit, validation and band, while `peersOf` stays the 128-peer
- * universe for reporting. All fit/validation/band code uses these peers.
+ * date (n=95). They are excluded on measured grounds, not on a prior:
+ * including them in the fit worsens the winsorized ridge's headline
+ * walk-forward from x2.19 to x2.80 (benchmark/path-to-number-one.md §1.3),
+ * and a protocol with no listed_at cannot be placed in the time split at
+ * all. They stay in the 128-peer universe for reporting and in the LOO128
+ * sensitivity, which scores them with the same predictor. All
+ * fit/validation/band code uses these peers.
  */
 export function fitPeersOf(snapshot: Snapshot): SnapshotProtocol[] {
   return snapshot.protocols.filter((p) => isPeer(p) && p.listed_at !== null);
@@ -745,15 +798,44 @@ export function solveLinear(Ain: number[][], bin: number[]): number[] {
   return M.map((row, i) => row[d]! / (Math.abs(M[i]![i]!) < 1e-12 ? 1 : M[i]![i]!));
 }
 
+/** Extra design columns for a ridge variant, computed from the fit set (set-dependent columns like family stems are built here, so every refit recomputes them from its own train set). */
+export interface RidgeExtra {
+  /** Extra columns for one protocol (same order as penalties). */
+  cols: (p: SnapshotProtocol) => number[];
+  /** Ridge penalty per extra column (0 = unpenalised). */
+  penalties: number[];
+}
+
+/** What a ridge fit returns: the size curve, the category offsets, the winsor bounds actually applied, and the fitted prediction for one protocol. */
+export interface RidgeFitResult {
+  a: number;
+  b: number;
+  offsets: RidgeOffset[];
+  /** The winsor bounds applied to log10(mcap): the train set's ridgeWinsorLoQ/ridgeWinsorHiQ quantiles (index rule: sorted[Math.floor(q * (n - 1))], the same rule benchmark/path1b.ts measured). */
+  winsorLo: number;
+  winsorHi: number;
+  /** The fitted prediction: 10^(a + b*log10(tvl) + offset[category] + extras). */
+  predict: (p: SnapshotProtocol) => number;
+}
+
 /**
- * The ridge fit: log10(mcap) = a + b * log10(tvl) + offset[category],
- * fitted jointly. The ridge penalty lambda applies to the category
- * offsets only (intercept and slope unpenalised). Categories with fewer
- * than minPeers peers get offset 0. When huber is true, the fit is
- * Huber-weighted (IRLS, weights min(1, delta/|r|) in log10 units, 20
- * iterations from the OLS start) so a few far-off peers do not drag the
- * slope; when false it is plain OLS ridge. Pure: the same peers, lambda
- * and huber always give the same fit.
+ * The ridge fit: log10(mcap) = a + b * log10(tvl) + offset[category] (+ extra
+ * columns for a variant), fitted jointly. The ridge penalty lambda applies to
+ * the category offsets only (intercept and slope unpenalised); extra columns
+ * carry their own penalties. Categories with fewer than minPeers peers get
+ * offset 0. When huber is true, the fit is Huber-weighted (IRLS, weights
+ * min(1, delta/|r|) in log10 units, 20 iterations from the OLS start) so a
+ * few far-off peers do not drag the slope; when false it is plain OLS ridge.
+ * Pure: the same peers, lambda and huber always give the same fit.
+ *
+ * Round 8: the outcome log10(mcap) is winsorized at the train set's
+ * [ridgeWinsorLoQ, ridgeWinsorHiQ] quantiles BEFORE the solve (the peer
+ * still counts, its outcome is capped) — the same robust principle already
+ * applied to the mcap/TVL ratios, now applied to the fit itself. Measured
+ * in benchmark/path-to-number-one.md §1.3: winsor 5/95 is the only variant
+ * that improves the median max-ratio on all four splits (LOO x2.77 -> x2.74,
+ * blind x3.78 -> x3.73, WF-cutoff x2.65 -> x2.19, WF-half x3.01 -> x2.59).
+ * The quantiles come from the TRAIN set only; test peers are predicted as-is.
  */
 export function ridgeFit(
   peers: SnapshotProtocol[],
@@ -761,26 +843,51 @@ export function ridgeFit(
   huber: boolean,
   delta: number,
   model: ModelConstants = MODEL,
-): { a: number; b: number; offsets: RidgeOffset[] } {
-  const cats = [...new Set(peers.map((p) => p.category))]
-    .filter((c) => peers.filter((p) => p.category === c).length >= model.minPeers)
-    .sort((a, b) => {
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return a < b ? -1 : a > b ? 1 : 0;
-    });
+  opts?: { categories?: boolean; extra?: (train: SnapshotProtocol[]) => RidgeExtra },
+): RidgeFitResult {
+  const withCategories = opts?.categories !== false;
+  const extra = opts?.extra === undefined ? undefined : opts.extra(peers);
+  const nExtra = extra === undefined || peers.length === 0 ? 0 : extra.cols(peers[0]!).length;
+  const cats = withCategories
+    ? [...new Set(peers.map((p) => p.category))]
+        .filter((c) => peers.filter((p) => p.category === c).length >= model.minPeers)
+        .sort((a, b) => {
+          if (a === null) return 1;
+          if (b === null) return -1;
+          return a < b ? -1 : a > b ? 1 : 0;
+        })
+    : [];
   const k = cats.length;
   const idx = new Map<string | null, number>(cats.map((c, i) => [c, i]));
-  const d = 2 + k;
+  const d = 2 + k + nExtra;
+  // Winsor bounds on log10(mcap): the train set's quantiles, index rule
+  // (sorted[floor(q * (n - 1))]) — the exact rule the research measured.
+  const ysSorted = peers.map((p) => Math.log10(p.mcap_usd!)).sort((a, b) => a - b);
+  const winsorLo = ysSorted[Math.floor(model.ridgeWinsorLoQ * (ysSorted.length - 1))]!;
+  const winsorHi = ysSorted[Math.floor(model.ridgeWinsorHiQ * (ysSorted.length - 1))]!;
   const X = peers.map((p) => {
     const row = new Array<number>(d).fill(0);
     row[0] = 1;
     row[1] = Math.log10(p.tvl_usd);
     const ci = idx.get(p.category);
     if (ci !== undefined) row[2 + ci] = 1;
+    if (extra !== undefined) {
+      const ec = extra.cols(p);
+      for (let j = 0; j < nExtra; j++) row[2 + k + j] = ec[j]!;
+    }
     return row;
   });
-  const y = peers.map((p) => Math.log10(p.mcap_usd!));
+  // The outcome, winsorized: a peer's log10(mcap) is capped at the bounds,
+  // so a few far-off peers cannot drag the slope. The Huber IRLS residuals
+  // below are measured against this winsorized outcome.
+  const y = peers.map((p) => clamp(Math.log10(p.mcap_usd!), winsorLo, winsorHi));
+  // Ridge penalties per column: 0 for intercept and slope, lambda for each
+  // category offset, the extra columns' own penalties.
+  const penalties = new Array<number>(d).fill(0);
+  for (let j = 2; j < 2 + k; j++) penalties[j] = lambda;
+  if (extra !== undefined) {
+    for (let j = 0; j < nExtra; j++) penalties[2 + k + j] = extra.penalties[j]!;
+  }
   const solve = (weights: number[]): number[] => {
     const A = Array.from({ length: d }, () => new Array<number>(d).fill(0));
     const bvec = new Array<number>(d).fill(0);
@@ -791,16 +898,14 @@ export function ridgeFit(
         for (let c = 0; c < d; c++) A[r]![c]! += w * X[i]![r]! * X[i]![c]!;
       }
     }
-    for (let j = 2; j < d; j++) A[j]![j]! += lambda;
+    for (let j = 0; j < d; j++) A[j]![j]! += penalties[j]!;
     return solveLinear(A, bvec);
   };
   let beta = solve(new Array<number>(peers.length).fill(1));
   if (huber) {
     for (let it = 0; it < 20; it++) {
       const ws = peers.map((p, i) => {
-        let pred = beta[0]! + beta[1]! * Math.log10(p.tvl_usd);
-        const ci = idx.get(p.category);
-        if (ci !== undefined) pred += beta[2 + ci]!;
+        const pred = beta.reduce((s, v, j) => s + v * X[i]![j]!, 0);
         const r = Math.abs(y[i]! - pred);
         return r <= delta ? 1 : delta / r;
       });
@@ -815,7 +920,17 @@ export function ridgeFit(
     offset: beta[2 + i]!,
     n: peers.filter((p) => p.category === c).length,
   }));
-  return { a: beta[0]!, b: beta[1]!, offsets };
+  const predict = (p: SnapshotProtocol): number => {
+    let z = beta[0]! + beta[1]! * Math.log10(p.tvl_usd);
+    const ci = idx.get(p.category);
+    if (ci !== undefined) z += beta[2 + ci]!;
+    if (extra !== undefined) {
+      const ec = extra.cols(p);
+      for (let j = 0; j < nExtra; j++) z += beta[2 + k + j]! * ec[j]!;
+    }
+    return Math.pow(10, z);
+  };
+  return { a: beta[0]!, b: beta[1]!, offsets, winsorLo, winsorHi, predict };
 }
 
 /**
@@ -864,7 +979,7 @@ export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODE
       if (b.category === null) return -1;
       return a.category < b.category ? -1 : a.category > b.category ? 1 : 0;
     });
-  const ridge = ridgeFit(peers, model.ridgeLambda, true, model.ridgeHuberDelta, model);
+  const ridge = ridgeFit(peers, model.ridgeLambda, model.ridgeHuber, model.ridgeHuberDelta, model);
   const xs = peers.map((p) => Math.log10(p.tvl_usd));
   const ys = peers.map((p) => Math.log10(p.mcap_usd!));
   const n = xs.length;
@@ -898,7 +1013,9 @@ export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODE
     sizeSeB,
     residualSd: residSd,
     ridgeLambda: model.ridgeLambda,
-    ridgeHuber: true,
+    ridgeHuber: model.ridgeHuber,
+    ridgeWinsorLo: ridge.winsorLo,
+    ridgeWinsorHi: ridge.winsorHi,
     ridgeOffsets: ridge.offsets,
   };
 }
@@ -1608,7 +1725,8 @@ export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): Odds
 
 /** P(protocol ever records a token) under the fitted odds model. Age is
  * the protocol's age in years at asOf (1.0 years when the listing date is
- * unknown — the same unknown-age prior the maturity term uses). */
+ * unknown — the odds model's unknown-age prior; the maturity term that used
+ * the same prior is dropped in round 8). */
 export function oddsFor(p: SnapshotProtocol, odds: OddsFit, asOf: string): number {
   const z = odds.intercept + odds.ageCoef * ageYears(asOf, p.listed_at) + odds.sizeCoef * (Math.log(p.tvl_usd) - Math.log(1e8));
   return 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, z))));
@@ -2091,6 +2209,111 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
 }
 
 /**
+ * The value-model two-test term table, computed from the snapshot every run
+ * (round 8; the odds model has had one since round 7, the value model did
+ * not — both auditors flagged it). Each candidate value term is scored in
+ * leave-one-out and in the 2025-cutoff walk-forward on the median max-ratio,
+ * using the same winsorized Huber ridge machinery as the adopted fit, so the
+ * adopted row reproduces the headline validation numbers. A term is kept
+ * only when it lowers the miss in BOTH tests relative to the adopted model
+ * (size curve + category ridge). The family columns are one-hot dummies for
+ * name stems with >= 3 members in the FIT set, ridge-shrunk at lambda 16
+ * (kiencx's family ridge); the control is the 7-day growth of another row
+ * (the next protocol in listing order) — a placebo that must not help. The
+ * status is computed by the rule, not hardcoded: a row that beats the
+ * adopted model on both tests is marked kept, which would mean the adopted
+ * model is missing a term that passes the rule.
+ */
+export function valueTermTable(snapshot: Snapshot, model: ModelConstants = MODEL): ValueTermRow[] {
+  const peers = fitPeersOf(snapshot);
+  const asOf = snapshot.as_of;
+  // The control term: the 7-day growth of another row (the next protocol in
+  // listing order) — a placebo that must not help.
+  const controlGrowth = (train: SnapshotProtocol[]): Map<string, number> => {
+    const byListed = [...train].sort((a, b) => (a.listed_at! < b.listed_at! ? -1 : 1));
+    const m = new Map<string, number>();
+    byListed.forEach((p, i) => {
+      m.set(p.slug, clamp(byListed[(i + 1) % byListed.length]!.change_7d ?? 0, -60, 120) / 100);
+    });
+    return m;
+  };
+  const familyStems = (set: SnapshotProtocol[]): string[] => {
+    const counts = new Map<string, number>();
+    for (const p of set) counts.set(nameStem(p), (counts.get(nameStem(p)) ?? 0) + 1);
+    return [...counts.entries()].filter(([, n]) => n >= 3).map(([s]) => s).sort();
+  };
+  // One variant's extra design columns, built from its own fit set.
+  type Variant = { terms: string; categories: boolean; extra?: (train: SnapshotProtocol[]) => RidgeExtra };
+  const variants: Variant[] = [
+    { terms: 'size curve only', categories: false },
+    { terms: 'size curve + category ridge', categories: true },
+    {
+      terms: 'adopted + family effect · ridge 16', categories: true,
+      extra: (train) => {
+        const stems = familyStems(train);
+        return {
+          cols: (p) => stems.map((s) => (nameStem(p) === s ? 1 : 0)),
+          penalties: stems.map(() => 16),
+        };
+      },
+    },
+    {
+      terms: 'adopted + 7-day TVL growth', categories: true,
+      extra: () => ({ cols: (p) => [clamp(p.change_7d ?? 0, -60, 120) / 100], penalties: [0] }),
+    },
+    {
+      terms: 'adopted + age, years listed', categories: true,
+      extra: () => ({ cols: (p) => [ageYears(asOf, p.listed_at)], penalties: [0] }),
+    },
+    {
+      terms: 'adopted + chain count, ln', categories: true,
+      extra: () => ({ cols: (p) => [Math.log(Math.max(1, p.chains.length)) - Math.log(2)], penalties: [0] }),
+    },
+    {
+      terms: 'adopted + control: growth of another row', categories: true,
+      extra: (train) => {
+        const cg = controlGrowth(train);
+        return { cols: (p) => [cg.get(p.slug) ?? 0], penalties: [0] };
+      },
+    },
+  ];
+  const score = (v: Variant): Omit<ValueTermRow, 'status'> => {
+    const fitVariant = (train: SnapshotProtocol[]) =>
+      ridgeFit(train, model.ridgeLambda, model.ridgeHuber, model.ridgeHuberDelta, model,
+        { categories: v.categories, extra: v.extra });
+    // Leave-one-out: full refit each fold.
+    const looPreds = peers.map((p, i) => {
+      const train = peers.filter((_, j) => j !== i);
+      return fitVariant(train).predict(p);
+    });
+    const loo = looMetrics(looPreds, peers.map((p) => p.mcap_usd!));
+    // Walk-forward: fit listed before 2025-01-01, test listed on/after.
+    const trainWf = peers.filter((p) => p.listed_at! < '2025-01-01');
+    const testWf = peers.filter((p) => p.listed_at! >= '2025-01-01');
+    const fWf = fitVariant(trainWf);
+    const wf = looMetrics(
+      testWf.map((p) => fWf.predict(p)),
+      testWf.map((p) => p.mcap_usd!),
+    );
+    return {
+      terms: v.terms,
+      missLoo: round4(loo.medianMax),
+      within3Loo: round4(loo.within3),
+      missWf: round4(wf.medianMax),
+      within3Wf: round4(wf.within3),
+    };
+  };
+  const rows = variants.map((v) => ({ ...score(v), status: 'tested, not kept' as ValueTermRow['status'] }));
+  const adopted = rows[1]!;
+  rows.forEach((r) => {
+    if (r.terms === adopted.terms) r.status = 'kept';
+    else if (r.terms.includes('control')) r.status = 'must not help';
+    else if (r.missLoo! < adopted.missLoo! && r.missWf! < adopted.missWf!) r.status = 'kept';
+  });
+  return rows;
+}
+
+/**
  * The full validation suite, computed from the snapshot every run so the
  * dashboard's methodology panel shows measured numbers, never hardcoded
  * ones: the LOO comparison table, the time-split, the blind 80/20 x5, the
@@ -2132,7 +2355,7 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
   const loo: LooRow[] = [
     { model: 'flat 0.25x (starter)', median: round4(mFlat.median1p), medianMaxRatio: round4(mFlat.medianMax), within2: round4(mFlat.within2), within3: round4(mFlat.within3), spearman: round4(mFlat.spearman) },
     { model: 'global median ' + fit.globalMedian.toFixed(3) + 'x', median: round4(mGlobal.median1p), medianMaxRatio: round4(mGlobal.medianMax), within2: round4(mGlobal.within2), within3: round4(mGlobal.within3), spearman: round4(mGlobal.spearman) },
-    { model: 'size curve only', median: round4(mSize.median1p), medianMaxRatio: round4(mSize.medianMax), within2: round4(mSize.within2), within3: round4(mSize.within3), spearman: round4(mSize.spearman) },
+    { model: 'size curve only (ridge a/b, no offsets)', median: round4(mSize.median1p), medianMaxRatio: round4(mSize.medianMax), within2: round4(mSize.within2), within3: round4(mSize.within3), spearman: round4(mSize.spearman) },
     { model: 'size slope damped 0.5x', median: round4(mDamped.median1p), medianMaxRatio: round4(mDamped.medianMax), within2: round4(mDamped.within2), within3: round4(mDamped.within3), spearman: round4(mDamped.spearman) },
     { model: 'ridge λ=' + model.ridgeLambda + ' (adopted)', median: round4(mAdopted.median1p), medianMaxRatio: round4(mAdopted.medianMax), within2: round4(mAdopted.within2), within3: round4(mAdopted.within3), spearman: round4(mAdopted.spearman) },
   ];
@@ -2370,6 +2593,7 @@ export function validateModel(snapshot: Snapshot, fit: FittedModel, model: Model
     coherence,
     chainEthDex: chainResid('ethereum'),
     chainSolDex: chainResid('solana'),
+    valueTermTable: valueTermTable(snapshot, model),
   };
 }
 
