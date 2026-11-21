@@ -205,10 +205,11 @@ not a board error. Stated explicitly on the dashboard (method tab) and here.
   (sums to 758) match the built board.
 - **Dossier embeds the round-8 screenshots:** `out/dossier.json` image hashes
   == `screenshots/` hashes, 4/4 (fceefb8c…, ae3511c1…, 1a24dca3…, 42708bce…).
-- **Screenshots** (`screenshots/`, sha256):
+- **Screenshots** (`screenshots/`, sha256; 3-calibration.png replaced in fix
+  round 2, see below):
   - 1-board.png — fceefb8c88cd6a6a2103a3b96f7760a2720967c290a4edefae57c7df34126327
   - 2-detail.png — ae3511c125b45626a86c247afa754d48045b6c61edb6a1a298742d2e579ebc2d
-  - 3-calibration.png — 1a24dca3e1e36d2b0745bed07517c313ac698fa16a96d39fb203bb90ca06dacc
+  - 3-calibration.png — 2ea27709f2f8564958f4d4dddf1fe3bc35f1862eccd50c18c9674e89f6f7a666
   - 4-board-table.png — 42708bcec1ad08cf8c3b45cc4a7909950f787a4eb99324e4bb3e20949446acbf
 
 ## Fix round (2026-11-21, after the round-8 audits)
@@ -259,6 +260,125 @@ clean); harness **71/71** (68 + 3 new shot-4 assertions) against the rebuilt
 to the shipped screenshots; validation numbers unchanged (LOO ×2.74, blind
 ×3.73, WF-cutoff ×2.19, WF-half ×2.59, odds Brier 0.208/0.225, FARM 8,
 watchlist $402.0M).
+
+## Fix round 2 — blind-test completeness gap (2026-11-21, after the blind test)
+
+The blind pairwise test (`benchmark/blind-r8-vs-kiencx.md`, six fresh judges,
+both orders + two tiebreakers) found ONE fixable gap: **our four dossier
+images never show the 758-protocol accounting, the two-test term tables, or
+the integrity/recomputation strip.** All six judges scored completeness (C2)
+against us 0–6 for exactly this, while we won accuracy (C1) 6–0 unanimously.
+Result: europa-nova (#10) beaten 2–0 clean, but kiencx (#1) 2–2, at parity.
+The richness gap (C3, 0–6: FARM 8 vs 14, top $37M vs $69M) is structural and
+was NOT chased — no verdict-rule loosening, no model change. This round is
+presentation only.
+
+**What was swapped and why — `screenshots/3-calibration.png` (option b).**
+The old shot was the top of the calibration tab: ridge narrative in prose,
+no term table visible, and its headline numbers (LOO ×2.74, WF ×2.19, blind
+×3.73) are already on the board tab's calibration strip in shot 1. The
+detail playbook shot (2) was kept — the fully costed playbook is itself C2
+evidence. The board shot (1) was kept — KPI strip + OOF scatter are the C1
+evidence, and the accounting bar cannot fit alongside them in 1024x711
+anyway. The board-table shot (4) was kept per the round-8 fix. So the prose
+shot was the one carrying the least unique evidence, and it was the one
+replaced.
+
+**The new image is a composite** (the blind report's own suggestion), built
+from the dashboard as rendered — no dashboard or model file changed. Nine
+element clips captured at the 1400px viewport (wrap at its 1180px max, so
+every table renders at full width with single-line rows), stitched by the
+new `~/workspace/makefun/shot-tool/stitch_composite.py` (PIL, uniform scale,
+no distortion) into one 1024x711 PNG:
+- **Accounting** (board tab): "Where every protocol went" heading + the
+  table (9 groups + Total 758, "Reconciles to the snapshot total of 758")
+  + the **integrity strip** ("Integrity, checked in-page: 200 of 200
+  implied values recomputed here and matched … ledger 758 of 758").
+- **Value-model two-test term table** (calibration tab): heading + keep-rule
+  intro ("A term is kept only when it lowers the miss in both tests… The
+  shipped model is size curve + category ridge") + all 7 rows, kept row
+  bolded (×2.74/50.5% LOO, ×2.19/51.6% WF, kept).
+- **Token-odds two-test term table** (calibration tab): heading + keep-rule
+  intro ("…lowers the Brier score in both tests. The shipped model is age
+  + size") + all 7 rows, kept row bolded (age + size, Brier 0.208/0.225,
+  called right 68%/66%, kept).
+- The accounting intro paragraph was dropped (the Total row + integrity line
+  carry the reconciliation claim); the term-table intros were kept, because
+  the Status column alone does not state the keep rule. No column was
+  cropped from any table. Stack 1102x1204, uniform scale **0.5905**, output
+  1024x711, **254,938 bytes** (under the 524,288 cap), ink fraction 0.1196.
+- **Viewed by eye:** all three elements are actually visible and legible at
+  full size — every group + count + the 758 total, the full integrity
+  sentence, both term tables with their kept rows and statuses. The text is
+  small (table type ~8px effective) — comparable to kiencx's own dense
+  single-frame dashboard, whose term tables the same blind judges read and
+  credited 6–0 on C2. The composite sits as a centred column with dark side
+  margins (the stack is 1102 wide, the canvas 1024); that is the honest
+  consequence of fitting 1,204 layout px into 711, not a crop.
+
+**Tradeoff, stated plainly:** the calibration prose, the full LOO table and
+the ridge-settings table are now in NO dossier image. The headline numbers
+survive on shot 1's calibration strip, and the LOO table / ridge settings /
+Huber-vs-OLS disclosure are still on the dashboard itself and still verified
+in-page by the harness (checks below) — they are one click away for the
+judge, not gone. The judgement was that the term tables + accounting +
+integrity are worth more C2 than the prose is worth C1/C5, because the C1
+numbers are already duplicated in shot 1.
+
+**Harness (`~/workspace/makefun/shot-tool/r8_verify.mjs`) — 90/90** (71 + 19
+new: 17 composite + 2 board-shot). The new assertions check the composite's
+*content*, not just its existence (the round-8 lesson): in-page, the
+accounting panel totals 758 + reconciles + 10 rows + integrity "200 of
+200"; both term tables found with their kept rows + 7 rows each + keep-rule
+intros; all 9 clips captured non-empty; stitch scale ≥ 0.5, output 1024x711,
+< 524,288 bytes, > 50,000 bytes, ink fraction > 0.03. The two board-shot
+checks assert the page is scrolled to top with the KPI strip in the
+viewport before shot 1 is taken (see the bug below).
+
+**A real bug found and fixed in this round:** the first fix-round-2 harness
+run's 1-board.png showed the playbooks panel, not the KPI strip + scatter.
+Cause: `locator.screenshot()` scrolls the window to capture its element
+clips, and a hash-only navigation does NOT reset `window.scrollY` (the
+router re-renders without scrolling) — so the board shot inherited a
+scrolled window. Fixed: the harness now scrolls to top explicitly and
+asserts `scrollY === 0` + KPI strip in viewport before taking shot 1. The
+shipped 1-board.png was NOT replaced: the corrected retake is pixel-equal
+to it except 55 of 728,064 pixels differing by at most ±2 (anti-aliasing
+noise, 0.008% of pixels) — the shipped file is kept, the retake is not
+copied. Same for 2-detail and 4-board-table, whose retakes ARE byte-
+identical. The composite retake IS byte-identical (2ea27709…), so the
+stitch is deterministic.
+
+**Fix-round-2 re-verification:** byte-identical rebuilds ×2 (`diff -r out
+out2` clean, both runs printing 758 protocols / $0.402B / LOO ×2.74 / 50.5% /
+FARM 8); `out/data.js` + `board.json` byte-identical to the round-8 build
+(0da7efd2… / 51f26dc7…, full hashes below); dossier hashes == screenshots
+**4/4** (fceefb8c…, ae3511c1…, 2ea27709…, 42708bce…), verified by decoding
+the dossier's embedded base64 and comparing sha256; harness **90/90**
+against the rebuilt `out/`; validation numbers unchanged (LOO ×2.74, blind
+×3.73, WF-cutoff ×2.19, WF-half ×2.59, odds Brier 0.208/0.225, FARM 8,
+watchlist $402.0M). No model, fit, board, or validation number changed.
+
+**Honest assessment of whether this flips C2:** the gap the judges named is
+now closed on its face — every element they said was missing is in the
+dossier, legible, with the numbers they asked for (758 reconciles, both
+two-test tables with kept rows, 200-of-200 recomputation). Kiencx's own
+C2-winning image is at least as dense, so density alone should not cost us
+the criterion. I expect C2 to flip or at worst split; with C1 already 6–0
+ours, that should resolve the kiencx pair in our favour — but the blind
+re-test, not this assessment, decides. Still weak, unchanged: C3 richness
+(FARM 8 vs 14, top $37M vs $69M, board $0.84B vs $1.52B, top rows SKIP/THIN
+with negative Net EV) and the odds Brier gap (0.208/0.225 vs 0.186/0.215).
+One new risk to watch in the re-test: C4 legibility — the composite is one
+dense image among three spacious ones, so overall C4 should hold, but a
+judge who weighs the composite's small type heavily could mark C4 against
+us in a game.
+
+**Fix-round-2 verification hashes (full sha256):**
+- `out/data.js` — 0da7efd22f913d2e266410e614511d5272e8feed65d116ffc58c5a5f0148b5d0
+- `out/board.json` — 51f26dc718f24b14ff2c35cc180c2233b9860b1db2e7695708caa6e5e8277b03
+- `screenshots/3-calibration.png` — 2ea27709f2f8564958f4d4dddf1fe3bc35f1862eccd50c18c9674e89f6f7a666 (254,938 bytes)
+- Dossier images == screenshots 4/4 (see above).
 
 ## Files changed (branch round8-winsor)
 
