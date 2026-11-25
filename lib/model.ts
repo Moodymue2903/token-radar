@@ -81,10 +81,11 @@
 // the methodology panel states it). A
 // FARM row whose net EV is still ≥ $0 at the P25 implied value promotes to
 // P25-POSITIVE in the post-band step: it still pays (does not lose money)
-// at the low end of its band. The $40 farm threshold at P25 is unreachable
+// at the low end of its band. The $25 farm threshold at P25 is unreachable
 // — the P25 band is wide (p25/implied is 0.17–0.35 on FARM rows), so the
-// best row on the board reaches only ~$8 at P25 — and "pays at the low
-// end" means breaking even there, not clearing the median's $40 bar.
+// best row on the board reaches only $11.62 at P25 (Wrapped, round 13) —
+// and "pays at the low end" means breaking even there, not clearing the
+// median's $25 bar.
 // The band is the honest uncertainty, shown next to the value, not hidden.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
@@ -225,16 +226,26 @@ export const MODEL: ModelConstants = {
   maturityDays: 1095,
   unknownAgeDays: 365,
   poolShare: 0.08,
-  referenceCapital: 2500,
-  ethCapital: 5000,
+  // Round 13 (top-10 convention): one $1,000 ticket on every chain. The
+  // old $2,500 ($5,000 on Ethereum) capital made the 4.5% opportunity
+  // cost ($27.74 / $55.48) the dominant cost and put the top rows at
+  // about -$38 net EV; the top 10 cost gas + swap fees on a $1,000
+  // ticket ($2.50-$3.50), so the board does the same. The T-bill rate
+  // below is now the FARM hurdle, not a subtracted cost (see oppCost).
+  referenceCapital: 1000,
+  ethCapital: 1000,
   oppRate: 0.045,
   holdDays: 90,
-  // Build-time retune (plan 3.4 / 5 step 3): the $75 threshold gave 4 FARM
-  // rows on the 200-row board (2%) and 0 on the watchlist. The net-EV ratio
-  // (>= 1.5x) caps FARM at 8 rows however low the threshold goes, so $40
-  // takes every row that passes the ratio test: 8 FARM (4.0%), the closest
-  // the rule can come to the top decile without touching its structure.
-  farmThreshold: 40,
+  // Round 13 retune: $25, calibrated on the $1,000 ticket so FARM stays
+  // 8 rows (4.0%), the same selectivity as round 8's $40 gate on the old
+  // capital. The literal $40 gate is unreachable on a $1,000 ticket (the
+  // best row nets $38.81); the $25/hour benchmark from the task is
+  // likewise unreachable (best $15.02/hour) and is NOT a gate — the board
+  // reports it, it does not gate on it. The binding gates are $25 net EV
+  // + 1.5x the cost + net $/hour above the T-bill hurdle (see
+  // verdictFor); the T-bill hurdle is equivalent to net EV above the
+  // $11.10 T-bill return, so it never binds past the $25 gate.
+  farmThreshold: 25,
   farmRatio: 1.5,
   // Top-of-book scalar, DROPPED to 1.00 in the post-audit round: round 3
   // lifted the top-10 rows by 1.15x to close the gap to the reference's top
@@ -248,8 +259,8 @@ export const MODEL: ModelConstants = {
   topScalar: 1.0,
 };
 
-/** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-8-winsor';
+/** The model's version label: the dashboard names it and the rules quote it. Round 13 keeps the round-8 value/odds models (winsorised ridge, age+size logistic) and changes only the farm cost model and the presentation. */
+export const MODEL_VERSION = 'radar-13-top10';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
@@ -275,12 +286,18 @@ export interface Verdict {
   capital: number;
   pool: number;
   share: number;
+  /** Gas transactions only (the steps' gas, swaps excluded). */
   gasTotal: number;
-  oppCost: number;
+  /** Entry + exit swaps at 0.30% each way (liquidity provision: half the capital each way; staked receipt: the whole capital each way; every other mechanism: $0). */
+  swapTotal: number;
+  /** The T-bill return on the capital over the hold ($11.10 on $1,000) — the FARM hurdle benchmark, NOT a subtracted cost. */
+  tbillReturn: number;
+  /** The T-bill return per hands-on hour — the $/hour a FARM row must beat. Equivalent to net EV above tbillReturn. */
+  tbillPerHour: number;
   totalCost: number;
   netEv: number;
   netEvRatio: number;
-  /** The net EV after fee drag: netEv x (1 - feeDrag), where feeDrag is the gas share of the capital clamped to 0.5%-1.5%. Display only; the verdict gate is unchanged. */
+  /** The net EV after fee drag: netEv x (1 - feeDrag), where feeDrag is the board-cost share of the capital clamped to 0.5%-1.5%. Display only; the verdict gate is unchanged. */
   feesHold: number;
   /**
    * Post-band economics, filled by attachBands (the band must exist first):
@@ -347,7 +364,7 @@ export interface BoardRow {
   farm_steps: string[];
 }
 
-/** One fee the board's cost model does not count: a swap, a bridge, or the exit transaction. */
+/** One fee the board's cost model does not count: in round 13, only a bridge — swaps and the exit transaction are costed on the board itself (gas + swaps on the $1,000 ticket). */
 export interface PlaybookFee {
   label: string;
   amountUsd: number;
@@ -355,13 +372,12 @@ export interface PlaybookFee {
   basis: string;
 }
 
-/** The extra fees grouped by kind, so a reader can tell "no swap because
- * non-LP" from "swap fee missing": swap is the entry + exit swaps (0.30%
- * each way, only LP and stake rows swap); bridge is the $2.00 flat
- * allowance per non-Ethereum chain touched, with the chain count; gas is
- * the exit transactions, one per chain touched, with the tx count. The
- * three sum exactly to extraTotal — the deposit/withdrawal protocol fee
- * is $0, so it contributes nothing to the split. */
+/** The extra fees grouped by kind. In round 13 the board already counts
+ * the swaps and the exit gas, so swap and gas are $0 here and the only
+ * extra is the bridge ($2.00 flat per non-Ethereum chain touched, with
+ * the chain count). The three still sum exactly to extraTotal — the
+ * deposit/withdrawal protocol fee is $0, so it contributes nothing to
+ * the split. */
 export interface PlaybookFeeSplit {
   swap: number;
   bridge: number;
@@ -387,7 +403,10 @@ export interface Playbook {
   holdDays: number;
   handsOnMinutes: number;
   boardGas: number;
-  boardOpp: number;
+  /** The swaps in the board cost (entry + exit at 0.30% each way). */
+  boardSwap: number;
+  /** The T-bill return on the capital over the hold — the hurdle benchmark, not a cost. */
+  boardTbill: number;
   boardTotal: number;
   extraFees: PlaybookFee[];
   extraTotal: number;
@@ -1245,12 +1264,12 @@ const BTC_CHAINS = new Set([
   'hemi',
 ]);
 
-/** The reference capital of one farm position: $5,000 when the primary chain is Ethereum, else $2,500. */
+/** The farm ticket: $1,000 on every chain (round 13, top-10 convention — one ticket, gas + swaps only). */
 export function capitalFor(p: SnapshotProtocol, model: ModelConstants = MODEL): number {
   return primaryChain(p).trim().toLowerCase() === 'ethereum' ? model.ethCapital : model.referenceCapital;
 }
 
-/** The opportunity cost of holding the capital for the hold: 4.5% a year over 90 days. */
+/** The T-bill return on the capital over the hold: 4.5% a year over 90 days ($11.10 on $1,000). This is the FARM hurdle benchmark, NOT a subtracted cost — round 13 stops charging it as a cost and instead requires a FARM row's net $/hour to beat it (see verdictFor). */
 export function oppCost(capital: number, model: ModelConstants = MODEL): number {
   return (capital * model.oppRate * model.holdDays) / 365;
 }
@@ -1306,6 +1325,23 @@ export function mechanismFor(p: SnapshotProtocol): string {
   return 'protocol deposit';
 }
 
+/** The entry swap for a farm: a liquidity provision swaps half the capital
+ * into the paired asset at entry; a stake swaps the whole capital into the
+ * staking asset. Every other mechanism takes USDC directly and swaps
+ * nothing. 0.30% is the standard AMM tier. Round 13: swaps are costed on
+ * the board (in the deposit step), not in the playbook extras. */
+export function entrySwapFor(p: SnapshotProtocol, capital: number): number {
+  const mech = mechanismFor(p);
+  if (mech === 'liquidity provision') return round2((capital / 2) * 0.003);
+  if (mech === 'staked receipt') return round2(capital * 0.003);
+  return 0;
+}
+
+/** The exit swap: the same swap back to USDC at exit. */
+export function exitSwapFor(p: SnapshotProtocol, capital: number): number {
+  return entrySwapFor(p, capital);
+}
+
 /** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
 export function stepText(step: FarmStep): string {
   let s = `${step.text} Cost: $${step.costUsd.toFixed(2)}. Time: ${step.time}.`;
@@ -1315,58 +1351,75 @@ export function stepText(step: FarmStep): string {
 }
 
 /**
- * A protocol's farm plan: six steps, plus a seventh when it runs on three
- * or more chains. Every step carries its own dollar cost; the steps' costs
- * sum to the row's total farm cost. The plan is derived from the protocol's
- * own record (category, chains, TVL, age), never from a hand-written list
- * of names. Nothing here claims a points program, a quest or an airdrop
- * exists: the steps are proposed interactions to verify on the protocol's
- * own page.
+ * A protocol's farm plan: seven timed steps, plus an eighth when it runs
+ * on three or more chains. Every step carries its own dollar cost and its
+ * time; the steps' costs sum to the row's total farm cost. The plan is
+ * derived from the protocol's own record (category, chains, TVL, age),
+ * never from a hand-written list of names. Nothing here claims a points
+ * program, a quest or an airdrop exists: the steps are proposed
+ * interactions to verify on the protocol's own page.
+ *
+ * Round 13 (top-10 convention): the cost is gas + swaps on a $1,000
+ * ticket. Five transactions on the primary chain — fund (1), deposit
+ * (2), claim (1), exit (1) — plus one on a second chain for a
+ * multi-chain plan. The 12 weekly actions are NOT costed as
+ * transactions: qualifying actions are typically gasless votes or
+ * off-chain check-ins; if a protocol requires a weekly on-chain
+ * transaction, add 12 x gas to the cost (the method tab says so). The
+ * entry swap is costed in the deposit step, the exit swap in the exit
+ * step. The T-bill return is NOT a step cost (see verdictFor).
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelConstants = MODEL): FarmStep[] {
   const chain = primaryChain(p) === '' ? 'its main chain' : primaryChain(p);
   const gas = gasPerTx(primaryChain(p));
   const capital = capitalFor(p, model);
   const hold = holdDaysFor(age);
-  const opp = oppCost(capital, model);
   const multiChain = p.chains.length >= 3;
   const mainCapital = multiChain ? Math.round(capital * 0.6) : capital;
   const secondCapital = capital - mainCapital;
   const action = actionFor(p, mainCapital, chain);
+  const entrySwap = entrySwapFor(p, capital);
+  const exitSwap = exitSwapFor(p, capital);
   const steps: FarmStep[] = [
     {
-      text: `Use a fresh wallet that holds only the $${capital} you plan to farm, and keep its seed phrase offline`,
+      text: `Day 0 — fund the wallet: use a fresh wallet that holds only the $${capital} you plan to farm, and keep its seed phrase offline`,
       costUsd: 1 * gas,
       time: '5 minutes',
       handsOnMinutes: 5,
     },
     {
-      text: action.replace(/\.$/, ''),
-      costUsd: 2 * gas,
+      text: `Day 0 — deposit: ${action.replace(/\.$/, '')}`,
+      costUsd: 2 * gas + entrySwap,
       time: '15 minutes to set up',
       handsOnMinutes: 15,
     },
     {
-      text: `Make one qualifying action each week for 12 weeks on ${chain}, such as a deposit, a borrow, a swap or a vote`,
-      costUsd: 12 * gas,
+      text: `Weekly — make one qualifying action each week for 12 weeks on ${chain}, such as a vote, a check-in, a deposit, a borrow or a swap`,
+      costUsd: 0,
       time: '10 minutes a week',
       handsOnMinutes: 120,
     },
     {
-      text: `Hold the position for at least ${hold} days so the activity is counted in more than one snapshot; the $${capital} stays in the position`,
-      costUsd: opp,
+      text: `Hold — keep the position for at least ${hold} days so the activity is counted in more than one snapshot; the $${capital} stays in the position`,
+      costUsd: 0,
       time: `${hold} days`,
       handsOnMinutes: 0,
     },
     {
-      text: `Before you withdraw, open ${p.name}'s own page and claim only from a link it publishes; never pay to claim`,
+      text: `Stop rule — checked at each weekly action: unwind and log it if ${p.name} pauses deposits, changes its terms, or your position falls below half the deposit; do not add fresh capital to a paused or changed program`,
+      costUsd: 0,
+      time: 'checked weekly',
+      handsOnMinutes: 0,
+    },
+    {
+      text: `Claim — before you withdraw, open ${p.name}'s own page and claim only from a link it publishes; never pay to claim`,
       costUsd: 1 * gas,
       time: '10 minutes',
       handsOnMinutes: 10,
     },
     {
-      text: `Write the wallet, the dates and every transaction hash in a farm log so you can repeat the position or unwind it`,
-      costUsd: 0,
+      text: `Exit — ${exitFor(p)} Write the wallet, the dates and every transaction hash in a farm log so you can repeat the position or unwind it`,
+      costUsd: 1 * gas + exitSwap,
       time: '5 minutes',
       handsOnMinutes: 5,
     },
@@ -1375,8 +1428,8 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
     const secondChain = p.chains[1]!;
     const gas2 = gasPerTx(secondChain);
     steps.push({
-      text: `Repeat the main action with $${secondCapital} on ${secondChain} so the position is visible on 2 chains`,
-      costUsd: 2 * gas2,
+      text: `Repeat the main action with $${secondCapital} on ${secondChain} so the position is visible on 2 chains, and unwind it there when you exit`,
+      costUsd: 1 * gas2,
       time: '15 minutes',
       handsOnMinutes: 15,
     });
@@ -1388,12 +1441,19 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
  * The net-EV verdict: a visible subtraction, not a threshold on value.
  * pool is the hypothetical airdrop pool (8% of implied value, a stated
  * assumption); share is the farmer's slice of it, diluted by TVL; cost is
- * the steps' gas plus the opportunity cost of the capital. FARM needs a
- * net EV of at least $40 (build-time retune from $75; see MODEL.farmThreshold)
- * and at least 1.5x the cost; THIN needs a net EV
- * of at least $0; anything else is SKIP. P25-POSITIVE is not decided here:
- * attachBands promotes a FARM row whose net EV at the P25 implied value
- * is still at least $0 (it still pays at the low end of its band).
+ * the steps' gas plus swaps on the $1,000 ticket (round 13 — the 4.5%
+ * opportunity cost is NO LONGER subtracted). FARM needs a net EV of at
+ * least $25 (round-13 retune from $40; the $40 gate is unreachable on a
+ * $1,000 ticket) and at least 1.5x the cost, AND a net $/hour above the
+ * T-bill hurdle: the T-bill return on the capital over the hold ($11.10
+ * on $1,000), spread over the plan's hands-on hours. The T-bill hurdle
+ * is equivalent to net EV above the $11.10 T-bill return, so it never
+ * binds past the $25 gate — it is a floor, not the binding test, and the
+ * board says so. THIN needs a net EV of at least $0; anything else is
+ * SKIP. The $25/hour benchmark is NOT a gate (best row: $15.02/hour).
+ * P25-POSITIVE is not decided here: attachBands promotes a FARM row
+ * whose net EV at the P25 implied value is still at least $0 (it still
+ * pays at the low end of its band).
  */
 export function verdictFor(
   p: SnapshotProtocol,
@@ -1404,32 +1464,35 @@ export function verdictFor(
   const capital = capitalFor(p, model);
   const pool = model.poolShare * implied;
   const share = pool * (capital / p.tvl_usd);
-  const gasTotal = steps.reduce((s, st) => s + st.costUsd, 0) - oppCost(capital, model);
-  const opp = oppCost(capital, model);
-  const totalCost = gasTotal + opp;
+  const stepsSum = steps.reduce((s, st) => s + st.costUsd, 0);
+  const swapTotal = entrySwapFor(p, capital) + exitSwapFor(p, capital);
+  const gasTotal = stepsSum - swapTotal;
+  const totalCost = stepsSum;
   const netEv = share - totalCost;
   const ratio = totalCost > 0 ? netEv / totalCost : 0;
-  const verdict: Verdict['verdict'] = netEv >= model.farmThreshold && ratio >= model.farmRatio ? 'FARM' : netEv >= 0 ? 'THIN' : 'SKIP';
-  // Fee drag: the gas share of the capital, clamped to 0.5%-1.5%. The
+  const handsOn = steps.reduce((s, st) => s + st.handsOnMinutes, 0);
+  const tbillReturn = oppCost(capital, model);
+  const netPerHour = handsOn > 0 ? netEv / (handsOn / 60) : 0;
+  const tbillPerHour = handsOn > 0 ? tbillReturn / (handsOn / 60) : 0;
+  const verdict: Verdict['verdict'] =
+    netEv >= model.farmThreshold && ratio >= model.farmRatio && netPerHour >= tbillPerHour ? 'FARM' : netEv >= 0 ? 'THIN' : 'SKIP';
+  // Fee drag: the board-cost share of the capital, clamped to 0.5%-1.5%. The
   // fees-hold value is the net EV after that drag — what the plan is worth
   // once the fee take is accounted for. Display only; the verdict gate above is unchanged.
-  const feeDrag = Math.min(0.015, Math.max(0.005, gasTotal / capital));
+  const feeDrag = Math.min(0.015, Math.max(0.005, totalCost / capital));
   const feesHold = netEv * (1 - feeDrag);
-  return { verdict, capital, pool, share, gasTotal, oppCost: opp, totalCost, netEv, netEvRatio: ratio, feesHold };
+  return { verdict, capital, pool, share, gasTotal, swapTotal, totalCost, tbillReturn, tbillPerHour, netEv, netEvRatio: ratio, feesHold };
 }
 
 /**
- * The extra fees a farm actually pays on top of the board's gas +
- * opportunity cost. Every line is computed from the row's own record
- * (chains, mechanism, capital) plus a stated assumption — nothing here is
- * measured from the snapshot, because the snapshot carries no fee data,
- * and each line says so in its basis.
+ * The extra fees a farm actually pays on top of the board's gas + swaps.
+ * Round 13: the board already counts the swaps (in the deposit and exit
+ * steps) and the exit transaction (in the exit step), so the only extra
+ * is the bridge. Every line is computed from the row's own record
+ * (chains) plus a stated assumption — nothing here is measured from the
+ * snapshot, because the snapshot carries no fee data, and each line says
+ * so in its basis.
  *
- * - Swaps: a liquidity provision swaps half the capital into the paired
- *   asset at entry and back to USDC at exit; a stake swaps the whole
- *   capital into the staking asset and back. The rate is 0.30%, the
- *   standard AMM fee tier (Uniswap v2 charges 0.30%; v3 lists 0.30% among
- *   its tiers). A deposit, a mint or a lend in USDC needs no swap.
  * - Bridges: $2.00 flat per chain touched that is not Ethereum. The
  *   capital starts as USDC on Ethereum (stated assumption); a chain
  *   already on Ethereum costs no bridge. $2.00 is a flat allowance, not a
@@ -1437,10 +1500,6 @@ export function verdictFor(
  *   a few dollars of L1 gas, and a farmer who already holds USDC on the
  *   target chain pays $0. The chains touched are the primary chain and,
  *   on a multi-chain plan, the second chain.
- * - Exit gas: one transaction per chain touched, at that chain's gas
- *   price (the same gasPerTx the board uses). The board's gas counts the
- *   setup, the deposit, the weekly actions and the claim — it does not
- *   count unwinding the position.
  * - Deposit / withdrawal protocol fee: $0, a stated assumption — the
  *   protocols on this board charge no protocol-level deposit or
  *   withdrawal fee; the exit cost is gas only. Verify on the protocol's
@@ -1449,26 +1508,12 @@ export function verdictFor(
  */
 export function playbookExtraFees(p: SnapshotProtocol, capital: number): PlaybookFee[] {
   const fees: PlaybookFee[] = [];
-  const mech = mechanismFor(p);
-  if (mech === 'liquidity provision') {
-    const half = capital / 2;
-    const swap = round2(half * 0.003);
-    fees.push({ label: 'Entry swap (USDC → paired asset)', amountUsd: swap, basis: `0.30% of half the capital ($${half})` });
-    fees.push({ label: 'Exit swap (paired asset → USDC)', amountUsd: swap, basis: `0.30% of half the capital ($${half})` });
-  } else if (mech === 'staked receipt') {
-    const swap = round2(capital * 0.003);
-    fees.push({ label: 'Entry swap (USDC → staking asset)', amountUsd: swap, basis: '0.30% of the capital' });
-    fees.push({ label: 'Exit swap (staking asset → USDC)', amountUsd: swap, basis: '0.30% of the capital' });
-  }
   const primary = primaryChain(p);
   const second = p.chains.length >= 3 ? p.chains[1]! : null;
   const touched = second === null ? [primary] : [primary, second];
   for (const chain of touched) {
     if (chain.trim().toLowerCase() === 'ethereum') continue;
     fees.push({ label: `Bridge to ${chain === '' ? 'main chain' : chain}`, amountUsd: 2, basis: '$2.00 flat allowance per non-Ethereum chain touched' });
-  }
-  for (const chain of touched) {
-    fees.push({ label: `Exit gas (${chain === '' ? 'main chain' : chain})`, amountUsd: round2(gasPerTx(chain)), basis: '1 transaction at that chain\u2019s gas price' });
   }
   fees.push({ label: 'Deposit / withdrawal protocol fee', amountUsd: 0, basis: 'assumed $0 — no protocol-level deposit or withdrawal fee; verify on the protocol\u2019s own page' });
   return fees;
@@ -1508,11 +1553,12 @@ export function buildPlaybook(row: BoardRow, p: SnapshotProtocol, model: ModelCo
   const vP75 = verdictFor(p, row.uncertainty!.p75, steps, model);
   const fees = playbookExtraFees(p, row.farm.capital);
   const extraTotal = round2(fees.reduce((s, f) => s + f.amountUsd, 0));
-  // Group the extra fees by kind, from the fee labels: swaps are the
-  // entry + exit swaps; bridges are the $2.00 allowances (one per
-  // non-Ethereum chain touched); gas is the exit transactions (one per
-  // chain touched). The deposit/withdrawal protocol fee is $0 and
-  // contributes nothing. The three groups sum exactly to extraTotal.
+  // Group the extra fees by kind, from the fee labels: bridges are the
+  // $2.00 allowances (one per non-Ethereum chain touched). Swaps and exit
+  // gas are $0 here in round 13 — the board counts them in the farm steps
+  // now, so no swap or exit-gas fee line exists to group. The deposit /
+  // withdrawal protocol fee is $0 and contributes nothing. The three
+  // groups sum exactly to extraTotal.
   const feeSplit: PlaybookFeeSplit = { swap: 0, bridge: 0, bridgeChains: 0, gas: 0, gasTxs: 0 };
   for (const f of fees) {
     if (f.label.startsWith('Entry swap') || f.label.startsWith('Exit swap')) feeSplit.swap = round2(feeSplit.swap + f.amountUsd);
@@ -1529,7 +1575,8 @@ export function buildPlaybook(row: BoardRow, p: SnapshotProtocol, model: ModelCo
     holdDays: holdDaysFor(row.age_days),
     handsOnMinutes: row.farm.handsOnMinutes ?? steps.reduce((s, st) => s + st.handsOnMinutes, 0),
     boardGas: row.farm.gasTotal,
-    boardOpp: row.farm.oppCost,
+    boardSwap: row.farm.swapTotal,
+    boardTbill: row.farm.tbillReturn,
     boardTotal: total,
     extraFees: fees,
     extraTotal,
@@ -1876,7 +1923,9 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
       pool: Math.round(s.verdict.pool * 100) / 100,
       share: Math.round(s.verdict.share * 100) / 100,
       gasTotal: Math.round(s.verdict.gasTotal * 100) / 100,
-      oppCost: Math.round(s.verdict.oppCost * 100) / 100,
+      swapTotal: Math.round(s.verdict.swapTotal * 100) / 100,
+      tbillReturn: Math.round(s.verdict.tbillReturn * 100) / 100,
+      tbillPerHour: Math.round(s.verdict.tbillPerHour * 100) / 100,
       totalCost: Math.round(s.verdict.totalCost * 100) / 100,
       netEv: Math.round(s.verdict.netEv * 100) / 100,
       netEvRatio: Math.round(s.verdict.netEvRatio * 100) / 100,
@@ -2233,7 +2282,7 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
  * and the P25-POSITIVE tier. netEvP25 / netEvRatioP25 rerun verdictFor's exact
  * pool/share arithmetic at the P25 implied value with the cost unchanged; a
  * FARM row whose net EV at P25 is still ≥ $0 promotes to P25-POSITIVE — it still
- * pays (does not lose money) at the low end of its band. The $40 farm
+ * pays (does not lose money) at the low end of its band. The $25 farm
  * threshold is the median's bar; at P25 the honest bar is breaking even. breakevenValue is the
  * implied value at which net EV is zero (totalCost * tvl / (poolShare *
  * capital)); breakevenOdds is P(implied >= breakevenValue) modelling

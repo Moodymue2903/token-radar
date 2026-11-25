@@ -99,3 +99,18 @@ footer b{color:var(--muted)}
 .bandstrip p{margin:4px 0}
 .fine{font-size:12.5px;color:var(--muted)}
 table.plain th[data-sort]{cursor:pointer}
+
+/* Round 13: accounting bar, best-$ /h line, best-farm plan */
+.accbar h2{margin-bottom:10px}
+.accstack{display:flex;height:18px;border-radius:4px;overflow:hidden;margin:0 0 8px}
+.accseg{display:block;height:100%}
+.acclegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:0 0 8px}
+.acclegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
+.accchecks{margin:0;font-size:12.5px;color:var(--muted)}
+.acccheck{margin-right:16px;white-space:nowrap}
+.bestline p{margin:0;font-size:14px}
+.bestline .bignum{font-size:20px;font-weight:700;color:var(--amber)}
+.bestplan{border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:6px;padding:12px 14px;margin:0 0 14px;background:var(--panel2)}
+.bestplan h3{margin:0 0 4px;font-size:14px;color:var(--amber)}
+.bestplan p{margin:8px 0 0;color:var(--muted);font-size:13px}
+.bestplan p b{color:var(--text)}
