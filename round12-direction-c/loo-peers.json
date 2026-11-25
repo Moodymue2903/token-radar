@@ -1,0 +1,4272 @@
+[
+  {
+    "slug": "across",
+    "name": "Across",
+    "category": "Cross Chain Bridge",
+    "tvl_usd": 13897958,
+    "actual_mcap_usd": 30644040,
+    "pred_mcap_usd": 2994293.990999193,
+    "log_err_ln": -2.3257297154030594,
+    "max_ratio": 10.234145375208836,
+    "mu": -1.5350334483067267,
+    "lam": 0.6564681248151607,
+    "mu_loc": -1.554937928105629,
+    "n_eff": 1.9404637443128279,
+    "n_peers": 2,
+    "rho_bar": -1.496997220891218,
+    "sigma2": 3.6279897375906627,
+    "tau2": 3.572786960028092,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Symbiosis",
+        "slug": "symbiosis",
+        "w": 0.949,
+        "rho": -1.633,
+        "s": 15.886
+      },
+      {
+        "name": "Hyperlane",
+        "slug": "hyperlane",
+        "w": 0.666,
+        "rho": -1.444,
+        "s": 18.005
+      }
+    ]
+  },
+  {
+    "slug": "anvil",
+    "name": "Anvil",
+    "category": "Collateral Management",
+    "tvl_usd": 13125243,
+    "actual_mcap_usd": 159606035,
+    "pred_mcap_usd": 2884568.9412572253,
+    "log_err_ln": -4.013333022562958,
+    "max_ratio": 55.33098298230878,
+    "mu": -1.5151618475709594,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.5151618475709594,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.360255925020349,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "api3",
+    "name": "Api3",
+    "category": "Risk Curators",
+    "tvl_usd": 11776271,
+    "actual_mcap_usd": 35031165,
+    "pred_mcap_usd": 2627160.642974686,
+    "log_err_ln": -2.590334434298066,
+    "max_ratio": 13.334230281531188,
+    "mu": -1.5001829150629078,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.5001829150629078,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.6654843735579807,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "aquarius-stellar",
+    "name": "Aquarius Stellar",
+    "category": "Dexs",
+    "tvl_usd": 37172687,
+    "actual_mcap_usd": 10897579,
+    "pred_mcap_usd": 11412455.36592823,
+    "log_err_ln": 0.0461646804590866,
+    "max_ratio": 1.0472468578505585,
+    "mu": -1.1808689362448246,
+    "lam": 0.8256079193108984,
+    "mu_loc": -1.1186276408052895,
+    "n_eff": 4.904119845683416,
+    "n_peers": 5,
+    "rho_bar": -1.475532009361428,
+    "sigma2": 3.6843571681953686,
+    "tau2": 3.5567041430039747,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Ekubo",
+        "slug": "ekubo",
+        "w": 0.96,
+        "rho": -1.072,
+        "s": 16.935
+      },
+      {
+        "name": "Hydration DEX",
+        "slug": "hydration-dex",
+        "w": 0.946,
+        "rho": 0.562,
+        "s": 16.854
+      },
+      {
+        "name": "STON.fi",
+        "slug": "ston.fi",
+        "w": 0.946,
+        "rho": 0.367,
+        "s": 16.853
+      },
+      {
+        "name": "Fables",
+        "slug": "fables",
+        "w": 0.832,
+        "rho": -2.686,
+        "s": 16.384
+      },
+      {
+        "name": "MerlinSwap",
+        "slug": "merlinswap",
+        "w": 0.641,
+        "rho": -3.824,
+        "s": 15.803
+      }
+    ]
+  },
+  {
+    "slug": "astar-dapps-staking",
+    "name": "Astar dApps Staking",
+    "category": "Chain",
+    "tvl_usd": 14189397,
+    "actual_mcap_usd": 42943403,
+    "pred_mcap_usd": 3164922.9572797334,
+    "log_err_ln": -2.607754326218797,
+    "max_ratio": 13.568546084581492,
+    "mu": -1.5003662823462836,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.5003662823462836,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.6626335397875747,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "aura",
+    "name": "Aura",
+    "category": "Yield",
+    "tvl_usd": 7933344,
+    "actual_mcap_usd": 1518557,
+    "pred_mcap_usd": 2024473.2118174525,
+    "log_err_ln": 0.2875489825609486,
+    "max_ratio": 1.3331558919536457,
+    "mu": -1.3657651121429772,
+    "lam": 0.8433817003030976,
+    "mu_loc": -1.3462232407988275,
+    "n_eff": 5.57588655284137,
+    "n_peers": 6,
+    "rho_bar": -1.4709971106593,
+    "sigma2": 3.6843755608803415,
+    "tau2": 3.558210464105116,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Equilibria",
+        "slug": "equilibria",
+        "w": 0.999,
+        "rho": 0.055,
+        "s": 15.943
+      },
+      {
+        "name": "Harmonix Finance",
+        "slug": "harmonix-finance",
+        "w": 0.972,
+        "rho": -2.115,
+        "s": 15.475
+      },
+      {
+        "name": "Looped Hype",
+        "slug": "looped-hype",
+        "w": 0.966,
+        "rho": -0.001,
+        "s": 15.434
+      },
+      {
+        "name": "sDAI",
+        "slug": "sdai",
+        "w": 0.669,
+        "rho": 0.001,
+        "s": 17.436
+      },
+      {
+        "name": "Wise Token",
+        "slug": "wise-token",
+        "w": 0.537,
+        "rho": -1.777,
+        "s": 17.813
+      }
+    ]
+  },
+  {
+    "slug": "b2-buzz",
+    "name": "B2 Buzz",
+    "category": "Canonical Bridge",
+    "tvl_usd": 53957600,
+    "actual_mcap_usd": 17089636,
+    "pred_mcap_usd": 30498778.741246443,
+    "log_err_ln": 0.5792144436456781,
+    "max_ratio": 1.7846359478485347,
+    "mu": -0.5705119114186645,
+    "lam": 0.4931425591086532,
+    "mu_loc": 0.36052316320052213,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4763544270384443,
+    "sigma2": 3.666677543736176,
+    "tau2": 3.5674621727254157,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Taiko Bridge",
+        "slug": "taiko-bridge",
+        "w": 0.648,
+        "rho": 0.361,
+        "s": 16.194
+      }
+    ]
+  },
+  {
+    "slug": "babylon-protocol",
+    "name": "Babylon Protocol",
+    "category": "Restaking",
+    "tvl_usd": 2790066912,
+    "actual_mcap_usd": 48746633,
+    "pred_mcap_usd": 249528660.33326918,
+    "log_err_ln": 1.6329376512776461,
+    "max_ratio": 5.118890166901767,
+    "mu": -2.4142470776539042,
+    "lam": 0.48374642377352006,
+    "mu_loc": -3.4480602981562356,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4455304017845378,
+    "sigma2": 3.68169241501639,
+    "tau2": 3.449865765998971,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "EigenCloud",
+        "slug": "eigencloud",
+        "w": 0.948,
+        "rho": -3.448,
+        "s": 22.313
+      }
+    ]
+  },
+  {
+    "slug": "biconomy.com",
+    "name": "Biconomy.com",
+    "category": "CEX",
+    "tvl_usd": 89837790,
+    "actual_mcap_usd": 581751,
+    "pred_mcap_usd": 24088651.82758122,
+    "log_err_ln": 3.7234536089246757,
+    "max_ratio": 41.40715156068699,
+    "mu": -1.3162648597650954,
+    "lam": 0.8025426365956497,
+    "mu_loc": -1.2870583036381515,
+    "n_eff": 3.953930838522266,
+    "n_peers": 7,
+    "rho_bar": -1.4349715322126422,
+    "sigma2": 3.5283203326692196,
+    "tau2": 3.6268844516373653,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "BitKan",
+        "slug": "bitkan",
+        "w": 0.883,
+        "rho": -2.781,
+        "s": 17.451
+      },
+      {
+        "name": "SwissBorg",
+        "slug": "swissborg",
+        "w": 0.481,
+        "rho": -1.705,
+        "s": 20.402
+      },
+      {
+        "name": "Nexo",
+        "slug": "nexo",
+        "w": 0.451,
+        "rho": 4.24,
+        "s": 16.135
+      },
+      {
+        "name": "Bitkub",
+        "slug": "bitkub",
+        "w": 0.32,
+        "rho": -3.606,
+        "s": 20.922
+      },
+      {
+        "name": "MEXC",
+        "slug": "mexc",
+        "w": 0.094,
+        "rho": -3.395,
+        "s": 22.071
+      }
+    ]
+  },
+  {
+    "slug": "bitkan",
+    "name": "BitKan",
+    "category": "CEX",
+    "tvl_usd": 37937448,
+    "actual_mcap_usd": 2351618,
+    "pred_mcap_usd": 11362683.88976548,
+    "log_err_ln": 1.5752310414107378,
+    "max_ratio": 4.831857848411383,
+    "mu": -1.2056040548529303,
+    "lam": 0.7406037567797331,
+    "mu_loc": -1.116851428437956,
+    "n_eff": 2.9503044168412886,
+    "n_peers": 7,
+    "rho_bar": -1.4590022063873882,
+    "sigma2": 3.675785180946305,
+    "tau2": 3.557177378706621,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Biconomy.com",
+        "slug": "biconomy.com",
+        "w": 0.883,
+        "rho": -5.04,
+        "s": 18.314
+      },
+      {
+        "name": "Nexo",
+        "slug": "nexo",
+        "w": 0.748,
+        "rho": 4.24,
+        "s": 16.135
+      },
+      {
+        "name": "SwissBorg",
+        "slug": "swissborg",
+        "w": 0.232,
+        "rho": -1.705,
+        "s": 20.402
+      },
+      {
+        "name": "Bitkub",
+        "slug": "bitkub",
+        "w": 0.133,
+        "rho": -3.606,
+        "s": 20.922
+      },
+      {
+        "name": "MEXC",
+        "slug": "mexc",
+        "w": 0.028,
+        "rho": -3.395,
+        "s": 22.071
+      }
+    ]
+  },
+  {
+    "slug": "bitkub",
+    "name": "Bitkub",
+    "category": "CEX",
+    "tvl_usd": 1219276691,
+    "actual_mcap_usd": 33120071,
+    "pred_mcap_usd": 115922490.44859858,
+    "log_err_ln": 1.2527823087482377,
+    "max_ratio": 3.500067691539628,
+    "mu": -2.3530913036943812,
+    "lam": 0.8136100638668329,
+    "mu_loc": -2.559928906510603,
+    "n_eff": 4.45485709395181,
+    "n_peers": 7,
+    "rho_bar": -1.4502252008961227,
+    "sigma2": 3.6430494551256185,
+    "tau2": 3.569645941075042,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "SwissBorg",
+        "slug": "swissborg",
+        "w": 0.956,
+        "rho": -1.705,
+        "s": 20.402
+      },
+      {
+        "name": "MEXC",
+        "slug": "mexc",
+        "w": 0.801,
+        "rho": -3.395,
+        "s": 22.071
+      },
+      {
+        "name": "Gate",
+        "slug": "gate",
+        "w": 0.686,
+        "rho": -1.781,
+        "s": 22.42
+      },
+      {
+        "name": "Biconomy.com",
+        "slug": "biconomy.com",
+        "w": 0.32,
+        "rho": -5.04,
+        "s": 18.314
+      },
+      {
+        "name": "OKX",
+        "slug": "okx",
+        "w": 0.205,
+        "rho": -2.593,
+        "s": 23.994
+      }
+    ]
+  },
+  {
+    "slug": "bitway-earn",
+    "name": "Bitway Earn",
+    "category": "Basis Trading",
+    "tvl_usd": 33419734,
+    "actual_mcap_usd": 1208793873,
+    "pred_mcap_usd": 12717728.602026444,
+    "log_err_ln": -4.554381369338995,
+    "max_ratio": 95.04793747583123,
+    "mu": -0.966149590886213,
+    "lam": 0.8459634815029096,
+    "mu_loc": -0.8640716572990328,
+    "n_eff": 5.041418126179208,
+    "n_peers": 6,
+    "rho_bar": -1.526758236969478,
+    "sigma2": 3.3985066419150125,
+    "tau2": 3.702229406992304,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "ZEROBASE CeDeFi",
+        "slug": "zerobase-cedefi",
+        "w": 0.944,
+        "rho": -1.171,
+        "s": 17.91
+      },
+      {
+        "name": "XSY",
+        "slug": "xsy",
+        "w": 0.861,
+        "rho": -0.002,
+        "s": 16.38
+      },
+      {
+        "name": "Solomon USDv",
+        "slug": "solomon-usdv",
+        "w": 0.739,
+        "rho": -0.424,
+        "s": 15.982
+      },
+      {
+        "name": "Resolv USR",
+        "slug": "resolv-usr",
+        "w": 0.615,
+        "rho": 0.109,
+        "s": 15.621
+      },
+      {
+        "name": "Solstice",
+        "slug": "solstice",
+        "w": 0.583,
+        "rho": -3.121,
+        "s": 19.119
+      }
+    ]
+  },
+  {
+    "slug": "blur-bids",
+    "name": "Blur Bids",
+    "category": "NFT Marketplace",
+    "tvl_usd": 9556892,
+    "actual_mcap_usd": 19130162,
+    "pred_mcap_usd": 2141044.9264111575,
+    "log_err_ln": -2.1899722585586594,
+    "max_ratio": 8.934965242446445,
+    "mu": -1.495968576370914,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.495968576370914,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.724954921879784,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "brickken",
+    "name": "Brickken",
+    "category": "RWA",
+    "tvl_usd": 42545788,
+    "actual_mcap_usd": 5951929,
+    "pred_mcap_usd": 12339396.924479913,
+    "log_err_ln": 0.7290817769887226,
+    "max_ratio": 2.073176095427199,
+    "mu": -1.2377837150104765,
+    "lam": 0.874806604857433,
+    "mu_loc": -1.2048859580779774,
+    "n_eff": 7.218950280663289,
+    "n_peers": 8,
+    "rho_bar": -1.4676614574965845,
+    "sigma2": 3.6788344081060576,
+    "tau2": 3.560957784692646,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "stUSDT",
+        "slug": "stusdt",
+        "w": 0.998,
+        "rho": -1.585,
+        "s": 17.674
+      },
+      {
+        "name": "KAIO",
+        "slug": "kaio",
+        "w": 0.993,
+        "rho": -0.881,
+        "s": 17.361
+      },
+      {
+        "name": "Usual USD0",
+        "slug": "usual-usd0",
+        "w": 0.937,
+        "rho": -1.292,
+        "s": 18.189
+      },
+      {
+        "name": "USD AI",
+        "slug": "usd-ai",
+        "w": 0.751,
+        "rho": -0.908,
+        "s": 18.873
+      },
+      {
+        "name": "Uranium.io",
+        "slug": "uranium.io",
+        "w": 0.717,
+        "rho": -0.14,
+        "s": 16.158
+      }
+    ]
+  },
+  {
+    "slug": "cap",
+    "name": "cap",
+    "category": "Lending",
+    "tvl_usd": 159772077,
+    "actual_mcap_usd": 166714858,
+    "pred_mcap_usd": 18973299.78616201,
+    "log_err_ln": -2.1732521995290477,
+    "max_ratio": 8.786814095542402,
+    "mu": -2.130715564462583,
+    "lam": 0.8868895421503,
+    "mu_loc": -2.2125526265510826,
+    "n_eff": 7.940173137726894,
+    "n_peers": 10,
+    "rho_bar": -1.4890380758696238,
+    "sigma2": 3.637903082117018,
+    "tau2": 3.5924267857635495,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Dolomite",
+        "slug": "dolomite",
+        "w": 0.992,
+        "rho": -2.501,
+        "s": 18.67
+      },
+      {
+        "name": "Resupply",
+        "slug": "resupply",
+        "w": 0.749,
+        "rho": -3.4,
+        "s": 17.576
+      },
+      {
+        "name": "MetalX Lending",
+        "slug": "metalx-lending",
+        "w": 0.593,
+        "rho": -1.125,
+        "s": 17.124
+      },
+      {
+        "name": "Kinetic",
+        "slug": "kinetic",
+        "w": 0.562,
+        "rho": -4.47,
+        "s": 17.037
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.479,
+        "rho": -1.78,
+        "s": 16.793
+      }
+    ]
+  },
+  {
+    "slug": "cbridge",
+    "name": "cBridge",
+    "category": "Bridge",
+    "tvl_usd": 11042622,
+    "actual_mcap_usd": 16860215,
+    "pred_mcap_usd": 1486646.2278759743,
+    "log_err_ln": -2.4284339753644524,
+    "max_ratio": 11.341107712013507,
+    "mu": -2.0052397834464193,
+    "lam": 0.7028584730193608,
+    "mu_loc": -2.2217580164095296,
+    "n_eff": 2.3285800862593193,
+    "n_peers": 4,
+    "rho_bar": -1.4930876243467677,
+    "sigma2": 3.58843291177258,
+    "tau2": 3.6451733455616866,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Gravity Bridge",
+        "slug": "gravity-bridge",
+        "w": 0.941,
+        "rho": -4.828,
+        "s": 15.614
+      },
+      {
+        "name": "PumpBTC",
+        "slug": "pumpbtc",
+        "w": 0.909,
+        "rho": 0.472,
+        "s": 16.97
+      },
+      {
+        "name": "Merlins Seal",
+        "slug": "merlins-seal",
+        "w": 0.135,
+        "rho": -2.079,
+        "s": 19.674
+      },
+      {
+        "name": "Portal",
+        "slug": "portal",
+        "w": 0.022,
+        "rho": -2.961,
+        "s": 20.975
+      }
+    ]
+  },
+  {
+    "slug": "chutes",
+    "name": "Chutes",
+    "category": "Decentralized AI",
+    "tvl_usd": 40658464,
+    "actual_mcap_usd": 83774453,
+    "pred_mcap_usd": 9105975.28359011,
+    "log_err_ln": -2.219197281598291,
+    "max_ratio": 9.199942937575292,
+    "mu": -1.496276208192384,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.496276208192384,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.7210061225430926,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "concentrator",
+    "name": "Concentrator",
+    "category": "Yield",
+    "tvl_usd": 61654134,
+    "actual_mcap_usd": 79509,
+    "pred_mcap_usd": 23159577.21411539,
+    "log_err_ln": 5.674293453716689,
+    "max_ratio": 291.2824612825641,
+    "mu": -0.9791318857887557,
+    "lam": 0.8554439029200035,
+    "mu_loc": -0.9050033639715785,
+    "n_eff": 5.049976248926543,
+    "n_peers": 6,
+    "rho_bar": -1.4178044378422625,
+    "sigma2": 3.2434874478546525,
+    "tau2": 3.80082616611578,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Wise Token",
+        "slug": "wise-token",
+        "w": 0.997,
+        "rho": -1.777,
+        "s": 17.813
+      },
+      {
+        "name": "sDAI",
+        "slug": "sdai",
+        "w": 0.959,
+        "rho": 0.001,
+        "s": 17.436
+      },
+      {
+        "name": "Equilibria",
+        "slug": "equilibria",
+        "w": 0.514,
+        "rho": 0.055,
+        "s": 15.943
+      },
+      {
+        "name": "Aura",
+        "slug": "aura",
+        "w": 0.494,
+        "rho": -1.653,
+        "s": 15.887
+      },
+      {
+        "name": "Harmonix Finance",
+        "slug": "harmonix-finance",
+        "w": 0.362,
+        "rho": -2.115,
+        "s": 15.475
+      }
+    ]
+  },
+  {
+    "slug": "concrete",
+    "name": "Concrete",
+    "category": "Onchain Capital Allocator",
+    "tvl_usd": 1097985819,
+    "actual_mcap_usd": 20992334,
+    "pred_mcap_usd": 40956433.92311216,
+    "log_err_ln": 0.6683515910588066,
+    "max_ratio": 1.9510185919827763,
+    "mu": -3.2887237921684487,
+    "lam": 0.49881762921005546,
+    "mu_loc": -5.139692043263041,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.446489011845222,
+    "sigma2": 3.673570289383247,
+    "tau2": 3.656237188866847,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Grove Finance",
+        "slug": "grove-finance",
+        "w": 1,
+        "rho": -5.14,
+        "s": 20.824
+      }
+    ]
+  },
+  {
+    "slug": "dolomite",
+    "name": "Dolomite",
+    "category": "Lending",
+    "tvl_usd": 128252575,
+    "actual_mcap_usd": 10516958,
+    "pred_mcap_usd": 24100257.977449454,
+    "log_err_ln": 0.8292335429021611,
+    "max_ratio": 2.2915616832785157,
+    "mu": -1.6717790169242313,
+    "lam": 0.8907256135230233,
+    "mu_loc": -1.6975173174823723,
+    "n_eff": 8.393453831066607,
+    "n_peers": 10,
+    "rho_bar": -1.4619790418814012,
+    "sigma2": 3.6706654154780893,
+    "tau2": 3.5647547652276796,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "cap",
+        "slug": "cap",
+        "w": 0.992,
+        "rho": 0.043,
+        "s": 18.889
+      },
+      {
+        "name": "Resupply",
+        "slug": "resupply",
+        "w": 0.818,
+        "rho": -3.4,
+        "s": 17.576
+      },
+      {
+        "name": "MetalX Lending",
+        "slug": "metalx-lending",
+        "w": 0.67,
+        "rho": -1.125,
+        "s": 17.124
+      },
+      {
+        "name": "Kinetic",
+        "slug": "kinetic",
+        "w": 0.64,
+        "rho": -4.47,
+        "s": 17.037
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.554,
+        "rho": -1.78,
+        "s": 16.793
+      }
+    ]
+  },
+  {
+    "slug": "eigencloud",
+    "name": "EigenCloud",
+    "category": "Restaking",
+    "tvl_usd": 4903633832,
+    "actual_mcap_usd": 155971221,
+    "pred_mcap_usd": 320674283.43087643,
+    "log_err_ln": 0.7207544051568062,
+    "max_ratio": 2.055983670416201,
+    "mu": -2.727305892999429,
+    "lam": 0.4914311755355244,
+    "mu_loc": -4.047184728931551,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.451904065941722,
+    "sigma2": 3.68169241501639,
+    "tau2": 3.557627491966156,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Babylon Protocol",
+        "slug": "babylon-protocol",
+        "w": 0.948,
+        "rho": -4.047,
+        "s": 21.749
+      }
+    ]
+  },
+  {
+    "slug": "ekubo",
+    "name": "Ekubo",
+    "category": "Dexs",
+    "tvl_usd": 22628585,
+    "actual_mcap_usd": 7748814,
+    "pred_mcap_usd": 6240538.316990365,
+    "log_err_ln": -0.21647335198770254,
+    "max_ratio": 1.2416899963426606,
+    "mu": -1.2881474826634505,
+    "lam": 0.8276512916621699,
+    "mu_loc": -1.248782676974516,
+    "n_eff": 4.97186886492717,
+    "n_peers": 5,
+    "rho_bar": -1.4771847698510892,
+    "sigma2": 3.683402005137496,
+    "tau2": 3.5576958646316044,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Hydration DEX",
+        "slug": "hydration-dex",
+        "w": 0.999,
+        "rho": 0.562,
+        "s": 16.854
+      },
+      {
+        "name": "STON.fi",
+        "slug": "ston.fi",
+        "w": 0.999,
+        "rho": 0.367,
+        "s": 16.853
+      },
+      {
+        "name": "Aquarius Stellar",
+        "slug": "aquarius-stellar",
+        "w": 0.96,
+        "rho": -1.227,
+        "s": 17.431
+      },
+      {
+        "name": "Fables",
+        "slug": "fables",
+        "w": 0.95,
+        "rho": -2.686,
+        "s": 16.384
+      },
+      {
+        "name": "MerlinSwap",
+        "slug": "merlinswap",
+        "w": 0.807,
+        "rho": -3.824,
+        "s": 15.803
+      }
+    ]
+  },
+  {
+    "slug": "equilibria",
+    "name": "Equilibria",
+    "category": "Yield",
+    "tvl_usd": 8396549,
+    "actual_mcap_usd": 8872092,
+    "pred_mcap_usd": 1543313.9217052883,
+    "log_err_ln": -1.7489786180745577,
+    "max_ratio": 5.7487280294839564,
+    "mu": -1.6938887864786212,
+    "lam": 0.8483772882783263,
+    "mu_loc": -1.7304760127851984,
+    "n_eff": 5.625725583098079,
+    "n_peers": 6,
+    "rho_bar": -1.489171620513554,
+    "sigma2": 3.6260933945021825,
+    "tau2": 3.6064940147522955,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Aura",
+        "slug": "aura",
+        "w": 0.999,
+        "rho": -1.653,
+        "s": 15.887
+      },
+      {
+        "name": "Harmonix Finance",
+        "slug": "harmonix-finance",
+        "w": 0.964,
+        "rho": -2.115,
+        "s": 15.475
+      },
+      {
+        "name": "Looped Hype",
+        "slug": "looped-hype",
+        "w": 0.957,
+        "rho": -0.001,
+        "s": 15.434
+      },
+      {
+        "name": "sDAI",
+        "slug": "sdai",
+        "w": 0.688,
+        "rho": 0.001,
+        "s": 17.436
+      },
+      {
+        "name": "Wise Token",
+        "slug": "wise-token",
+        "w": 0.557,
+        "rho": -1.777,
+        "s": 17.813
+      }
+    ]
+  },
+  {
+    "slug": "evaa-protocol",
+    "name": "EVAA Protocol",
+    "category": "Lending",
+    "tvl_usd": 7022402,
+    "actual_mcap_usd": 7210372,
+    "pred_mcap_usd": 1274021.355888287,
+    "log_err_ln": -1.733342225099692,
+    "max_ratio": 5.65953778300106,
+    "mu": -1.7069270048815854,
+    "lam": 0.8955625999273642,
+    "mu_loc": -1.7323564552935293,
+    "n_eff": 8.687266475757113,
+    "n_peers": 10,
+    "rho_bar": -1.4888665714563432,
+    "sigma2": 3.6388110518592973,
+    "tau2": 3.591834011134276,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Liqwid",
+        "slug": "liqwid",
+        "w": 0.995,
+        "rho": -0.861,
+        "s": 15.943
+      },
+      {
+        "name": "Flying Tulip Lend",
+        "slug": "flying-tulip-lend",
+        "w": 0.978,
+        "rho": 1.635,
+        "s": 16.126
+      },
+      {
+        "name": "Exactly",
+        "slug": "exactly",
+        "w": 0.966,
+        "rho": -3.189,
+        "s": 16.22
+      },
+      {
+        "name": "Tectonic",
+        "slug": "tectonic",
+        "w": 0.932,
+        "rho": -2.022,
+        "s": 16.412
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.837,
+        "rho": -1.78,
+        "s": 16.793
+      }
+    ]
+  },
+  {
+    "slug": "exactly",
+    "name": "Exactly",
+    "category": "Lending",
+    "tvl_usd": 11075107,
+    "actual_mcap_usd": 456289,
+    "pred_mcap_usd": 2722997.251301526,
+    "log_err_ln": 1.7863621025400949,
+    "max_ratio": 5.967703037551916,
+    "mu": -1.4029667730305233,
+    "lam": 0.8998232763880647,
+    "mu_loc": -1.3972121871897092,
+    "n_eff": 9.13601777870961,
+    "n_peers": 10,
+    "rho_bar": -1.4546565278841224,
+    "sigma2": 3.6412969335501506,
+    "tau2": 3.580053848530195,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Flying Tulip Lend",
+        "slug": "flying-tulip-lend",
+        "w": 0.999,
+        "rho": 1.635,
+        "s": 16.126
+      },
+      {
+        "name": "Tectonic",
+        "slug": "tectonic",
+        "w": 0.994,
+        "rho": -2.022,
+        "s": 16.412
+      },
+      {
+        "name": "Liqwid",
+        "slug": "liqwid",
+        "w": 0.987,
+        "rho": -0.861,
+        "s": 15.943
+      },
+      {
+        "name": "EVAA Protocol",
+        "slug": "evaa-protocol",
+        "w": 0.966,
+        "rho": 0.026,
+        "s": 15.765
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.946,
+        "rho": -1.78,
+        "s": 16.793
+      }
+    ]
+  },
+  {
+    "slug": "fables",
+    "name": "Fables",
+    "category": "Dexs",
+    "tvl_usd": 13050097,
+    "actual_mcap_usd": 889485,
+    "pred_mcap_usd": 4359304.771610684,
+    "log_err_ln": 1.5894252240187237,
+    "max_ratio": 4.900931181088701,
+    "mu": -1.0964829780973913,
+    "lam": 0.8300968401731873,
+    "mu_loc": -1.0220763090219915,
+    "n_eff": 4.985637201551732,
+    "n_peers": 5,
+    "rho_bar": -1.4600120669634258,
+    "sigma2": 3.6491708557287805,
+    "tau2": 3.5760273381507504,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "STON.fi",
+        "slug": "ston.fi",
+        "w": 0.964,
+        "rho": 0.367,
+        "s": 16.853
+      },
+      {
+        "name": "Hydration DEX",
+        "slug": "hydration-dex",
+        "w": 0.964,
+        "rho": 0.562,
+        "s": 16.854
+      },
+      {
+        "name": "Ekubo",
+        "slug": "ekubo",
+        "w": 0.95,
+        "rho": -1.072,
+        "s": 16.935
+      },
+      {
+        "name": "MerlinSwap",
+        "slug": "merlinswap",
+        "w": 0.945,
+        "rho": -3.824,
+        "s": 15.803
+      },
+      {
+        "name": "Aquarius Stellar",
+        "slug": "aquarius-stellar",
+        "w": 0.832,
+        "rho": -1.227,
+        "s": 17.431
+      }
+    ]
+  },
+  {
+    "slug": "falcon-finance",
+    "name": "Falcon Finance",
+    "category": "Basis Trading",
+    "tvl_usd": 1557707205,
+    "actual_mcap_usd": 318146200,
+    "pred_mcap_usd": 278599825.8917665,
+    "log_err_ln": -0.13273458915023104,
+    "max_ratio": 1.1419468730163418,
+    "mu": -1.7211938423254305,
+    "lam": 0.6830801706184529,
+    "mu_loc": -1.8369542634620986,
+    "n_eff": 2.1988601566086596,
+    "n_peers": 6,
+    "rho_bar": -1.471687055781946,
+    "sigma2": 3.657550578300478,
+    "tau2": 3.5852132708845956,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Solstice",
+        "slug": "solstice",
+        "w": 0.495,
+        "rho": -3.121,
+        "s": 19.119
+      },
+      {
+        "name": "ZEROBASE CeDeFi",
+        "slug": "zerobase-cedefi",
+        "w": 0.169,
+        "rho": -1.171,
+        "s": 17.91
+      },
+      {
+        "name": "Bitway Earn",
+        "slug": "bitway-earn",
+        "w": 0.084,
+        "rho": 3.588,
+        "s": 17.325
+      },
+      {
+        "name": "XSY",
+        "slug": "xsy",
+        "w": 0.021,
+        "rho": -0.002,
+        "s": 16.38
+      },
+      {
+        "name": "Solomon USDv",
+        "slug": "solomon-usdv",
+        "w": 0.011,
+        "rho": -0.424,
+        "s": 15.982
+      }
+    ]
+  },
+  {
+    "slug": "flokifi-locker",
+    "name": "FlokiFi Locker",
+    "category": "Token Locker",
+    "tvl_usd": 10045588,
+    "actual_mcap_usd": 190621074,
+    "pred_mcap_usd": 1175333.9828311335,
+    "log_err_ln": -5.088735203825018,
+    "max_ratio": 162.18460181065618,
+    "mu": -2.145581185224332,
+    "lam": 0.516865784303735,
+    "mu_loc": -2.730433329978448,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.5198957076093496,
+    "sigma2": 3.4330155140913483,
+    "tau2": 3.672702529794005,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Team Finance",
+        "slug": "team-finance",
+        "w": 0.641,
+        "rho": -2.73,
+        "s": 17.751
+      }
+    ]
+  },
+  {
+    "slug": "flying-tulip-lend",
+    "name": "Flying Tulip Lend",
+    "category": "Lending",
+    "tvl_usd": 10077743,
+    "actual_mcap_usd": 51699732,
+    "pred_mcap_usd": 1448761.3050678528,
+    "log_err_ln": -3.574743678781627,
+    "max_ratio": 35.68547269943729,
+    "mu": -1.9396204098748573,
+    "lam": 0.9046917012146439,
+    "mu_loc": -1.985303909891177,
+    "n_eff": 9.045543821074986,
+    "n_peers": 10,
+    "rho_bar": -1.5059804868679243,
+    "sigma2": 3.504172957023964,
+    "tau2": 3.67722954367511,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Exactly",
+        "slug": "exactly",
+        "w": 0.999,
+        "rho": -3.189,
+        "s": 16.22
+      },
+      {
+        "name": "Liqwid",
+        "slug": "liqwid",
+        "w": 0.994,
+        "rho": -0.861,
+        "s": 15.943
+      },
+      {
+        "name": "Tectonic",
+        "slug": "tectonic",
+        "w": 0.986,
+        "rho": -2.022,
+        "s": 16.412
+      },
+      {
+        "name": "EVAA Protocol",
+        "slug": "evaa-protocol",
+        "w": 0.978,
+        "rho": 0.026,
+        "s": 15.765
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.928,
+        "rho": -1.78,
+        "s": 16.793
+      }
+    ]
+  },
+  {
+    "slug": "frankencoin",
+    "name": "Frankencoin",
+    "category": "CDP",
+    "tvl_usd": 49977940,
+    "actual_mcap_usd": 8431344,
+    "pred_mcap_usd": 3853318.56719477,
+    "log_err_ln": -0.7830214473851383,
+    "max_ratio": 2.1880734366943475,
+    "mu": -2.562646965544887,
+    "lam": 0.662920246052622,
+    "mu_loc": -3.118409161275453,
+    "n_eff": 1.9999999929272056,
+    "n_peers": 2,
+    "rho_bar": -1.4696533721118976,
+    "sigma2": 3.665823640714679,
+    "tau2": 3.604708811525711,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Inverse Finance FiRM",
+        "slug": "inverse-finance-firm",
+        "w": 0.94,
+        "rho": -1.402,
+        "s": 17.121
+      },
+      {
+        "name": "Reservoir Protocol",
+        "slug": "reservoir-protocol",
+        "w": 0.94,
+        "rho": -4.835,
+        "s": 18.334
+      }
+    ]
+  },
+  {
+    "slug": "fx-protocol",
+    "name": "fx Protocol",
+    "category": "Dual-Token Stablecoin",
+    "tvl_usd": 79817906,
+    "actual_mcap_usd": 2523453,
+    "pred_mcap_usd": 18688498.11652227,
+    "log_err_ln": 2.0022800589431373,
+    "max_ratio": 7.405922803603741,
+    "mu": -1.4518396046077369,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.4518396046077369,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.651244078313838,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "gains-network",
+    "name": "Gains Network",
+    "category": "Derivatives",
+    "tvl_usd": 5999311,
+    "actual_mcap_usd": 8257733,
+    "pred_mcap_usd": 4777206.04063751,
+    "log_err_ln": -0.5472942293736259,
+    "max_ratio": 1.7285695717863616,
+    "mu": -0.2277887640171441,
+    "lam": 0.49135732818235994,
+    "mu_loc": 1.0808798704357159,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4919845527876026,
+    "sigma2": 3.679967876726094,
+    "tau2": 3.5549105175220514,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Veranta",
+        "slug": "veranta",
+        "w": 0.943,
+        "rho": 1.081,
+        "s": 16.199
+      }
+    ]
+  },
+  {
+    "slug": "gate",
+    "name": "Gate",
+    "category": "CEX",
+    "tvl_usd": 5458552782,
+    "actual_mcap_usd": 919670267,
+    "pred_mcap_usd": 374013353.2517385,
+    "log_err_ln": -0.899723699706908,
+    "max_ratio": 2.458923615973129,
+    "mu": -2.6806474747042306,
+    "lam": 0.7936888076844938,
+    "mu_loc": -2.9954364501665,
+    "n_eff": 3.977475582739825,
+    "n_peers": 7,
+    "rho_bar": -1.4696395608689448,
+    "sigma2": 3.682873977562611,
+    "tau2": 3.56210570620063,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "MEXC",
+        "slug": "mexc",
+        "w": 0.98,
+        "rho": -3.395,
+        "s": 22.071
+      },
+      {
+        "name": "Bitkub",
+        "slug": "bitkub",
+        "w": 0.686,
+        "rho": -3.606,
+        "s": 20.922
+      },
+      {
+        "name": "OKX",
+        "slug": "okx",
+        "w": 0.66,
+        "rho": -2.593,
+        "s": 23.994
+      },
+      {
+        "name": "SwissBorg",
+        "slug": "swissborg",
+        "w": 0.505,
+        "rho": -1.705,
+        "s": 20.402
+      },
+      {
+        "name": "Biconomy.com",
+        "slug": "biconomy.com",
+        "w": 0.059,
+        "rho": -5.04,
+        "s": 18.314
+      }
+    ]
+  },
+  {
+    "slug": "gearbox",
+    "name": "Gearbox",
+    "category": "Lending",
+    "tvl_usd": 19646374,
+    "actual_mcap_usd": 3312621,
+    "pred_mcap_usd": 3765122.3522410034,
+    "log_err_ln": 0.12804063905191357,
+    "max_ratio": 1.1365991920720793,
+    "mu": -1.6521124340265647,
+    "lam": 0.9026977810852154,
+    "mu_loc": -1.6717803871835784,
+    "n_eff": 9.602627113729273,
+    "n_peers": 10,
+    "rho_bar": -1.4696477598255282,
+    "sigma2": 3.683963053618852,
+    "tau2": 3.559138037155938,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Kinetic",
+        "slug": "kinetic",
+        "w": 0.99,
+        "rho": -4.47,
+        "s": 17.037
+      },
+      {
+        "name": "MetalX Lending",
+        "slug": "metalx-lending",
+        "w": 0.982,
+        "rho": -1.125,
+        "s": 17.124
+      },
+      {
+        "name": "Tectonic",
+        "slug": "tectonic",
+        "w": 0.976,
+        "rho": -2.022,
+        "s": 16.412
+      },
+      {
+        "name": "Exactly",
+        "slug": "exactly",
+        "w": 0.946,
+        "rho": -3.189,
+        "s": 16.22
+      },
+      {
+        "name": "Flying Tulip Lend",
+        "slug": "flying-tulip-lend",
+        "w": 0.928,
+        "rho": 1.635,
+        "s": 16.126
+      }
+    ]
+  },
+  {
+    "slug": "gravity-bridge",
+    "name": "Gravity Bridge",
+    "category": "Bridge",
+    "tvl_usd": 6040499,
+    "actual_mcap_usd": 48331,
+    "pred_mcap_usd": 4878661.098211948,
+    "log_err_ln": 4.614552919356616,
+    "max_ratio": 100.94268892040198,
+    "mu": -0.21361580732869984,
+    "lam": 0.6893714376701019,
+    "mu_loc": 0.33773725255339415,
+    "n_eff": 2.1349694962164656,
+    "n_peers": 4,
+    "rho_bar": -1.437222061382902,
+    "sigma2": 3.5047557585623297,
+    "tau2": 3.6431577988209733,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "cBridge",
+        "slug": "cbridge",
+        "w": 0.941,
+        "rho": 0.423,
+        "s": 16.217
+      },
+      {
+        "name": "PumpBTC",
+        "slug": "pumpbtc",
+        "w": 0.735,
+        "rho": 0.472,
+        "s": 16.97
+      },
+      {
+        "name": "Merlins Seal",
+        "slug": "merlins-seal",
+        "w": 0.063,
+        "rho": -2.079,
+        "s": 19.674
+      },
+      {
+        "name": "Portal",
+        "slug": "portal",
+        "w": 0.008,
+        "rho": -2.961,
+        "s": 20.975
+      }
+    ]
+  },
+  {
+    "slug": "grove-finance",
+    "name": "Grove Finance",
+    "category": "Onchain Capital Allocator",
+    "tvl_usd": 1105503667,
+    "actual_mcap_usd": 6477692,
+    "pred_mcap_usd": 78681212.61600854,
+    "log_err_ln": 2.4970401313201034,
+    "max_ratio": 12.146488690108843,
+    "mu": -2.642651911942938,
+    "lam": 0.479058158625992,
+    "mu_loc": -3.9570753832272523,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4339079835469688,
+    "sigma2": 3.673570289383247,
+    "tau2": 3.3782155293446885,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Concrete",
+        "slug": "concrete",
+        "w": 1,
+        "rho": -3.957,
+        "s": 20.817
+      }
+    ]
+  },
+  {
+    "slug": "harmonix-finance",
+    "name": "Harmonix Finance",
+    "category": "Yield",
+    "tvl_usd": 5258119,
+    "actual_mcap_usd": 634108,
+    "pred_mcap_usd": 1637458.1764026494,
+    "log_err_ln": 0.9486811391220965,
+    "max_ratio": 2.5823017158002255,
+    "mu": -1.1666282111581854,
+    "lam": 0.8335299309422011,
+    "mu_loc": -1.1068221555016284,
+    "n_eff": 5.183383482218664,
+    "n_peers": 6,
+    "rho_bar": -1.4660822675148706,
+    "sigma2": 3.6818578770480284,
+    "tau2": 3.556630263470093,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Looped Hype",
+        "slug": "looped-hype",
+        "w": 1,
+        "rho": -0.001,
+        "s": 15.434
+      },
+      {
+        "name": "Aura",
+        "slug": "aura",
+        "w": 0.972,
+        "rho": -1.653,
+        "s": 15.887
+      },
+      {
+        "name": "Equilibria",
+        "slug": "equilibria",
+        "w": 0.964,
+        "rho": 0.055,
+        "s": 15.943
+      },
+      {
+        "name": "sDAI",
+        "slug": "sdai",
+        "w": 0.525,
+        "rho": 0.001,
+        "s": 17.436
+      },
+      {
+        "name": "Wise Token",
+        "slug": "wise-token",
+        "w": 0.4,
+        "rho": -1.777,
+        "s": 17.813
+      }
+    ]
+  },
+  {
+    "slug": "hipo",
+    "name": "Hipo",
+    "category": "Liquid Staking",
+    "tvl_usd": 9655113,
+    "actual_mcap_usd": 3712184,
+    "pred_mcap_usd": 746514.1252786653,
+    "log_err_ln": -1.6039611228352926,
+    "max_ratio": 4.9726909033560265,
+    "mu": -2.5598283597667373,
+    "lam": 0.7916550782744973,
+    "mu_loc": -2.8444303558747555,
+    "n_eff": 3.752105940809413,
+    "n_peers": 6,
+    "rho_bar": -1.4784167580824117,
+    "sigma2": 3.606091249465446,
+    "tau2": 3.6518649003345987,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Infrared Finance",
+        "slug": "infrared-finance",
+        "w": 0.995,
+        "rho": -3.371,
+        "s": 16.25
+      },
+      {
+        "name": "WaterNeuron",
+        "slug": "waterneuron",
+        "w": 0.961,
+        "rho": -1.683,
+        "s": 15.595
+      },
+      {
+        "name": "Veno Finance",
+        "slug": "veno-finance",
+        "w": 0.824,
+        "rho": -3.204,
+        "s": 17.157
+      },
+      {
+        "name": "Stader",
+        "slug": "stader",
+        "w": 0.276,
+        "rho": -3.043,
+        "s": 18.855
+      },
+      {
+        "name": "mETH Protocol",
+        "slug": "meth-protocol",
+        "w": 0.083,
+        "rho": -5.52,
+        "s": 19.936
+      }
+    ]
+  },
+  {
+    "slug": "huma",
+    "name": "Huma",
+    "category": "RWA",
+    "tvl_usd": 369103931,
+    "actual_mcap_usd": 13257716,
+    "pred_mcap_usd": 81217621.33559045,
+    "log_err_ln": 1.8125525125851345,
+    "max_ratio": 6.126064348911265,
+    "mu": -1.5139460250634398,
+    "lam": 0.8522717809178698,
+    "mu_loc": -1.5244758873537578,
+    "n_eff": 5.809544499026749,
+    "n_peers": 8,
+    "rho_bar": -1.4531972761598888,
+    "sigma2": 3.6192104005367183,
+    "tau2": 3.5940688745839475,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Re",
+        "slug": "re",
+        "w": 0.987,
+        "rho": -2.501,
+        "s": 20.005
+      },
+      {
+        "name": "USD AI",
+        "slug": "usd-ai",
+        "w": 0.885,
+        "rho": -0.908,
+        "s": 18.873
+      },
+      {
+        "name": "Usual USD0",
+        "slug": "usual-usd0",
+        "w": 0.673,
+        "rho": -1.292,
+        "s": 18.189
+      },
+      {
+        "name": "stUSDT",
+        "slug": "stusdt",
+        "w": 0.493,
+        "rho": -1.585,
+        "s": 17.674
+      },
+      {
+        "name": "Brickken",
+        "slug": "brickken",
+        "w": 0.457,
+        "rho": -1.967,
+        "s": 17.566
+      }
+    ]
+  },
+  {
+    "slug": "hydration-dex",
+    "name": "Hydration DEX",
+    "category": "Dexs",
+    "tvl_usd": 20870492,
+    "actual_mcap_usd": 36596424,
+    "pred_mcap_usd": 4253719.947242367,
+    "log_err_ln": -2.152156648911094,
+    "max_ratio": 8.603392901717706,
+    "mu": -1.5905424135153416,
+    "lam": 0.8321615742286183,
+    "mu_loc": -1.6099010426682367,
+    "n_eff": 4.978665939512812,
+    "n_peers": 5,
+    "rho_bar": -1.494560178000786,
+    "sigma2": 3.618584579851722,
+    "tau2": 3.6036450039181247,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "STON.fi",
+        "slug": "ston.fi",
+        "w": 1,
+        "rho": 0.367,
+        "s": 16.853
+      },
+      {
+        "name": "Ekubo",
+        "slug": "ekubo",
+        "w": 0.999,
+        "rho": -1.072,
+        "s": 16.935
+      },
+      {
+        "name": "Fables",
+        "slug": "fables",
+        "w": 0.964,
+        "rho": -2.686,
+        "s": 16.384
+      },
+      {
+        "name": "Aquarius Stellar",
+        "slug": "aquarius-stellar",
+        "w": 0.946,
+        "rho": -1.227,
+        "s": 17.431
+      },
+      {
+        "name": "MerlinSwap",
+        "slug": "merlinswap",
+        "w": 0.831,
+        "rho": -3.824,
+        "s": 15.803
+      }
+    ]
+  },
+  {
+    "slug": "hyperlane",
+    "name": "Hyperlane",
+    "category": "Cross Chain Bridge",
+    "tvl_usd": 65978518,
+    "actual_mcap_usd": 15570424,
+    "pred_mcap_usd": 34422921.24798047,
+    "log_err_ln": 0.7933494405068502,
+    "max_ratio": 2.2107889449882974,
+    "mu": -0.6506065463581399,
+    "lam": 0.6530800853188456,
+    "mu_loc": -0.21362722965766093,
+    "n_eff": 1.9430566487023926,
+    "n_peers": 2,
+    "rho_bar": -1.47322432457248,
+    "sigma2": 3.6735977903994734,
+    "tau2": 3.5591259141727023,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Across",
+        "slug": "across",
+        "w": 0.666,
+        "rho": 0.791,
+        "s": 16.447
+      },
+      {
+        "name": "Symbiosis",
+        "slug": "symbiosis",
+        "w": 0.471,
+        "rho": -1.633,
+        "s": 15.886
+      }
+    ]
+  },
+  {
+    "slug": "infrared-finance",
+    "name": "Infrared Finance",
+    "category": "Liquid Staking",
+    "tvl_usd": 11409175,
+    "actual_mcap_usd": 391774,
+    "pred_mcap_usd": 1547702.8740269705,
+    "log_err_ln": 1.3738419509628976,
+    "max_ratio": 3.9504992011388467,
+    "mu": -1.9976460413629358,
+    "lam": 0.7895430192625297,
+    "mu_loc": -2.142899393701228,
+    "n_eff": 3.88981730955635,
+    "n_peers": 6,
+    "rho_bar": -1.4527186649399182,
+    "sigma2": 3.682368152279411,
+    "tau2": 3.551488916709646,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Hipo",
+        "slug": "hipo",
+        "w": 0.995,
+        "rho": -0.956,
+        "s": 16.083
+      },
+      {
+        "name": "WaterNeuron",
+        "slug": "waterneuron",
+        "w": 0.931,
+        "rho": -1.683,
+        "s": 15.595
+      },
+      {
+        "name": "Veno Finance",
+        "slug": "veno-finance",
+        "w": 0.871,
+        "rho": -3.204,
+        "s": 17.157
+      },
+      {
+        "name": "Stader",
+        "slug": "stader",
+        "w": 0.321,
+        "rho": -3.043,
+        "s": 18.855
+      },
+      {
+        "name": "mETH Protocol",
+        "slug": "meth-protocol",
+        "w": 0.102,
+        "rho": -5.52,
+        "s": 19.936
+      }
+    ]
+  },
+  {
+    "slug": "inverse-finance-firm",
+    "name": "Inverse Finance FiRM",
+    "category": "CDP",
+    "tvl_usd": 27257098,
+    "actual_mcap_usd": 6704911,
+    "pred_mcap_usd": 2027840.617070345,
+    "log_err_ln": -1.1958687515168902,
+    "max_ratio": 3.3064289883327698,
+    "mu": -2.598342472802918,
+    "lam": 0.6645253841729104,
+    "mu_loc": -3.166116921066147,
+    "n_eff": 1.9831088002076345,
+    "n_peers": 2,
+    "rho_bar": -1.4736656252701286,
+    "sigma2": 3.6467097109373783,
+    "tau2": 3.6425587299838944,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Frankencoin",
+        "slug": "frankencoin",
+        "w": 0.94,
+        "rho": -1.78,
+        "s": 17.727
+      },
+      {
+        "name": "Reservoir Protocol",
+        "slug": "reservoir-protocol",
+        "w": 0.781,
+        "rho": -4.835,
+        "s": 18.334
+      }
+    ]
+  },
+  {
+    "slug": "kaio",
+    "name": "KAIO",
+    "category": "RWA",
+    "tvl_usd": 34656970,
+    "actual_mcap_usd": 14364555,
+    "pred_mcap_usd": 8974127.912958102,
+    "log_err_ln": -0.47041795269917464,
+    "max_ratio": 1.6006630548756102,
+    "mu": -1.3511530986276865,
+    "lam": 0.8735444169661721,
+    "mu_loc": -1.332614518274838,
+    "n_eff": 7.134662282556862,
+    "n_peers": 8,
+    "rho_bar": -1.4792160356462722,
+    "sigma2": 3.67976965301718,
+    "tau2": 3.5628225864702765,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Brickken",
+        "slug": "brickken",
+        "w": 0.993,
+        "rho": -1.967,
+        "s": 17.566
+      },
+      {
+        "name": "stUSDT",
+        "slug": "stusdt",
+        "w": 0.984,
+        "rho": -1.585,
+        "s": 17.674
+      },
+      {
+        "name": "Usual USD0",
+        "slug": "usual-usd0",
+        "w": 0.891,
+        "rho": -1.292,
+        "s": 18.189
+      },
+      {
+        "name": "Uranium.io",
+        "slug": "uranium.io",
+        "w": 0.785,
+        "rho": -0.14,
+        "s": 16.158
+      },
+      {
+        "name": "USD AI",
+        "slug": "usd-ai",
+        "w": 0.681,
+        "rho": -0.908,
+        "s": 18.873
+      }
+    ]
+  },
+  {
+    "slug": "kinetic",
+    "name": "Kinetic",
+    "category": "Lending",
+    "tvl_usd": 25055189,
+    "actual_mcap_usd": 286940,
+    "pred_mcap_usd": 6214288.018483121,
+    "log_err_ln": 3.0753333041415365,
+    "max_ratio": 21.65709910951112,
+    "mu": -1.3942297919581033,
+    "lam": 0.9089206541349194,
+    "mu_loc": -1.3895394251720765,
+    "n_eff": 9.729648603197823,
+    "n_peers": 10,
+    "rho_bar": -1.4410370148997713,
+    "sigma2": 3.543356976731217,
+    "tau2": 3.6343255031088235,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "MetalX Lending",
+        "slug": "metalx-lending",
+        "w": 0.999,
+        "rho": -1.125,
+        "s": 17.124
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.99,
+        "rho": -1.78,
+        "s": 16.793
+      },
+      {
+        "name": "Resupply",
+        "slug": "resupply",
+        "w": 0.952,
+        "rho": -3.4,
+        "s": 17.576
+      },
+      {
+        "name": "Tectonic",
+        "slug": "tectonic",
+        "w": 0.937,
+        "rho": -2.022,
+        "s": 16.412
+      },
+      {
+        "name": "Exactly",
+        "slug": "exactly",
+        "w": 0.894,
+        "rho": -3.189,
+        "s": 16.22
+      }
+    ]
+  },
+  {
+    "slug": "kyros",
+    "name": "Kyros",
+    "category": "Liquid Restaking",
+    "tvl_usd": 10265592,
+    "actual_mcap_usd": 209941,
+    "pred_mcap_usd": 2912888.7222263296,
+    "log_err_ln": 2.6300740169648704,
+    "max_ratio": 13.874796834474113,
+    "mu": -1.259652443663164,
+    "lam": 0.4894424728652855,
+    "mu_loc": -1.0640081652791125,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4472054897452136,
+    "sigma2": 3.6221163696951577,
+    "tau2": 3.472317023585194,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Renzo",
+        "slug": "renzo",
+        "w": 0.469,
+        "rho": -1.064,
+        "s": 18.269
+      }
+    ]
+  },
+  {
+    "slug": "liqwid",
+    "name": "Liqwid",
+    "category": "Lending",
+    "tvl_usd": 8390942,
+    "actual_mcap_usd": 3547973,
+    "pred_mcap_usd": 1656097.5381853157,
+    "log_err_ln": -0.7619125003983968,
+    "max_ratio": 2.1423695876558844,
+    "mu": -1.622688836597346,
+    "lam": 0.8958924783269322,
+    "mu_loc": -1.6393364736499145,
+    "n_eff": 8.864967164040593,
+    "n_peers": 10,
+    "rho_bar": -1.479428363409353,
+    "sigma2": 3.675004059301161,
+    "tau2": 3.567421900929603,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "EVAA Protocol",
+        "slug": "evaa-protocol",
+        "w": 0.995,
+        "rho": 0.026,
+        "s": 15.765
+      },
+      {
+        "name": "Flying Tulip Lend",
+        "slug": "flying-tulip-lend",
+        "w": 0.994,
+        "rho": 1.635,
+        "s": 16.126
+      },
+      {
+        "name": "Exactly",
+        "slug": "exactly",
+        "w": 0.987,
+        "rho": -3.189,
+        "s": 16.22
+      },
+      {
+        "name": "Tectonic",
+        "slug": "tectonic",
+        "w": 0.964,
+        "rho": -2.022,
+        "s": 16.412
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.886,
+        "rho": -1.78,
+        "s": 16.793
+      }
+    ]
+  },
+  {
+    "slug": "looped-hype",
+    "name": "Looped Hype",
+    "category": "Yield",
+    "tvl_usd": 5045118,
+    "actual_mcap_usd": 5042491,
+    "pred_mcap_usd": 1037209.1827982407,
+    "log_err_ln": -1.581366577922598,
+    "max_ratio": 4.861595022130528,
+    "mu": -1.5818874149335065,
+    "lam": 0.8362404451572972,
+    "mu_loc": -1.600159645044089,
+    "n_eff": 5.14306525878922,
+    "n_peers": 6,
+    "rho_bar": -1.4885800176560344,
+    "sigma2": 3.6296660476370195,
+    "tau2": 3.603870306599958,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Harmonix Finance",
+        "slug": "harmonix-finance",
+        "w": 1,
+        "rho": -2.115,
+        "s": 15.475
+      },
+      {
+        "name": "Aura",
+        "slug": "aura",
+        "w": 0.966,
+        "rho": -1.653,
+        "s": 15.887
+      },
+      {
+        "name": "Equilibria",
+        "slug": "equilibria",
+        "w": 0.957,
+        "rho": 0.055,
+        "s": 15.943
+      },
+      {
+        "name": "sDAI",
+        "slug": "sdai",
+        "w": 0.511,
+        "rho": 0.001,
+        "s": 17.436
+      },
+      {
+        "name": "Wise Token",
+        "slug": "wise-token",
+        "w": 0.387,
+        "rho": -1.777,
+        "s": 17.813
+      }
+    ]
+  },
+  {
+    "slug": "mansory",
+    "name": "Mansory",
+    "category": "RWA",
+    "tvl_usd": 5502874,
+    "actual_mcap_usd": 5538701,
+    "pred_mcap_usd": 1802907.6333035394,
+    "log_err_ln": -1.122359283271021,
+    "max_ratio": 3.0720935990776286,
+    "mu": -1.1158697877536823,
+    "lam": 0.8328754118084182,
+    "mu_loc": -1.0410668741097044,
+    "n_eff": 5.076401118464419,
+    "n_peers": 8,
+    "rho_bar": -1.488654595661654,
+    "sigma2": 3.6497576817788366,
+    "tau2": 3.5830081091039836,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Uranium.io",
+        "slug": "uranium.io",
+        "w": 0.934,
+        "rho": -0.14,
+        "s": 16.158
+      },
+      {
+        "name": "KAIO",
+        "slug": "kaio",
+        "w": 0.567,
+        "rho": -0.881,
+        "s": 17.361
+      },
+      {
+        "name": "Brickken",
+        "slug": "brickken",
+        "w": 0.496,
+        "rho": -1.967,
+        "s": 17.566
+      },
+      {
+        "name": "stUSDT",
+        "slug": "stusdt",
+        "w": 0.46,
+        "rho": -1.585,
+        "s": 17.674
+      },
+      {
+        "name": "Usual USD0",
+        "slug": "usual-usd0",
+        "w": 0.303,
+        "rho": -1.292,
+        "s": 18.189
+      }
+    ]
+  },
+  {
+    "slug": "merlins-seal",
+    "name": "Merlins Seal",
+    "category": "Bridge",
+    "tvl_usd": 350240199,
+    "actual_mcap_usd": 43782431,
+    "pred_mcap_usd": 60835050.15753875,
+    "log_err_ln": 0.3289334875326645,
+    "max_ratio": 1.3894854344094951,
+    "mu": -1.7504530962322375,
+    "lam": 0.6886396648997042,
+    "mu_loc": -1.8788552381205927,
+    "n_eff": 2.2930802811041695,
+    "n_peers": 4,
+    "rho_bar": -1.46646442460546,
+    "sigma2": 3.682912299420866,
+    "tau2": 3.552228263729998,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Portal",
+        "slug": "portal",
+        "w": 0.753,
+        "rho": -2.961,
+        "s": 20.975
+      },
+      {
+        "name": "PumpBTC",
+        "slug": "pumpbtc",
+        "w": 0.294,
+        "rho": 0.472,
+        "s": 16.97
+      },
+      {
+        "name": "cBridge",
+        "slug": "cbridge",
+        "w": 0.135,
+        "rho": 0.423,
+        "s": 16.217
+      },
+      {
+        "name": "Gravity Bridge",
+        "slug": "gravity-bridge",
+        "w": 0.063,
+        "rho": -4.828,
+        "s": 15.614
+      }
+    ]
+  },
+  {
+    "slug": "merlinswap",
+    "name": "MerlinSwap",
+    "category": "Dexs",
+    "tvl_usd": 7296111,
+    "actual_mcap_usd": 159377,
+    "pred_mcap_usd": 2840282.8113568015,
+    "log_err_ln": 2.8803864428074495,
+    "max_ratio": 17.82115870769811,
+    "mu": -0.9434378377932195,
+    "lam": 0.8336815964030977,
+    "mu_loc": -0.8427969747915406,
+    "n_eff": 4.928662656862712,
+    "n_peers": 5,
+    "rho_bar": -1.4479065767667811,
+    "sigma2": 3.566320744417622,
+    "tau2": 3.6270305423670886,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Fables",
+        "slug": "fables",
+        "w": 0.945,
+        "rho": -2.686,
+        "s": 16.384
+      },
+      {
+        "name": "STON.fi",
+        "slug": "ston.fi",
+        "w": 0.831,
+        "rho": 0.367,
+        "s": 16.853
+      },
+      {
+        "name": "Hydration DEX",
+        "slug": "hydration-dex",
+        "w": 0.831,
+        "rho": 0.562,
+        "s": 16.854
+      },
+      {
+        "name": "Ekubo",
+        "slug": "ekubo",
+        "w": 0.807,
+        "rho": -1.072,
+        "s": 16.935
+      },
+      {
+        "name": "Aquarius Stellar",
+        "slug": "aquarius-stellar",
+        "w": 0.641,
+        "rho": -1.227,
+        "s": 17.431
+      }
+    ]
+  },
+  {
+    "slug": "metalx-lending",
+    "name": "MetalX Lending",
+    "category": "Lending",
+    "tvl_usd": 27341274,
+    "actual_mcap_usd": 8876695,
+    "pred_mcap_usd": 4664122.793078512,
+    "log_err_ln": -0.6435295264928425,
+    "max_ratio": 1.9031863854812918,
+    "mu": -1.7684976520521276,
+    "lam": 0.9043010611909873,
+    "mu_loc": -1.799386248900667,
+    "n_eff": 9.760465574863122,
+    "n_peers": 10,
+    "rho_bar": -1.4766178124587106,
+    "sigma2": 3.680553574327581,
+    "tau2": 3.563268332466248,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Kinetic",
+        "slug": "kinetic",
+        "w": 0.999,
+        "rho": -4.47,
+        "s": 17.037
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.982,
+        "rho": -1.78,
+        "s": 16.793
+      },
+      {
+        "name": "Resupply",
+        "slug": "resupply",
+        "w": 0.966,
+        "rho": -3.4,
+        "s": 17.576
+      },
+      {
+        "name": "Tectonic",
+        "slug": "tectonic",
+        "w": 0.919,
+        "rho": -2.022,
+        "s": 16.412
+      },
+      {
+        "name": "Exactly",
+        "slug": "exactly",
+        "w": 0.872,
+        "rho": -3.189,
+        "s": 16.22
+      }
+    ]
+  },
+  {
+    "slug": "meth-protocol",
+    "name": "mETH Protocol",
+    "category": "Liquid Staking",
+    "tvl_usd": 455231965,
+    "actual_mcap_usd": 1823351,
+    "pred_mcap_usd": 29994840.341739066,
+    "log_err_ln": 2.800349361328987,
+    "max_ratio": 16.450392898426614,
+    "mu": -2.7197817239654496,
+    "lam": 0.7572329613078398,
+    "mu_loc": -3.133327235906561,
+    "n_eff": 3.1165456020411884,
+    "n_peers": 6,
+    "rho_bar": -1.4298607596955708,
+    "sigma2": 3.5714418655634,
+    "tau2": 3.574455448552602,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Rocket Pool",
+        "slug": "rocket-pool",
+        "w": 0.918,
+        "rho": -3.43,
+        "s": 20.652
+      },
+      {
+        "name": "Stader",
+        "slug": "stader",
+        "w": 0.822,
+        "rho": -3.043,
+        "s": 18.855
+      },
+      {
+        "name": "Veno Finance",
+        "slug": "veno-finance",
+        "w": 0.274,
+        "rho": -3.204,
+        "s": 17.157
+      },
+      {
+        "name": "Infrared Finance",
+        "slug": "infrared-finance",
+        "w": 0.102,
+        "rho": -3.371,
+        "s": 16.25
+      },
+      {
+        "name": "Hipo",
+        "slug": "hipo",
+        "w": 0.083,
+        "rho": -0.956,
+        "s": 16.083
+      }
+    ]
+  },
+  {
+    "slug": "mexc",
+    "name": "MEXC",
+    "category": "CEX",
+    "tvl_usd": 3847796100,
+    "actual_mcap_usd": 129118224,
+    "pred_mcap_usd": 393301560.0869602,
+    "log_err_ln": 1.113848196308632,
+    "max_ratio": 3.0460576973778712,
+    "mu": -2.280679175727331,
+    "lam": 0.8003864406199206,
+    "mu_loc": -2.4872307381159895,
+    "n_eff": 4.1094696478326025,
+    "n_peers": 7,
+    "rho_bar": -1.4524735651557674,
+    "sigma2": 3.653751311407579,
+    "tau2": 3.5650275548767976,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Gate",
+        "slug": "gate",
+        "w": 0.98,
+        "rho": -1.781,
+        "s": 22.42
+      },
+      {
+        "name": "Bitkub",
+        "slug": "bitkub",
+        "w": 0.801,
+        "rho": -3.606,
+        "s": 20.922
+      },
+      {
+        "name": "SwissBorg",
+        "slug": "swissborg",
+        "w": 0.627,
+        "rho": -1.705,
+        "s": 20.402
+      },
+      {
+        "name": "OKX",
+        "slug": "okx",
+        "w": 0.538,
+        "rho": -2.593,
+        "s": 23.994
+      },
+      {
+        "name": "Biconomy.com",
+        "slug": "biconomy.com",
+        "w": 0.094,
+        "rho": -5.04,
+        "s": 18.314
+      }
+    ]
+  },
+  {
+    "slug": "morpheusai",
+    "name": "MorpheusAI",
+    "category": "AI Agents",
+    "tvl_usd": 7577571,
+    "actual_mcap_usd": 6729517,
+    "pred_mcap_usd": 2032610.3928620906,
+    "log_err_ln": -1.1971824980829229,
+    "max_ratio": 3.310775652644509,
+    "mu": -1.3158718249546868,
+    "lam": 0.4873175568449261,
+    "mu_loc": -1.1354967124455975,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4873229060617699,
+    "sigma2": 3.6764193902054085,
+    "tau2": 3.4945290970892535,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "ZyFAI",
+        "slug": "zyfai",
+        "w": 0.999,
+        "rho": -1.135,
+        "s": 15.93
+      }
+    ]
+  },
+  {
+    "slug": "nexo",
+    "name": "Nexo",
+    "category": "CEX",
+    "tvl_usd": 10168509,
+    "actual_mcap_usd": 705918665,
+    "pred_mcap_usd": 488458.2200083431,
+    "log_err_ln": -7.276001363737876,
+    "max_ratio": 1445.1976363258716,
+    "mu": -3.0357969299066183,
+    "lam": 0.7426029141778563,
+    "mu_loc": -3.5564478450195294,
+    "n_eff": 2.1130192210353527,
+    "n_peers": 7,
+    "rho_bar": -1.533694116282015,
+    "sigma2": 2.9706571167426694,
+    "tau2": 4.056038819541392,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "BitKan",
+        "slug": "bitkan",
+        "w": 0.748,
+        "rho": -2.781,
+        "s": 17.451
+      },
+      {
+        "name": "Biconomy.com",
+        "slug": "biconomy.com",
+        "w": 0.451,
+        "rho": -5.04,
+        "s": 18.314
+      },
+      {
+        "name": "SwissBorg",
+        "slug": "swissborg",
+        "w": 0.047,
+        "rho": -1.705,
+        "s": 20.402
+      },
+      {
+        "name": "Bitkub",
+        "slug": "bitkub",
+        "w": 0.021,
+        "rho": -3.606,
+        "s": 20.922
+      },
+      {
+        "name": "MEXC",
+        "slug": "mexc",
+        "w": 0.003,
+        "rho": -3.395,
+        "s": 22.071
+      }
+    ]
+  },
+  {
+    "slug": "obol",
+    "name": "Obol",
+    "category": "Staking Pool",
+    "tvl_usd": 1146359386,
+    "actual_mcap_usd": 717446,
+    "pred_mcap_usd": 279844270.99608225,
+    "log_err_ln": 5.966290868937241,
+    "max_ratio": 390.0562146782925,
+    "mu": -1.4101131750288511,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.4101131750288511,
+    "sigma2": 3.6278121477357677,
+    "tau2": 2.4120475226279834,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "okx",
+    "name": "OKX",
+    "category": "CEX",
+    "tvl_usd": 26324198228,
+    "actual_mcap_usd": 1969858392,
+    "pred_mcap_usd": 2621878044.3049035,
+    "log_err_ln": 0.2859292138575008,
+    "max_ratio": 1.3309982356868337,
+    "mu": -2.3065977290898183,
+    "lam": 0.7418937451867719,
+    "mu_loc": -2.6007808904073184,
+    "n_eff": 2.9741255768678085,
+    "n_peers": 7,
+    "rho_bar": -1.4610054846141574,
+    "sigma2": 3.6798493113497055,
+    "tau2": 3.556427120781121,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Gate",
+        "slug": "gate",
+        "w": 0.66,
+        "rho": -1.781,
+        "s": 22.42
+      },
+      {
+        "name": "MEXC",
+        "slug": "mexc",
+        "w": 0.538,
+        "rho": -3.395,
+        "s": 22.071
+      },
+      {
+        "name": "Bitkub",
+        "slug": "bitkub",
+        "w": 0.205,
+        "rho": -3.606,
+        "s": 20.922
+      },
+      {
+        "name": "SwissBorg",
+        "slug": "swissborg",
+        "w": 0.115,
+        "rho": -1.705,
+        "s": 20.402
+      },
+      {
+        "name": "Biconomy.com",
+        "slug": "biconomy.com",
+        "w": 0.004,
+        "rho": -5.04,
+        "s": 18.314
+      }
+    ]
+  },
+  {
+    "slug": "pinksale",
+    "name": "PinkSale",
+    "category": "Launchpad",
+    "tvl_usd": 138597079,
+    "actual_mcap_usd": 18098374,
+    "pred_mcap_usd": 31965025.639700875,
+    "log_err_ln": 0.5688202563540392,
+    "max_ratio": 1.766182179664365,
+    "mu": -1.466928655161306,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.466928655161306,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.8194949230465904,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "portal",
+    "name": "Portal",
+    "category": "Bridge",
+    "tvl_usd": 1285806408,
+    "actual_mcap_usd": 66593224,
+    "pred_mcap_usd": 242982179.5164446,
+    "log_err_ln": 1.2943852746995492,
+    "max_ratio": 3.6487523042351064,
+    "mu": -1.666153250034815,
+    "lam": 0.5522015595308456,
+    "mu_loc": -1.8356891490830096,
+    "n_eff": 1.2672982229353256,
+    "n_peers": 4,
+    "rho_bar": -1.4570904677866359,
+    "sigma2": 3.6579442008225933,
+    "tau2": 3.55937136774482,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Merlins Seal",
+        "slug": "merlins-seal",
+        "w": 0.753,
+        "rho": -2.079,
+        "s": 19.674
+      },
+      {
+        "name": "PumpBTC",
+        "slug": "pumpbtc",
+        "w": 0.068,
+        "rho": 0.472,
+        "s": 16.97
+      },
+      {
+        "name": "cBridge",
+        "slug": "cbridge",
+        "w": 0.022,
+        "rho": 0.423,
+        "s": 16.217
+      },
+      {
+        "name": "Gravity Bridge",
+        "slug": "gravity-bridge",
+        "w": 0.008,
+        "rho": -4.828,
+        "s": 15.614
+      }
+    ]
+  },
+  {
+    "slug": "pumpbtc",
+    "name": "PumpBTC",
+    "category": "Bridge",
+    "tvl_usd": 23447007,
+    "actual_mcap_usd": 37592530,
+    "pred_mcap_usd": 3674255.0212488403,
+    "log_err_ln": -2.325454963636705,
+    "max_ratio": 10.231333911934806,
+    "mu": -1.853392456675375,
+    "lam": 0.737497266303241,
+    "mu_loc": -1.98145331733931,
+    "n_eff": 2.7598166333089154,
+    "n_peers": 4,
+    "rho_bar": -1.493607500038718,
+    "sigma2": 3.5841527426474022,
+    "tau2": 3.648655549930812,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "cBridge",
+        "slug": "cbridge",
+        "w": 0.909,
+        "rho": 0.423,
+        "s": 16.217
+      },
+      {
+        "name": "Gravity Bridge",
+        "slug": "gravity-bridge",
+        "w": 0.735,
+        "rho": -4.828,
+        "s": 15.614
+      },
+      {
+        "name": "Merlins Seal",
+        "slug": "merlins-seal",
+        "w": 0.294,
+        "rho": -2.079,
+        "s": 19.674
+      },
+      {
+        "name": "Portal",
+        "slug": "portal",
+        "w": 0.068,
+        "rho": -2.961,
+        "s": 20.975
+      }
+    ]
+  },
+  {
+    "slug": "railgun",
+    "name": "Railgun",
+    "category": "Privacy",
+    "tvl_usd": 107702928,
+    "actual_mcap_usd": 104378062,
+    "pred_mcap_usd": 64053409.0738842,
+    "log_err_ln": -0.4883022671440703,
+    "max_ratio": 1.6295473341567535,
+    "mu": -0.5196595182987296,
+    "lam": 0.48924854206796314,
+    "mu_loc": 0.49150344830586334,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4882519706970585,
+    "sigma2": 3.6823609054266364,
+    "tau2": 3.5273314963063216,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Zama",
+        "slug": "zama",
+        "w": 0.995,
+        "rho": 0.492,
+        "s": 18.318
+      }
+    ]
+  },
+  {
+    "slug": "rain",
+    "name": "Rain",
+    "category": "Prediction Market",
+    "tvl_usd": 6612528,
+    "actual_mcap_usd": 2646363290,
+    "pred_mcap_usd": 1400229.3600534317,
+    "log_err_ln": -7.544305581246066,
+    "max_ratio": 1889.9498649985576,
+    "mu": -1.5523299797676233,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.5523299797676233,
+    "sigma2": 3.6278121477357677,
+    "tau2": 1.9701395619043667,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "re",
+    "name": "Re",
+    "category": "RWA",
+    "tvl_usd": 487561390,
+    "actual_mcap_usd": 39968695,
+    "pred_mcap_usd": 85375589.96726954,
+    "log_err_ln": 0.758963705468735,
+    "max_ratio": 2.1360614843008894,
+    "mu": -1.7423559825428927,
+    "lam": 0.8402547470810648,
+    "mu_loc": -1.7956605397539507,
+    "n_eff": 5.398311460221331,
+    "n_peers": 8,
+    "rho_bar": -1.4619757745602817,
+    "sigma2": 3.663149290473747,
+    "tau2": 3.5692724027000917,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Huma",
+        "slug": "huma",
+        "w": 0.987,
+        "rho": -3.326,
+        "s": 19.727
+      },
+      {
+        "name": "USD AI",
+        "slug": "usd-ai",
+        "w": 0.807,
+        "rho": -0.908,
+        "s": 18.873
+      },
+      {
+        "name": "Usual USD0",
+        "slug": "usual-usd0",
+        "w": 0.575,
+        "rho": -1.292,
+        "s": 18.189
+      },
+      {
+        "name": "stUSDT",
+        "slug": "stusdt",
+        "w": 0.402,
+        "rho": -1.585,
+        "s": 17.674
+      },
+      {
+        "name": "Brickken",
+        "slug": "brickken",
+        "w": 0.369,
+        "rho": -1.967,
+        "s": 17.566
+      }
+    ]
+  },
+  {
+    "slug": "renzo",
+    "name": "Renzo",
+    "category": "Liquid Restaking",
+    "tvl_usd": 85927581,
+    "actual_mcap_usd": 29651025,
+    "pred_mcap_usd": 5765176.962166324,
+    "log_err_ln": -1.6376608456269035,
+    "max_ratio": 5.143124867559716,
+    "mu": -2.7016690109060173,
+    "lam": 0.5075328163847658,
+    "mu_loc": -3.889726460628035,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4772663226744571,
+    "sigma2": 3.6221163696951577,
+    "tau2": 3.7329247177230154,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Kyros",
+        "slug": "kyros",
+        "w": 0.469,
+        "rho": -3.89,
+        "s": 16.144
+      }
+    ]
+  },
+  {
+    "slug": "reservoir-protocol",
+    "name": "Reservoir Protocol",
+    "category": "CDP",
+    "tvl_usd": 91691917,
+    "actual_mcap_usd": 728976,
+    "pred_mcap_usd": 19451242.50809955,
+    "log_err_ln": 3.284025419514691,
+    "max_ratio": 26.682966940063253,
+    "mu": -1.5505232790600625,
+    "lam": 0.6618621281012153,
+    "mu_loc": -1.608442264161241,
+    "n_eff": 1.983130193810585,
+    "n_peers": 2,
+    "rho_bar": -1.4371541893415252,
+    "sigma2": 3.5749103971846297,
+    "tau2": 3.528479921105679,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Frankencoin",
+        "slug": "frankencoin",
+        "w": 0.94,
+        "rho": -1.78,
+        "s": 17.727
+      },
+      {
+        "name": "Inverse Finance FiRM",
+        "slug": "inverse-finance-firm",
+        "w": 0.781,
+        "rho": -1.402,
+        "s": 17.121
+      }
+    ]
+  },
+  {
+    "slug": "resolv-usr",
+    "name": "Resolv USR",
+    "category": "Basis Trading",
+    "tvl_usd": 6085254,
+    "actual_mcap_usd": 6786418,
+    "pred_mcap_usd": 5637287.554657629,
+    "log_err_ln": -0.18552024207063325,
+    "max_ratio": 1.2038445678352772,
+    "mu": -0.07646544775602623,
+    "lam": 0.7929293419138687,
+    "mu_loc": 0.2926076331699653,
+    "n_eff": 3.9631012353985846,
+    "n_peers": 6,
+    "rho_bar": -1.489745715861625,
+    "sigma2": 3.680266795297393,
+    "tau2": 3.5559861621358633,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Solomon USDv",
+        "slug": "solomon-usdv",
+        "w": 0.978,
+        "rho": -0.424,
+        "s": 15.982
+      },
+      {
+        "name": "XSY",
+        "slug": "xsy",
+        "w": 0.908,
+        "rho": -0.002,
+        "s": 16.38
+      },
+      {
+        "name": "Bitway Earn",
+        "slug": "bitway-earn",
+        "w": 0.615,
+        "rho": 3.588,
+        "s": 17.325
+      },
+      {
+        "name": "ZEROBASE CeDeFi",
+        "slug": "zerobase-cedefi",
+        "w": 0.415,
+        "rho": -1.171,
+        "s": 17.91
+      },
+      {
+        "name": "Solstice",
+        "slug": "solstice",
+        "w": 0.129,
+        "rho": -3.121,
+        "s": 19.119
+      }
+    ]
+  },
+  {
+    "slug": "resupply",
+    "name": "Resupply",
+    "category": "Lending",
+    "tvl_usd": 42980278,
+    "actual_mcap_usd": 1434821,
+    "pred_mcap_usd": 9042931.099060059,
+    "log_err_ln": 1.8409432557173284,
+    "max_ratio": 6.302480308735416,
+    "mu": -1.5587580008457165,
+    "lam": 0.9060683439378564,
+    "mu_loc": -1.569782161713496,
+    "n_eff": 9.760083105481513,
+    "n_peers": 10,
+    "rho_bar": -1.4524185238310112,
+    "sigma2": 3.629071491369378,
+    "tau2": 3.5866664157472066,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "MetalX Lending",
+        "slug": "metalx-lending",
+        "w": 0.966,
+        "rho": -1.125,
+        "s": 17.124
+      },
+      {
+        "name": "Kinetic",
+        "slug": "kinetic",
+        "w": 0.952,
+        "rho": -4.47,
+        "s": 17.037
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.902,
+        "rho": -1.78,
+        "s": 16.793
+      },
+      {
+        "name": "Dolomite",
+        "slug": "dolomite",
+        "w": 0.818,
+        "rho": -2.501,
+        "s": 18.67
+      },
+      {
+        "name": "Tectonic",
+        "slug": "tectonic",
+        "w": 0.797,
+        "rho": -2.022,
+        "s": 16.412
+      }
+    ]
+  },
+  {
+    "slug": "rocket-pool",
+    "name": "Rocket Pool",
+    "category": "Liquid Staking",
+    "tvl_usd": 930898234,
+    "actual_mcap_usd": 30147126,
+    "pred_mcap_usd": 28643868.297272876,
+    "log_err_ln": -0.05115019602916534,
+    "max_ratio": 1.0524809598733649,
+    "mu": -3.481210563814426,
+    "lam": 0.701855375558166,
+    "mu_loc": -4.3431683879623595,
+    "n_eff": 2.4408367844362737,
+    "n_peers": 6,
+    "rho_bar": -1.45209555456269,
+    "sigma2": 3.681575904872135,
+    "tau2": 3.5507137867330125,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "mETH Protocol",
+        "slug": "meth-protocol",
+        "w": 0.918,
+        "rho": -5.52,
+        "s": 19.936
+      },
+      {
+        "name": "Stader",
+        "slug": "stader",
+        "w": 0.582,
+        "rho": -3.043,
+        "s": 18.855
+      },
+      {
+        "name": "Veno Finance",
+        "slug": "veno-finance",
+        "w": 0.129,
+        "rho": -3.204,
+        "s": 17.157
+      },
+      {
+        "name": "Infrared Finance",
+        "slug": "infrared-finance",
+        "w": 0.039,
+        "rho": -3.371,
+        "s": 16.25
+      },
+      {
+        "name": "Hipo",
+        "slug": "hipo",
+        "w": 0.03,
+        "rho": -0.956,
+        "s": 16.083
+      }
+    ]
+  },
+  {
+    "slug": "sdai",
+    "name": "sDAI",
+    "category": "Yield",
+    "tvl_usd": 37353080,
+    "actual_mcap_usd": 37389910,
+    "pred_mcap_usd": 3963933.305930002,
+    "log_err_ln": -2.2441640905411906,
+    "max_ratio": 9.43252752110261,
+    "mu": -2.2431785799807793,
+    "lam": 0.84814010558635,
+    "mu_loc": -2.378286946739621,
+    "n_eff": 5.624736324255287,
+    "n_peers": 6,
+    "rho_bar": -1.4885960426301972,
+    "sigma2": 3.6295707594828173,
+    "tau2": 3.603940443158837,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Wise Token",
+        "slug": "wise-token",
+        "w": 0.976,
+        "rho": -1.777,
+        "s": 17.813
+      },
+      {
+        "name": "Concentrator",
+        "slug": "concentrator",
+        "w": 0.959,
+        "rho": -6.653,
+        "s": 17.937
+      },
+      {
+        "name": "Equilibria",
+        "slug": "equilibria",
+        "w": 0.688,
+        "rho": 0.055,
+        "s": 15.943
+      },
+      {
+        "name": "Aura",
+        "slug": "aura",
+        "w": 0.669,
+        "rho": -1.653,
+        "s": 15.887
+      },
+      {
+        "name": "Harmonix Finance",
+        "slug": "harmonix-finance",
+        "w": 0.525,
+        "rho": -2.115,
+        "s": 15.475
+      }
+    ]
+  },
+  {
+    "slug": "solomon-usdv",
+    "name": "Solomon USDv",
+    "category": "Basis Trading",
+    "tvl_usd": 8727712,
+    "actual_mcap_usd": 5711574,
+    "pred_mcap_usd": 9295126.418629956,
+    "log_err_ln": 0.4869955793700639,
+    "max_ratio": 1.6274194151436987,
+    "mu": 0.06298697105807988,
+    "lam": 0.8036766601475569,
+    "mu_loc": 0.44090554767964085,
+    "n_eff": 4.239051767545152,
+    "n_peers": 6,
+    "rho_bar": -1.4840748285996397,
+    "sigma2": 3.684448632587595,
+    "tau2": 3.558059515451307,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Resolv USR",
+        "slug": "resolv-usr",
+        "w": 0.978,
+        "rho": 0.109,
+        "s": 15.621
+      },
+      {
+        "name": "XSY",
+        "slug": "xsy",
+        "w": 0.974,
+        "rho": -0.002,
+        "s": 16.38
+      },
+      {
+        "name": "Bitway Earn",
+        "slug": "bitway-earn",
+        "w": 0.739,
+        "rho": 3.588,
+        "s": 17.325
+      },
+      {
+        "name": "ZEROBASE CeDeFi",
+        "slug": "zerobase-cedefi",
+        "w": 0.536,
+        "rho": -1.171,
+        "s": 17.91
+      },
+      {
+        "name": "Solstice",
+        "slug": "solstice",
+        "w": 0.192,
+        "rho": -3.121,
+        "s": 19.119
+      }
+    ]
+  },
+  {
+    "slug": "solstice",
+    "name": "Solstice",
+    "category": "Basis Trading",
+    "tvl_usd": 201014549,
+    "actual_mcap_usd": 8870078,
+    "pred_mcap_usd": 173512795.02150157,
+    "log_err_ln": 2.973567753219988,
+    "max_ratio": 19.561586157585264,
+    "mu": -0.14712594533472978,
+    "lam": 0.8252155550054512,
+    "mu_loc": 0.12996968945115348,
+    "n_eff": 4.565078151891455,
+    "n_peers": 6,
+    "rho_bar": -1.4553866893417382,
+    "sigma2": 3.5468348826950438,
+    "tau2": 3.668236940431557,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "ZEROBASE CeDeFi",
+        "slug": "zerobase-cedefi",
+        "w": 0.783,
+        "rho": -1.171,
+        "s": 17.91
+      },
+      {
+        "name": "Bitway Earn",
+        "slug": "bitway-earn",
+        "w": 0.583,
+        "rho": 3.588,
+        "s": 17.325
+      },
+      {
+        "name": "Falcon Finance",
+        "slug": "falcon-finance",
+        "w": 0.495,
+        "rho": -1.588,
+        "s": 21.166
+      },
+      {
+        "name": "XSY",
+        "slug": "xsy",
+        "w": 0.284,
+        "rho": -0.002,
+        "s": 16.38
+      },
+      {
+        "name": "Solomon USDv",
+        "slug": "solomon-usdv",
+        "w": 0.192,
+        "rho": -0.424,
+        "s": 15.982
+      }
+    ]
+  },
+  {
+    "slug": "stader",
+    "name": "Stader",
+    "category": "Liquid Staking",
+    "tvl_usd": 154377360,
+    "actual_mcap_usd": 7359993,
+    "pred_mcap_usd": 5956697.237031801,
+    "log_err_ln": -0.21154280903710673,
+    "max_ratio": 1.2355828586089859,
+    "mu": -3.2548838220985146,
+    "lam": 0.8238232507134486,
+    "mu_loc": -3.639534994443928,
+    "n_eff": 4.843337031609389,
+    "n_peers": 6,
+    "rho_bar": -1.4562095902512413,
+    "sigma2": 3.6844933584569723,
+    "tau2": 3.5572840026434673,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "mETH Protocol",
+        "slug": "meth-protocol",
+        "w": 0.822,
+        "rho": -5.52,
+        "s": 19.936
+      },
+      {
+        "name": "Veno Finance",
+        "slug": "veno-finance",
+        "w": 0.617,
+        "rho": -3.204,
+        "s": 17.157
+      },
+      {
+        "name": "Rocket Pool",
+        "slug": "rocket-pool",
+        "w": 0.582,
+        "rho": -3.43,
+        "s": 20.652
+      },
+      {
+        "name": "Infrared Finance",
+        "slug": "infrared-finance",
+        "w": 0.321,
+        "rho": -3.371,
+        "s": 16.25
+      },
+      {
+        "name": "Hipo",
+        "slug": "hipo",
+        "w": 0.276,
+        "rho": -0.956,
+        "s": 16.083
+      }
+    ]
+  },
+  {
+    "slug": "ston.fi",
+    "name": "STON.fi",
+    "category": "Dexs",
+    "tvl_usd": 20854866,
+    "actual_mcap_usd": 30102154,
+    "pred_mcap_usd": 4399577.458465405,
+    "log_err_ln": -1.9230882265103466,
+    "max_ratio": 6.842055693798328,
+    "mu": -1.556078798164719,
+    "lam": 0.8313170747627322,
+    "mu_loc": -1.568981647514165,
+    "n_eff": 4.978721665463749,
+    "n_peers": 5,
+    "rho_bar": -1.4924899140959977,
+    "sigma2": 3.6315570427842196,
+    "tau2": 3.594765784884664,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Hydration DEX",
+        "slug": "hydration-dex",
+        "w": 1,
+        "rho": 0.562,
+        "s": 16.854
+      },
+      {
+        "name": "Ekubo",
+        "slug": "ekubo",
+        "w": 0.999,
+        "rho": -1.072,
+        "s": 16.935
+      },
+      {
+        "name": "Fables",
+        "slug": "fables",
+        "w": 0.964,
+        "rho": -2.686,
+        "s": 16.384
+      },
+      {
+        "name": "Aquarius Stellar",
+        "slug": "aquarius-stellar",
+        "w": 0.946,
+        "rho": -1.227,
+        "s": 17.431
+      },
+      {
+        "name": "MerlinSwap",
+        "slug": "merlinswap",
+        "w": 0.831,
+        "rho": -3.824,
+        "s": 15.803
+      }
+    ]
+  },
+  {
+    "slug": "streamflow",
+    "name": "Streamflow",
+    "category": "Payments",
+    "tvl_usd": 8841188,
+    "actual_mcap_usd": 1236716,
+    "pred_mcap_usd": 2003879.4602219174,
+    "log_err_ln": 0.4826255524848472,
+    "max_ratio": 1.6203230654587775,
+    "mu": -1.4843362249367142,
+    "lam": 0.4867285407278211,
+    "mu_loc": -1.5019214028160537,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4676604331835803,
+    "sigma2": 3.6828071613721605,
+    "tau2": 3.4923573540957302,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Superfluid",
+        "slug": "superfluid",
+        "w": 0.952,
+        "rho": -1.502,
+        "s": 15.451
+      }
+    ]
+  },
+  {
+    "slug": "stusdt",
+    "name": "stUSDT",
+    "category": "RWA",
+    "tvl_usd": 47373718,
+    "actual_mcap_usd": 9707096,
+    "pred_mcap_usd": 12579420.0761669,
+    "log_err_ln": 0.25920498688439875,
+    "max_ratio": 1.2958994199879037,
+    "mu": -1.326005451014575,
+    "lam": 0.8750588971768384,
+    "mu_loc": -1.305200064523558,
+    "n_eff": 7.2500562824384085,
+    "n_peers": 8,
+    "rho_bar": -1.4717216176465864,
+    "sigma2": 3.683889213491083,
+    "tau2": 3.558747154282399,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Brickken",
+        "slug": "brickken",
+        "w": 0.998,
+        "rho": -1.967,
+        "s": 17.566
+      },
+      {
+        "name": "KAIO",
+        "slug": "kaio",
+        "w": 0.984,
+        "rho": -0.881,
+        "s": 17.361
+      },
+      {
+        "name": "Usual USD0",
+        "slug": "usual-usd0",
+        "w": 0.956,
+        "rho": -1.292,
+        "s": 18.189
+      },
+      {
+        "name": "USD AI",
+        "slug": "usd-ai",
+        "w": 0.786,
+        "rho": -0.908,
+        "s": 18.873
+      },
+      {
+        "name": "Uranium.io",
+        "slug": "uranium.io",
+        "w": 0.68,
+        "rho": -0.14,
+        "s": 16.158
+      }
+    ]
+  },
+  {
+    "slug": "superfluid",
+    "name": "Superfluid",
+    "category": "Payments",
+    "tvl_usd": 5131538,
+    "actual_mcap_usd": 1142803,
+    "pred_mcap_usd": 924510.0179877258,
+    "log_err_ln": -0.21197540860159964,
+    "max_ratio": 1.236117486847149,
+    "mu": -1.7138968114176536,
+    "lam": 0.4880896854606646,
+    "mu_loc": -1.9669617774215613,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4726076712112985,
+    "sigma2": 3.6828071613721605,
+    "tau2": 3.511435769025312,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Streamflow",
+        "slug": "streamflow",
+        "w": 0.952,
+        "rho": -1.967,
+        "s": 15.995
+      }
+    ]
+  },
+  {
+    "slug": "swissborg",
+    "name": "SwissBorg",
+    "category": "CEX",
+    "tvl_usd": 724872836,
+    "actual_mcap_usd": 131787774,
+    "pred_mcap_usd": 38571724.53962737,
+    "log_err_ln": -1.2286733728423052,
+    "max_ratio": 3.416693849521957,
+    "mu": -2.933476757686628,
+    "lam": 0.8202625898630804,
+    "mu_loc": -3.254057947249073,
+    "n_eff": 4.715527067991978,
+    "n_peers": 7,
+    "rho_bar": -1.4704493522535511,
+    "sigma2": 3.681950985352039,
+    "tau2": 3.5633803929429915,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Bitkub",
+        "slug": "bitkub",
+        "w": 0.956,
+        "rho": -3.606,
+        "s": 20.922
+      },
+      {
+        "name": "MEXC",
+        "slug": "mexc",
+        "w": 0.627,
+        "rho": -3.395,
+        "s": 22.071
+      },
+      {
+        "name": "Gate",
+        "slug": "gate",
+        "w": 0.505,
+        "rho": -1.781,
+        "s": 22.42
+      },
+      {
+        "name": "Biconomy.com",
+        "slug": "biconomy.com",
+        "w": 0.481,
+        "rho": -5.04,
+        "s": 18.314
+      },
+      {
+        "name": "BitKan",
+        "slug": "bitkan",
+        "w": 0.232,
+        "rho": -2.781,
+        "s": 17.451
+      }
+    ]
+  },
+  {
+    "slug": "symbiosis",
+    "name": "Symbiosis",
+    "category": "Cross Chain Bridge",
+    "tvl_usd": 7930429,
+    "actual_mcap_usd": 1549406,
+    "pred_mcap_usd": 4790570.764837156,
+    "log_err_ln": 1.1287779302352392,
+    "max_ratio": 3.0918757025835424,
+    "mu": -0.5040575706339797,
+    "lam": 0.6361595951290613,
+    "mu_loc": 0.049091264565038206,
+    "n_eff": 1.7968221286961064,
+    "n_peers": 2,
+    "rho_bar": -1.4712149680405202,
+    "sigma2": 3.6667240752885064,
+    "tau2": 3.5680283653957634,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Across",
+        "slug": "across",
+        "w": 0.949,
+        "rho": 0.791,
+        "s": 16.447
+      },
+      {
+        "name": "Hyperlane",
+        "slug": "hyperlane",
+        "w": 0.471,
+        "rho": -1.444,
+        "s": 18.005
+      }
+    ]
+  },
+  {
+    "slug": "taiko-bridge",
+    "name": "Taiko Bridge",
+    "category": "Canonical Bridge",
+    "tvl_usd": 10785829,
+    "actual_mcap_usd": 15467736,
+    "pred_mcap_usd": 2866025.535661071,
+    "log_err_ln": -1.6858300668781239,
+    "max_ratio": 5.396928885503543,
+    "mu": -1.3253069036776037,
+    "lam": 0.48764710313876614,
+    "mu_loc": -1.1497263550643417,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.492420911275305,
+    "sigma2": 3.666677543736176,
+    "tau2": 3.4898693718739495,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "B2 Buzz",
+        "slug": "b2-buzz",
+        "w": 0.648,
+        "rho": -1.15,
+        "s": 17.804
+      }
+    ]
+  },
+  {
+    "slug": "team-finance",
+    "name": "Team Finance",
+    "category": "Token Locker",
+    "tvl_usd": 51190122,
+    "actual_mcap_usd": 3337137,
+    "pred_mcap_usd": 132711281.79330748,
+    "log_err_ln": 3.683062701240106,
+    "max_ratio": 39.76800526718186,
+    "mu": 0.9526293712616577,
+    "lam": 0.5478846896018821,
+    "mu_loc": 2.943154018600687,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.459538395390422,
+    "sigma2": 3.4330155140913483,
+    "tau2": 4.160214432199007,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "FlokiFi Locker",
+        "slug": "flokifi-locker",
+        "w": 0.641,
+        "rho": 2.943,
+        "s": 16.123
+      }
+    ]
+  },
+  {
+    "slug": "tectonic",
+    "name": "Tectonic",
+    "category": "Lending",
+    "tvl_usd": 13421078,
+    "actual_mcap_usd": 1776879,
+    "pred_mcap_usd": 2800691.119098174,
+    "log_err_ln": 0.4550077604096734,
+    "max_ratio": 1.5761856148326217,
+    "mu": -1.5669602412128518,
+    "lam": 0.9000360557466222,
+    "mu_loc": -1.578054126364908,
+    "n_eff": 9.311306080506814,
+    "n_peers": 10,
+    "rho_bar": -1.4670752605856978,
+    "sigma2": 3.681493314848496,
+    "tau2": 3.559835562679417,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Exactly",
+        "slug": "exactly",
+        "w": 0.994,
+        "rho": -3.189,
+        "s": 16.22
+      },
+      {
+        "name": "Flying Tulip Lend",
+        "slug": "flying-tulip-lend",
+        "w": 0.986,
+        "rho": 1.635,
+        "s": 16.126
+      },
+      {
+        "name": "Gearbox",
+        "slug": "gearbox",
+        "w": 0.976,
+        "rho": -1.78,
+        "s": 16.793
+      },
+      {
+        "name": "Liqwid",
+        "slug": "liqwid",
+        "w": 0.964,
+        "rho": -0.861,
+        "s": 15.943
+      },
+      {
+        "name": "Kinetic",
+        "slug": "kinetic",
+        "w": 0.937,
+        "rho": -4.47,
+        "s": 17.037
+      }
+    ]
+  },
+  {
+    "slug": "treehouse-protocol",
+    "name": "Treehouse Protocol",
+    "category": "DOR",
+    "tvl_usd": 52470276,
+    "actual_mcap_usd": 4710002,
+    "pred_mcap_usd": 12149712.64360669,
+    "log_err_ln": 0.9476171861182285,
+    "max_ratio": 2.579555729192194,
+    "mu": -1.4629413190585254,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.4629413190585254,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.78948489423593,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "uranium.io",
+    "name": "Uranium.io",
+    "category": "RWA",
+    "tvl_usd": 10406697,
+    "actual_mcap_usd": 9051242,
+    "pred_mcap_usd": 3162297.8907433003,
+    "log_err_ln": -1.0516030419186102,
+    "max_ratio": 2.86223572627198,
+    "mu": -1.1911505972670628,
+    "lam": 0.8541693813241069,
+    "mu_loc": -1.1406235791697976,
+    "n_eff": 5.985051498022958,
+    "n_peers": 8,
+    "rho_bar": -1.4871010100141455,
+    "sigma2": 3.6566003192014493,
+    "tau2": 3.5785318139688123,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Mansory",
+        "slug": "mansory",
+        "w": 0.934,
+        "rho": 0.006,
+        "s": 15.521
+      },
+      {
+        "name": "KAIO",
+        "slug": "kaio",
+        "w": 0.785,
+        "rho": -0.881,
+        "s": 17.361
+      },
+      {
+        "name": "Brickken",
+        "slug": "brickken",
+        "w": 0.717,
+        "rho": -1.967,
+        "s": 17.566
+      },
+      {
+        "name": "stUSDT",
+        "slug": "stusdt",
+        "w": 0.68,
+        "rho": -1.585,
+        "s": 17.674
+      },
+      {
+        "name": "Usual USD0",
+        "slug": "usual-usd0",
+        "w": 0.501,
+        "rho": -1.292,
+        "s": 18.189
+      }
+    ]
+  },
+  {
+    "slug": "usd-ai",
+    "name": "USD AI",
+    "category": "RWA",
+    "tvl_usd": 157258085,
+    "actual_mcap_usd": 63408224,
+    "pred_mcap_usd": 27014739.738048162,
+    "log_err_ln": -0.8532109358488208,
+    "max_ratio": 2.347171381802892,
+    "mu": -1.7615056759329215,
+    "lam": 0.86959511449616,
+    "mu_loc": -1.8038819274156936,
+    "n_eff": 6.888918727640638,
+    "n_peers": 8,
+    "rho_bar": -1.4789228484744048,
+    "sigma2": 3.6802587423640762,
+    "tau2": 3.562464299596079,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Usual USD0",
+        "slug": "usual-usd0",
+        "w": 0.924,
+        "rho": -1.292,
+        "s": 18.189
+      },
+      {
+        "name": "Huma",
+        "slug": "huma",
+        "w": 0.885,
+        "rho": -3.326,
+        "s": 19.727
+      },
+      {
+        "name": "Re",
+        "slug": "re",
+        "w": 0.807,
+        "rho": -2.501,
+        "s": 20.005
+      },
+      {
+        "name": "stUSDT",
+        "slug": "stusdt",
+        "w": 0.786,
+        "rho": -1.585,
+        "s": 17.674
+      },
+      {
+        "name": "Brickken",
+        "slug": "brickken",
+        "w": 0.751,
+        "rho": -1.967,
+        "s": 17.566
+      }
+    ]
+  },
+  {
+    "slug": "usual-usd0",
+    "name": "Usual USD0",
+    "category": "RWA",
+    "tvl_usd": 79306636,
+    "actual_mcap_usd": 21791881,
+    "pred_mcap_usd": 17519447.801520757,
+    "log_err_ln": -0.21822590239916373,
+    "max_ratio": 1.2438680286548973,
+    "mu": -1.5100102405255635,
+    "lam": 0.875298371997538,
+    "mu_loc": -1.5150204071727813,
+    "n_eff": 7.265923565868825,
+    "n_peers": 8,
+    "rho_bar": -1.4748431718994863,
+    "sigma2": 3.684293488237492,
+    "tau2": 3.5591590085104015,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "stUSDT",
+        "slug": "stusdt",
+        "w": 0.956,
+        "rho": -1.585,
+        "s": 17.674
+      },
+      {
+        "name": "Brickken",
+        "slug": "brickken",
+        "w": 0.937,
+        "rho": -1.967,
+        "s": 17.566
+      },
+      {
+        "name": "USD AI",
+        "slug": "usd-ai",
+        "w": 0.924,
+        "rho": -0.908,
+        "s": 18.873
+      },
+      {
+        "name": "KAIO",
+        "slug": "kaio",
+        "w": 0.891,
+        "rho": -0.881,
+        "s": 17.361
+      },
+      {
+        "name": "Huma",
+        "slug": "huma",
+        "w": 0.673,
+        "rho": -3.326,
+        "s": 19.727
+      }
+    ]
+  },
+  {
+    "slug": "veno-finance",
+    "name": "Veno Finance",
+    "category": "Liquid Staking",
+    "tvl_usd": 28264700,
+    "actual_mcap_usd": 1147339,
+    "pred_mcap_usd": 2638596.6765378285,
+    "log_err_ln": 0.8328018658136127,
+    "max_ratio": 2.2997533218498005,
+    "mu": -2.3713664623259505,
+    "lam": 0.8241100445549607,
+    "mu_loc": -2.5670537224498986,
+    "n_eff": 4.856495316037894,
+    "n_peers": 6,
+    "rho_bar": -1.4544986613674316,
+    "sigma2": 3.6839423179237256,
+    "tau2": 3.5541357851889814,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Infrared Finance",
+        "slug": "infrared-finance",
+        "w": 0.871,
+        "rho": -3.371,
+        "s": 16.25
+      },
+      {
+        "name": "Hipo",
+        "slug": "hipo",
+        "w": 0.824,
+        "rho": -0.956,
+        "s": 16.083
+      },
+      {
+        "name": "WaterNeuron",
+        "slug": "waterneuron",
+        "w": 0.664,
+        "rho": -1.683,
+        "s": 15.595
+      },
+      {
+        "name": "Stader",
+        "slug": "stader",
+        "w": 0.617,
+        "rho": -3.043,
+        "s": 18.855
+      },
+      {
+        "name": "mETH Protocol",
+        "slug": "meth-protocol",
+        "w": 0.274,
+        "rho": -5.52,
+        "s": 19.936
+      }
+    ]
+  },
+  {
+    "slug": "veranta",
+    "name": "Veranta",
+    "category": "Derivatives",
+    "tvl_usd": 10839155,
+    "actual_mcap_usd": 31945934,
+    "pred_mcap_usd": 5839377.921756358,
+    "log_err_ln": -1.6994206404600265,
+    "max_ratio": 5.470776926592783,
+    "mu": -0.6185407700243113,
+    "lam": 0.48447377354359034,
+    "mu_loc": 0.3195054653564835,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.5000842805012111,
+    "sigma2": 3.679967876726094,
+    "tau2": 3.458306934278606,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Gains Network",
+        "slug": "gains-network",
+        "w": 0.943,
+        "rho": 0.32,
+        "s": 15.607
+      }
+    ]
+  },
+  {
+    "slug": "waterneuron",
+    "name": "WaterNeuron",
+    "category": "Liquid Staking",
+    "tvl_usd": 5926765,
+    "actual_mcap_usd": 1100868,
+    "pred_mcap_usd": 610774.8701382081,
+    "log_err_ln": -0.5891258085662191,
+    "max_ratio": 1.8024120732912472,
+    "mu": -2.2725053819774015,
+    "lam": 0.7715802064803104,
+    "mu_loc": -2.509879813498274,
+    "n_eff": 3.4189844755018997,
+    "n_peers": 6,
+    "rho_bar": -1.4706772651411382,
+    "sigma2": 3.6514511577301842,
+    "tau2": 3.6075778393211966,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Hipo",
+        "slug": "hipo",
+        "w": 0.961,
+        "rho": -0.956,
+        "s": 16.083
+      },
+      {
+        "name": "Infrared Finance",
+        "slug": "infrared-finance",
+        "w": 0.931,
+        "rho": -3.371,
+        "s": 16.25
+      },
+      {
+        "name": "Veno Finance",
+        "slug": "veno-finance",
+        "w": 0.664,
+        "rho": -3.204,
+        "s": 17.157
+      },
+      {
+        "name": "Stader",
+        "slug": "stader",
+        "w": 0.168,
+        "rho": -3.043,
+        "s": 18.855
+      },
+      {
+        "name": "mETH Protocol",
+        "slug": "meth-protocol",
+        "w": 0.042,
+        "rho": -5.52,
+        "s": 19.936
+      }
+    ]
+  },
+  {
+    "slug": "wise-token",
+    "name": "Wise Token",
+    "category": "Yield",
+    "tvl_usd": 54446633,
+    "actual_mcap_usd": 9205988,
+    "pred_mcap_usd": 7022564.665924948,
+    "log_err_ln": -0.2707256535517375,
+    "max_ratio": 1.310915376069018,
+    "mu": -2.0480925225749758,
+    "lam": 0.8339527048942286,
+    "mu_loc": -2.1632600445931196,
+    "n_eff": 5.201907671214378,
+    "n_peers": 6,
+    "rho_bar": -1.4696774002942012,
+    "sigma2": 3.6844637402900373,
+    "tau2": 3.557306316561398,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Concentrator",
+        "slug": "concentrator",
+        "w": 0.997,
+        "rho": -6.653,
+        "s": 17.937
+      },
+      {
+        "name": "sDAI",
+        "slug": "sdai",
+        "w": 0.976,
+        "rho": 0.001,
+        "s": 17.436
+      },
+      {
+        "name": "Equilibria",
+        "slug": "equilibria",
+        "w": 0.557,
+        "rho": 0.055,
+        "s": 15.943
+      },
+      {
+        "name": "Aura",
+        "slug": "aura",
+        "w": 0.537,
+        "rho": -1.653,
+        "s": 15.887
+      },
+      {
+        "name": "Harmonix Finance",
+        "slug": "harmonix-finance",
+        "w": 0.4,
+        "rho": -2.115,
+        "s": 15.475
+      }
+    ]
+  },
+  {
+    "slug": "xsy",
+    "name": "XSY",
+    "category": "Basis Trading",
+    "tvl_usd": 12995829,
+    "actual_mcap_usd": 12974827,
+    "pred_mcap_usd": 12441071.84041172,
+    "log_err_ln": -0.04200785122552413,
+    "max_ratio": 1.0429026667826569,
+    "mu": -0.043625215421345453,
+    "lam": 0.8144373718191887,
+    "mu_loc": 0.28559278876264915,
+    "n_eff": 4.54466799354199,
+    "n_peers": 6,
+    "rho_bar": -1.488568352473216,
+    "sigma2": 3.6819871669726214,
+    "tau2": 3.555881565135007,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Solomon USDv",
+        "slug": "solomon-usdv",
+        "w": 0.974,
+        "rho": -0.424,
+        "s": 15.982
+      },
+      {
+        "name": "Resolv USR",
+        "slug": "resolv-usr",
+        "w": 0.908,
+        "rho": 0.109,
+        "s": 15.621
+      },
+      {
+        "name": "Bitway Earn",
+        "slug": "bitway-earn",
+        "w": 0.861,
+        "rho": 3.588,
+        "s": 17.325
+      },
+      {
+        "name": "ZEROBASE CeDeFi",
+        "slug": "zerobase-cedefi",
+        "w": 0.675,
+        "rho": -1.171,
+        "s": 17.91
+      },
+      {
+        "name": "Solstice",
+        "slug": "solstice",
+        "w": 0.284,
+        "rho": -3.121,
+        "s": 19.119
+      }
+    ]
+  },
+  {
+    "slug": "yield-basis",
+    "name": "Yield Basis",
+    "category": "Leveraged Farming",
+    "tvl_usd": 81947316,
+    "actual_mcap_usd": 14132031,
+    "pred_mcap_usd": 18843899.243838467,
+    "log_err_ln": 0.287745290869462,
+    "max_ratio": 1.3334176272213432,
+    "mu": -1.4698873390085123,
+    "lam": 0,
+    "mu_loc": null,
+    "n_eff": 0,
+    "n_peers": 0,
+    "rho_bar": -1.4698873390085123,
+    "sigma2": 3.6278121477357677,
+    "tau2": 3.835054005085231,
+    "empty_peer_set": true,
+    "top_peers": [],
+    "peer_note": "No launched peers in category — shrunk to global mean"
+  },
+  {
+    "slug": "zama",
+    "name": "Zama",
+    "category": "Privacy",
+    "tvl_usd": 90279448,
+    "actual_mcap_usd": 147586329,
+    "pred_mcap_usd": 41241637.29084675,
+    "log_err_ln": -1.2749649260408733,
+    "max_ratio": 3.578575893075797,
+    "mu": -0.783461477735008,
+    "lam": 0.48572560293148753,
+    "mu_loc": -0.03135725115465959,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.4938143185636596,
+    "sigma2": 3.6823609054266364,
+    "tau2": 3.4779428670671484,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Railgun",
+        "slug": "railgun",
+        "w": 0.995,
+        "rho": -0.031,
+        "s": 18.495
+      }
+    ]
+  },
+  {
+    "slug": "zerobase-cedefi",
+    "name": "ZEROBASE CeDeFi",
+    "category": "Basis Trading",
+    "tvl_usd": 60029438,
+    "actual_mcap_usd": 18611233,
+    "pred_mcap_usd": 52574615.34137185,
+    "log_err_ln": 1.0384680820217695,
+    "max_ratio": 2.82488620401302,
+    "mu": -0.13260167005129841,
+    "lam": 0.8313289278481126,
+    "mu_loc": 0.13999069696405236,
+    "n_eff": 5.068015286271678,
+    "n_peers": 6,
+    "rho_bar": -1.4761273696234585,
+    "sigma2": 3.672876141252192,
+    "tau2": 3.5719112070980774,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "Bitway Earn",
+        "slug": "bitway-earn",
+        "w": 0.944,
+        "rho": 3.588,
+        "s": 17.325
+      },
+      {
+        "name": "Solstice",
+        "slug": "solstice",
+        "w": 0.783,
+        "rho": -3.121,
+        "s": 19.119
+      },
+      {
+        "name": "XSY",
+        "slug": "xsy",
+        "w": 0.675,
+        "rho": -0.002,
+        "s": 16.38
+      },
+      {
+        "name": "Solomon USDv",
+        "slug": "solomon-usdv",
+        "w": 0.536,
+        "rho": -0.424,
+        "s": 15.982
+      },
+      {
+        "name": "Resolv USR",
+        "slug": "resolv-usr",
+        "w": 0.415,
+        "rho": 0.109,
+        "s": 15.621
+      }
+    ]
+  },
+  {
+    "slug": "zyfai",
+    "name": "ZyFAI",
+    "category": "AI Agents",
+    "tvl_usd": 8281620,
+    "actual_mcap_usd": 2660574,
+    "pred_mcap_usd": 3679187.339383309,
+    "log_err_ln": 0.3241500071165211,
+    "max_ratio": 1.3828547296122222,
+    "mu": -0.8113467053290777,
+    "lam": 0.48987408166365526,
+    "mu_loc": -0.11868932687176503,
+    "n_eff": 1,
+    "n_peers": 1,
+    "rho_bar": -1.47650580621524,
+    "sigma2": 3.6764193902054085,
+    "tau2": 3.5304667099856633,
+    "empty_peer_set": false,
+    "top_peers": [
+      {
+        "name": "MorpheusAI",
+        "slug": "morpheusai",
+        "w": 0.999,
+        "rho": -0.119,
+        "s": 15.841
+      }
+    ]
+  }
+]

@@ -1,0 +1,61 @@
+{
+  "spec": "Direction C per Arena kimi-k3 spec; metric=TVL; h=0.75 dex frozen; median estimator, no sigma2/2; bootstrap 1000 mulberry32(555000); blind seed 11 (only if parity)",
+  "baselines_frozen": {
+    "ridge_loo": 2.74,
+    "ridge_wf": 2.19
+  },
+  "exclusions": {
+    "metric_le_0": []
+  },
+  "loo": {
+    "n": 95,
+    "factor": 3.4166938495219576,
+    "median_abs_log_err": 1.2286733728423052,
+    "within3_pct": 44.21052631578947,
+    "empty_peer_sets": 11,
+    "ridge_loo_crosscheck": 2.740554615022565,
+    "improvement_vs_ridge_loo_pct": -24.696855821969248,
+    "bootstrap_ci95_factor": [
+      2.458923615973129,
+      4.9726909033560265
+    ],
+    "bootstrap_ci95_improvement_pct": [
+      -81.48506946554839,
+      10.258262190761727
+    ]
+  },
+  "wf": {
+    "train_n": 64,
+    "test_n": 31,
+    "factor": 5.24711312170622,
+    "median_abs_log_err": 1.6576780437834435,
+    "within3_pct": 32.25806451612903,
+    "empty_peer_sets": 14,
+    "improvement_vs_ridge_wf_pct": -139.59420647060367,
+    "bootstrap_ci95_factor": [
+      3.0729444785239113,
+      5.705909406428143
+    ],
+    "variance_components": {
+      "rhoBar": -1.658198880794351,
+      "sigma2": 4.261728605501944,
+      "tau2": 0,
+      "s2btw": 2.1207043085020882,
+      "meanInvN": 0.5739648033126293,
+      "nCats": 23,
+      "catsWithN1": 8,
+      "catsWithN0": 7
+    }
+  },
+  "loo_variance_components_median": {
+    "tau2": 3.5674621727254157,
+    "sigma2": 3.657550578300478,
+    "rho_bar": -1.471687055781946
+  },
+  "blind": {
+    "run": false,
+    "score": null,
+    "note": "Only a tie-breaker in the parity band; not run here."
+  },
+  "verdict": "UNDECIDED — worse than -2% on the quant bar, but the literal table requires blind <= 3-2 for KILL and blind is only run in the parity band, so it was not run; no blind outcome can reach PASS (quant bar failed decisively: LOO -24.7%, WF -139.6%); substantive recommendation is KILL — see VERDICT.md"
+}
