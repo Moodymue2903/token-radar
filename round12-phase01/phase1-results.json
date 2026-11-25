@@ -1,0 +1,49 @@
+{
+  "brier": {
+    "loo": 0.20845865550833056,
+    "wf": 0.22532977979207505,
+    "climLoo": 0.2499434676917856,
+    "climWf": 0.33160400390625,
+    "skillLoo": 0.16597678093596535,
+    "skillWf": 0.3204853465648154,
+    "eceLoo": 0.03452792296973279,
+    "eceWf": 0.11030272604788442,
+    "gate": true
+  },
+  "looTail": {
+    "medianMax": 2.7405546150223996,
+    "p90Max": 29.13511729730516,
+    "top5Share": 0.3663653805125885,
+    "top10Share": 0.5548030761620959,
+    "top19Share": 0.7422032945976049,
+    "medianExcl5": 2.6764141349168193,
+    "medianExcl10": 2.470806909204448,
+    "medianExcl19": 2.2190536244635988
+  },
+  "conformal": {
+    "variantA": {
+      "q80dex": 1.5194477693177777,
+      "coverage": 0.9032258064516129
+    },
+    "variantB": {
+      "q80dex": 0.9010692528101938,
+      "coverage": 0.7419354838709677
+    }
+  },
+  "reconciliation": {
+    "accountingSum": 758,
+    "boardRows": 200,
+    "impliedBoardM": 839.799754,
+    "impliedWatchM": 401.987452,
+    "impliedEarlyM": 437.812302,
+    "vilBoardM": 2037.911863,
+    "vilWatchM": 877.783442
+  },
+  "flatBaseline": {
+    "loo": 4.1071,
+    "looWithin3": 35.7895,
+    "wfCutoff": 5.3519,
+    "wfHalf": 5.2937,
+    "blind": 4.6963
+  }
+}

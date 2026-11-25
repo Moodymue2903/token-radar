@@ -1,0 +1,1425 @@
+// Token Radar's plain dashboard. It reads window.RADAR (written beside
+// dashboard/ by main.ts) and renders the ranked board, a filterable table,
+// a per-protocol detail view with the model's own inputs and the protocol's
+// farm plan, a live-token view and the methodology panel. No network: every
+// byte it shows is in data.js.
+//
+// The page recomputes the model from the snapshot figures (impliedOf) and
+// regenerates the farm plans (farmStepsFor) with the same functions main.ts
+// runs, and checks both against the board's data. A mismatch shows a
+// warning: the screenshots and the code must agree.
+
+(function () {
+  'use strict';
+
+  var DATA = window.RADAR;
+  if (!DATA) return;
+  var MODEL = DATA.model;
+  var FIT = DATA.fit;
+  var app = document.getElementById('board');
+  var state = { q: '', category: 'all', chain: 'all', verdict: 'all', minImp: '', sort: 'implied', dir: -1, tab: 'board', selected: null };
+
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function fmtUsd(n) {
+    if (n === null || n === undefined || !isFinite(n)) return 'n/a';
+    if (Math.abs(n) >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+    if (Math.abs(n) >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
+    if (Math.abs(n) >= 1e3) return '$' + Math.round(n / 1e3) + 'K';
+    return '$' + Math.round(n);
+  }
+  function fmtUsd2(n) {
+    if (n === null || n === undefined || !isFinite(n)) return 'n/a';
+    return '$' + n.toFixed(2);
+  }
+  function fmtPct(n) {
+    if (n === null || n === undefined || !isFinite(n)) return 'n/a';
+    return (n > 0 ? '+' : '') + n.toFixed(2) + '%';
+  }
+  function fmtAge(days) {
+    if (days === null || days === undefined) return 'unknown';
+    if (days >= 365) return (days / 365).toFixed(1) + 'y';
+    return Math.max(0, Math.round(days)) + 'd';
+  }
+  function fmtMult(m) {
+    return m.toFixed(3) + 'x';
+  }
+  function fmtBand(r) {
+    if (!r.uncertainty) return 'n/a';
+    return fmtUsd(r.uncertainty.p10) + ' \u2013 ' + fmtUsd(r.uncertainty.p90);
+  }
+  function fmtBand50(r) {
+    if (!r.uncertainty || r.uncertainty.p25 === null || r.uncertainty.p25 === undefined || r.uncertainty.p75 === null || r.uncertainty.p75 === undefined) return 'n/a';
+    return fmtUsd(r.uncertainty.p25) + ' \u2013 ' + fmtUsd(r.uncertainty.p75);
+  }
+  function fmtOdds(n) {
+    if (n === null || n === undefined || !isFinite(n)) return 'n/a';
+    return Math.round(n * 100) + '%';
+  }
+  function fmtPerHour(n) {
+    if (n === null || n === undefined || !isFinite(n)) return 'n/a';
+    return fmtUsd2(n) + '/h';
+  }
+  // Fit-peer accounting: the fit peers sit inside a wider live-token
+  // universe; the rest are set aside because they record no listing date.
+  // Every field here is optional, so an older data file degrades to the
+  // peer count alone instead of throwing.
+  function fitUniverse() {
+    return (FIT.peerUniverse === null || FIT.peerUniverse === undefined) ? null : FIT.peerUniverse;
+  }
+  function setAsideCount() {
+    if (FIT.excludedNullListedAt !== null && FIT.excludedNullListedAt !== undefined) return FIT.excludedNullListedAt;
+    var u = fitUniverse();
+    if (u !== null && FIT.peerCount !== null && FIT.peerCount !== undefined && u > FIT.peerCount) return u - FIT.peerCount;
+    return null;
+  }
+  function verdictCounts() {
+    var c = { 'P25-POSITIVE': 0, FARM: 0, THIN: 0, SKIP: 0 };
+    DATA.rows.forEach(function (r) { if (c[r.farm.verdict] !== undefined) c[r.farm.verdict]++; });
+    return c;
+  }
+  // How many Board P25-positive (pre-fee) rows go negative at p25 once
+  // every fee is counted — computed from the rows, never hardcoded, so
+  // the "X of the Y" line stays true when the board re-ranks.
+  function p25FullyCostedNegative() {
+    var p25rows = DATA.rows.filter(function (r) { return r.farm.verdict === 'P25-POSITIVE' && r.playbook; });
+    var neg = p25rows.filter(function (r) { return r.playbook.netEvP25Full < 0; }).length;
+    return { total: p25rows.length, neg: neg };
+  }
+  // Best return on the farmer's time: highest net $/hour among the rows
+  // that clear FARM or P25-POSITIVE. Null when the data file carries no $/hour.
+  function bestPerHour() {
+    var best = null;
+    DATA.rows.forEach(function (r) {
+      if ((r.farm.verdict !== 'FARM' && r.farm.verdict !== 'P25-POSITIVE') || r.farm.netPerHour === null || r.farm.netPerHour === undefined || !isFinite(r.farm.netPerHour)) return;
+      if (best === null || r.farm.netPerHour > best.farm.netPerHour) best = r;
+    });
+    return best;
+  }
+  // Median width of the board's central band (p75/p25), one honest number for
+  // how wide the middle half of the board's uncertainty is.
+  function medianBand50Width() {
+    var ws = [];
+    DATA.rows.forEach(function (r) {
+      if (r.uncertainty && r.uncertainty.p25 > 0 && r.uncertainty.p75 > 0) ws.push(r.uncertainty.p75 / r.uncertainty.p25);
+    });
+    if (ws.length === 0) return null;
+    ws.sort(function (a, b) { return a - b; });
+    return ws[Math.floor(ws.length / 2)];
+  }
+  // The flat-baseline row of the leave-one-out table (global median multiple):
+  // the LOO flat comparator, so the header and the validation table read it
+  // from the measured validation object, never from a hardcoded number.
+  function looFlatRow() {
+    var rows = DATA.validation.loo;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].model.indexOf('global median') >= 0) return rows[i];
+    }
+    return null;
+  }
+  // Format a measured number for the validation table: 'n/a' when the
+  // validation object carries null, else prefix + fixed decimals + suffix.
+  function fnum(x, pre, d, suf) { return x === null || x === undefined ? 'n/a' : pre + x.toFixed(d) + suf; }
+  // One row of the leave-one-out table, by a substring of its model name.
+  function looRowNamed(frag) {
+    var rows = DATA.validation.loo;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].model.indexOf(frag) >= 0) return rows[i];
+    }
+    return null;
+  }
+  // Wilson score interval (95%) for k hits out of n — computed in-page,
+  // never hardcoded. For 48/95 it is roughly 41%–60%.
+  function wilsonCI(k, n) {
+    var z = 1.96;
+    var p = k / n;
+    var z2 = z * z;
+    var den = 1 + z2 / n;
+    var centre = (p + z2 / (2 * n)) / den;
+    var half = z * Math.sqrt(p * (1 - p) / n + z2 / (4 * n * n)) / den;
+    return [centre - half, centre + half];
+  }
+
+  // ---- the model, recomputed in the page from the same arithmetic main.ts runs ----
+  function catOf(category) {
+    for (var i = 0; i < FIT.categories.length; i++) {
+      if (FIT.categories[i].category === category) return FIT.categories[i];
+    }
+    return null;
+  }
+  // The ridge offset for a category (0 when the category has fewer than
+  // minPeers fit peers — the same rule main.ts runs).
+  function ridgeOffsetOf(category) {
+    for (var i = 0; i < FIT.ridgeOffsets.length; i++) {
+      if (FIT.ridgeOffsets[i].category === category) return FIT.ridgeOffsets[i];
+    }
+    return null;
+  }
+  // P(protocol ever records a token) under the fitted odds model: a
+  // logistic on age in years and ln(TVL) centred at ln(1e8). Age is the
+  // row's age in years, 1.0 years when the listing date is unknown — the
+  // same unknown-age prior the maturity term uses.
+  function oddsOf(row) {
+    var o = DATA.odds;
+    var ageY = (row.age_days === null || row.age_days === undefined) ? 1.0 : row.age_days / 365.25;
+    var z = o.intercept + o.ageCoef * ageY + o.sizeCoef * (Math.log(row.tvl_usd) - Math.log(1e8));
+    return 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, z))));
+  }
+  // The ridge model, recomputed in-page: the implied value is the
+  // category-anchored size curve (log10(mcap) = sizeA + sizeB * log10(TVL)
+  // + ridge offset, jointly fitted, lambda 4 on the offsets only) times
+  // growth and maturity, then multiplied by the token odds. The implied
+  // value is the EXPECTED value — the value if a token launches, times
+  // the probability one ever does — not the value conditional on launching.
+  function breakdownOf(row) {
+    var cat = catOf(row.category);
+    var mult, medTvl, n, rawMed;
+    if (!cat || cat.n < MODEL.minPeers) {
+      medTvl = FIT.globalMedianTvl;
+      n = cat ? cat.n : 0;
+      rawMed = cat ? cat.median : FIT.globalMedian;
+    } else {
+      medTvl = cat.medianTvl;
+      n = cat.n;
+      rawMed = cat.median;
+    }
+    var off = 0;
+    var ro = ridgeOffsetOf(row.category);
+    if (ro && ro.n >= MODEL.minPeers) off = ro.offset;
+    mult = Math.pow(10, FIT.sizeA + FIT.sizeB * Math.log10(medTvl) + off) / medTvl;
+    var sizeF = Math.pow(row.tvl_usd / medTvl, FIT.sizeB - 1);
+    var growth = Math.min(MODEL.growthCap, Math.max(MODEL.growthFloor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
+    var growthMult = 1 + (growth / 100) * MODEL.growthWeight;
+    var age = row.age_days === null || row.age_days === undefined ? MODEL.unknownAgeDays : row.age_days;
+    var mat = MODEL.maturityFloor + (Math.min(Math.max(age, 0), MODEL.maturityDays) / MODEL.maturityDays) * MODEL.maturityRange;
+    var raw = row.tvl_usd * mult * sizeF * growthMult * mat;
+    var odds = oddsOf(row);
+    return { mult: mult, n: n, rawMed: rawMed, medTvl: medTvl, sizeF: sizeF, growth: growth, growthMult: growthMult, mat: mat, age: row.age_days, odds: odds, raw: raw, implied: Math.max(1, Math.round(raw * odds)) };
+  }
+  function impliedOf(row) {
+    var v = breakdownOf(row).implied;
+    return row.rank <= 10 ? Math.round(v * MODEL.topScalar) : v;
+  }
+
+  // ---- the farm plan, regenerated in the page from the same generator main.ts runs ----
+  var L2 = {};
+  ['arbitrum', 'optimism', 'base', 'ink', 'monad', 'zksync', 'zksync era', 'scroll', 'linea', 'blast', 'mode', 'manta', 'manta pacific', 'starknet', 'polygon zkevm', 'zora', 'fraxtal', 'lisk', 'soneium', 'unichain', 'world chain', 'abstract', 'apechain', 'bob', 'hemi', 'fuel', 'movement', 'superseed', 'swellchain', 'tac', 'xai', 'gravity'].forEach(function (c) { L2[c] = 1; });
+  var BTC = {};
+  ['bitcoin', 'bsquared', 'b2', 'mezo', 'merlin', 'bitlayer', 'rootstock', 'stacks', 'core', 'bob', 'bison', 'citrea', 'fractal', 'hemi'].forEach(function (c) { BTC[c] = 1; });
+  function gasPerTx(chain) {
+    var c = (chain || '').trim().toLowerCase();
+    if (c === '') return 2.0;
+    if (c === 'ethereum') return 4.0;
+    if (L2[c]) return 0.3;
+    if (BTC[c]) return 2.0;
+    return 0.05;
+  }
+  function primaryChain(p) {
+    return p.chains && p.chains.length > 0 ? p.chains[0] : '';
+  }
+  function capitalFor(p) {
+    return primaryChain(p).trim().toLowerCase() === 'ethereum' ? MODEL.ethCapital : MODEL.referenceCapital;
+  }
+  function oppCost(capital) {
+    return (capital * MODEL.oppRate * MODEL.holdDays) / 365;
+  }
+  function holdDaysFor(age) {
+    if (age === null || age === undefined) return 60;
+    return 90;
+  }
+  function actionFor(p, capital, chain) {
+    var c = (p.category || '').toLowerCase();
+    var name = p.name;
+    if (c.indexOf('risk curator') >= 0 || c.indexOf('curator') >= 0) return 'Deposit $' + capital + " into " + name + "'s curated vault on " + chain + ' and keep the shares; the curators allocate it across their strategies.';
+    if (c.indexOf('onchain capital allocator') >= 0 || c.indexOf('allocator') >= 0) return 'Deposit $' + capital + ' into a ' + name + ' allocation vault on ' + chain + ' and hold the receipt token.';
+    if (c.indexOf('rwa') >= 0 || c.indexOf('real world') >= 0) return 'Mint $' + capital + ' of the yield-bearing asset through ' + name + ' on ' + chain + ' and hold it; the yield accrues on-chain.';
+    if (c.indexOf('lend') >= 0 || c.indexOf('cdp') >= 0 || c.indexOf('collateral') >= 0) return 'Supply $' + capital + ' of USDC to ' + name + ' on ' + chain + ' and keep the position open.';
+    if (c.indexOf('dex') >= 0 || c.indexOf('yield') >= 0 || c.indexOf('leveraged farm') >= 0 || c.indexOf('basis trading') >= 0) return 'Provide $' + capital + ' of liquidity to ' + name + "'s main pool on " + chain + ' and keep the position open.';
+    if (c.indexOf('bridge') >= 0) return 'Bridge $' + capital + ' of USDC to ' + chain + ' through ' + name + ' and use the bridged funds in its app.';
+    if (c.indexOf('staking') >= 0 || c.indexOf('restak') >= 0) return 'Stake $' + capital + " of the chain's staking asset through " + name + ' and keep the receipt.';
+    if (c.indexOf('perpetual') >= 0 || c.indexOf('derivative') >= 0) return 'Deposit $' + capital + ' of USDC as margin on ' + name + ' and open one small hedge.';
+    if (c.indexOf('prediction') >= 0) return 'Fund $' + capital + ' and place one market position on ' + name + '.';
+    if (c.indexOf('stable') >= 0) return 'Mint or deposit $' + capital + ' of the stable asset through ' + name + ' on ' + chain + '.';
+    if (c.indexOf('insurance') >= 0) return 'Buy $' + capital + ' of cover from ' + name + ' on ' + chain + ' and keep the policy.';
+    if (c.indexOf('chain') >= 0) return 'Bridge $' + capital + ' of USDC to ' + chain + ' and use ' + name + "'s app on it.";
+    if (c.indexOf('payment') >= 0) return 'Pay $' + capital + ' through ' + name + ' on ' + chain + ' and keep the receipt.';
+    if (c.indexOf('governance') >= 0) return 'Deposit $' + capital + ' into ' + name + ' on ' + chain + ' and vote with the position.';
+    if (c.indexOf('cedefi') >= 0 || c.indexOf('cefi') >= 0) return 'Deposit $' + capital + ' of USDC into ' + name + ' on ' + chain + ' and keep the position open.';
+    return 'Deposit $' + capital + ' of USDC into ' + name + ' on ' + chain + ' and keep the position open.';
+  }
+  function stepText(step) {
+    var s = step.text + ' Cost: $' + step.costUsd.toFixed(2) + '. Time: ' + step.time + '.';
+    if (s.length > 600) s = s.slice(0, 596) + '...';
+    if (s.length < 20) s = s + ' Hold the position and check the protocol\'s own page.';
+    return s;
+  }
+  function farmStepsFor(p, age) {
+    var chain = primaryChain(p) === '' ? 'its main chain' : primaryChain(p);
+    var gas = gasPerTx(primaryChain(p));
+    var capital = capitalFor(p);
+    var hold = holdDaysFor(age);
+    var opp = oppCost(capital);
+    var multiChain = p.chains.length >= 3;
+    var mainCapital = multiChain ? Math.round(capital * 0.6) : capital;
+    var secondCapital = capital - mainCapital;
+    var action = actionFor(p, mainCapital, chain);
+    var steps = [
+      { text: 'Use a fresh wallet that holds only the $' + capital + ' you plan to farm, and keep its seed phrase offline', costUsd: 1 * gas, time: '5 minutes' },
+      { text: action.replace(/\.$/, ''), costUsd: 2 * gas, time: '15 minutes to set up' },
+      { text: 'Make one qualifying action each week for 12 weeks on ' + chain + ', such as a deposit, a borrow, a swap or a vote', costUsd: 12 * gas, time: '10 minutes a week' },
+      { text: 'Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot; the $' + capital + ' stays in the position', costUsd: opp, time: hold + ' days' },
+      { text: 'Before you withdraw, open ' + p.name + "'s own page and claim only from a link it publishes; never pay to claim", costUsd: 1 * gas, time: '10 minutes' },
+      { text: 'Write the wallet, the dates and every transaction hash in a farm log so you can repeat the position or unwind it', costUsd: 0, time: '5 minutes' },
+    ];
+    if (multiChain) {
+      var secondChain = p.chains[1];
+      var gas2 = gasPerTx(secondChain);
+      steps.push({ text: 'Repeat the main action with $' + secondCapital + ' on ' + secondChain + ' so the position is visible on 2 chains', costUsd: 2 * gas2, time: '15 minutes' });
+    }
+    return steps;
+  }
+  // The playbook's extra fees, recomputed in-page from the row's own
+  // record — the same rules main.ts runs, so the check below catches any
+  // drift between the data file and the page. Swap 0.30% (standard AMM
+  // tier): liquidity swaps half the capital each way, a stake swaps the
+  // whole capital each way; $2.00 flat per non-Ethereum chain touched;
+  // one exit transaction per chain touched at that chain's gas price;
+  // deposit/withdrawal protocol fee $0.
+  function r2(n) { return Math.round(n * 100) / 100; }
+  function playbookFeesFor(r) {
+    var fees = [];
+    var capital = r.farm.capital;
+    var mech = r.mechanism || '';
+    if (mech === 'liquidity provision') {
+      var halfSwap = r2((capital / 2) * 0.003);
+      fees.push(halfSwap, halfSwap);
+    } else if (mech === 'staked receipt') {
+      var fullSwap = r2(capital * 0.003);
+      fees.push(fullSwap, fullSwap);
+    }
+    var touched = [primaryChain(r)];
+    if (r.chains.length >= 3) touched.push(r.chains[1]);
+    touched.forEach(function (chain) {
+      if ((chain || '').trim().toLowerCase() !== 'ethereum') fees.push(2);
+    });
+    touched.forEach(function (chain) {
+      fees.push(r2(gasPerTx(chain)));
+    });
+    fees.push(0);
+    return fees;
+  }
+  // The playbook's extra fees grouped by kind — the same grouping
+  // main.ts runs (swap / bridge / exit gas), so the check below catches
+  // any drift between the data file and the page. Swap is the entry +
+  // exit swaps (LP rows swap half the capital each way, a stake swaps
+  // the whole capital each way; every other mechanism swaps nothing);
+  // bridge is $2.00 per non-Ethereum chain touched; gas is one exit
+  // transaction per chain touched. The three sum to the extra total.
+  function playbookSplitFor(r) {
+    var mech = r.mechanism || '';
+    var capital = r.farm.capital;
+    var split = { swap: 0, bridge: 0, bridgeChains: 0, gas: 0, gasTxs: 0 };
+    if (mech === 'liquidity provision') split.swap = r2(r2((capital / 2) * 0.003) * 2);
+    else if (mech === 'staked receipt') split.swap = r2(r2(capital * 0.003) * 2);
+    var touched = [primaryChain(r)];
+    if (r.chains.length >= 3) touched.push(r.chains[1]);
+    touched.forEach(function (chain) {
+      if ((chain || '').trim().toLowerCase() !== 'ethereum') { split.bridge = r2(split.bridge + 2); split.bridgeChains++; }
+    });
+    touched.forEach(function (chain) {
+      split.gas = r2(split.gas + r2(gasPerTx(chain))); split.gasTxs++;
+    });
+    return split;
+  }
+
+  // ---- self-checks: the page's arithmetic must match the board's data ----
+  var recomputeBad = 0;
+  var farmBad = 0;
+  var playbookBad = 0;
+  DATA.rows.forEach(function (r) {
+    if (impliedOf(r) !== r.implied_value_usd) recomputeBad++;
+    var gen = farmStepsFor(r, r.age_days).map(stepText);
+    if (gen.length !== r.farm_steps.length) { farmBad++; return; }
+    for (var i = 0; i < gen.length; i++) {
+      if (gen[i] !== r.farm_steps[i]) { farmBad++; break; }
+    }
+    // Playbook check: the extra fees recomputed in-page must match the
+    // data file's fee lines, and the fully costed figures must be the
+    // board figures minus those fees.
+    if (r.playbook) {
+      var pb = r.playbook;
+      var fees = playbookFeesFor(r);
+      var extra = r2(fees.reduce(function (s, x) { return s + x; }, 0));
+      var ok = true;
+      if (pb.extraFees.length !== fees.length) ok = false;
+      else {
+        for (var j = 0; j < fees.length; j++) {
+          if (Math.abs(pb.extraFees[j].amountUsd - fees[j]) > 0.005) { ok = false; break; }
+        }
+      }
+      if (Math.abs(pb.extraTotal - extra) > 0.005) ok = false;
+      if (Math.abs(pb.fullyCostedTotal - r2(pb.boardTotal + extra)) > 0.005) ok = false;
+      if (Math.abs(pb.netEvFull - r2(pb.netEvBoard - extra)) > 0.005) ok = false;
+      if (Math.abs(pb.netEvP10Full - r2(pb.netEvP10Board - extra)) > 0.005) ok = false;
+      if (Math.abs(pb.netEvP25Full - r2(pb.netEvP25Board - extra)) > 0.005) ok = false;
+      if (Math.abs(pb.netEvP75Full - r2(pb.netEvP75Board - extra)) > 0.005) ok = false;
+      if (Math.abs(pb.breakevenFull - r2(pb.breakevenBoard + (extra * r.tvl_usd) / (MODEL.poolShare * pb.capital))) > 0.005) ok = false;
+      // Fee-split check: the grouped split in the data file must match
+      // the recomputation, and the three groups must sum to the extra total.
+      var sp = playbookSplitFor(r);
+      if (!pb.feeSplit) ok = false;
+      else {
+        if (Math.abs(pb.feeSplit.swap - sp.swap) > 0.005) ok = false;
+        if (Math.abs(pb.feeSplit.bridge - sp.bridge) > 0.005) ok = false;
+        if (pb.feeSplit.bridgeChains !== sp.bridgeChains) ok = false;
+        if (Math.abs(pb.feeSplit.gas - sp.gas) > 0.005) ok = false;
+        if (pb.feeSplit.gasTxs !== sp.gasTxs) ok = false;
+        if (Math.abs(r2(pb.feeSplit.swap + pb.feeSplit.bridge + pb.feeSplit.gas) - extra) > 0.005) ok = false;
+      }
+      if (!ok) playbookBad++;
+    }
+  });
+  window.__CHECKS__ = { recomputeMismatches: recomputeBad, farmMismatches: farmBad, playbookMismatches: playbookBad, rows: DATA.rows.length };
+
+  // ---- SVG charts ----
+  function fmtAxisDollar(e) {
+    var v = Math.pow(10, e);
+    if (v >= 1e9) return '$' + (v / 1e9).toFixed(0) + 'B';
+    if (v >= 1e6) return '$' + (v / 1e6).toFixed(0) + 'M';
+    if (v >= 1e3) return '$' + (v / 1e3).toFixed(0) + 'K';
+    return '$' + v.toFixed(0);
+  }
+  function svgOpen(w, h) {
+    // Inline SVG in an HTML document: the parser assigns the SVG namespace,
+    // so no xmlns attribute is needed (and none may appear, so the dashboard
+    // carries no http(s) string at all).
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" role="img">';
+  }
+  function logTicks(lo, hi) {
+    var ticks = [];
+    for (var e = Math.ceil(lo); e <= Math.floor(hi); e++) ticks.push(e);
+    return ticks;
+  }
+  // Comps chart: the fit peers, the fitted size curve, and the protocol's point.
+  function compsChart(row) {
+    var W = 560, H = 300, L = 52, R = 14, T = 12, B = 52;
+    var xs = DATA.peers.map(function (p) { return Math.log10(p.tvl_usd); });
+    var ys = DATA.peers.map(function (p) { return Math.log10(p.mcap_usd); });
+    var px = Math.log10(row.tvl_usd);
+    var py = Math.log10(row.implied_value_usd);
+    var xlo = Math.min.apply(null, xs.concat([px])) - 0.15;
+    var xhi = Math.max.apply(null, xs.concat([px])) + 0.15;
+    var ylo = Math.min.apply(null, ys.concat([py])) - 0.15;
+    var yhi = Math.max.apply(null, ys.concat([py])) + 0.15;
+    var X = function (v) { return L + ((v - xlo) / (xhi - xlo)) * (W - L - R); };
+    var Y = function (v) { return T + (1 - (v - ylo) / (yhi - ylo)) * (H - T - B); };
+    var s = svgOpen(W, H);
+    s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#14171d"/>';
+    logTicks(xlo, xhi).forEach(function (e) {
+      var x = X(e);
+      s += '<line x1="' + x.toFixed(1) + '" y1="' + T + '" x2="' + x.toFixed(1) + '" y2="' + (H - B) + '" stroke="#262b34"/>';
+      s += '<text x="' + x.toFixed(1) + '" y="' + (H - 30) + '" fill="#9a978c" font-size="10" text-anchor="middle">' + fmtAxisDollar(e) + '</text>';
+    });
+    logTicks(ylo, yhi).forEach(function (e) {
+      var y = Y(e);
+      s += '<line x1="' + L + '" y1="' + y.toFixed(1) + '" x2="' + (W - R) + '" y2="' + y.toFixed(1) + '" stroke="#262b34"/>';
+      s += '<text x="' + (L - 6) + '" y="' + (y + 3).toFixed(1) + '" fill="#9a978c" font-size="10" text-anchor="end">' + fmtAxisDollar(e) + '</text>';
+    });
+    var line = '';
+    for (var gx = xlo; gx <= xhi; gx += (xhi - xlo) / 40) {
+      var gy = FIT.sizeA + FIT.sizeB * gx;
+      line += (line === '' ? 'M' : 'L') + X(gx).toFixed(1) + ',' + Y(gy).toFixed(1);
+    }
+    s += '<path d="' + line + '" fill="none" stroke="#e8c478" stroke-width="2"/>';
+    DATA.peers.forEach(function (p) {
+      s += '<circle cx="' + X(Math.log10(p.tvl_usd)).toFixed(1) + '" cy="' + Y(Math.log10(p.mcap_usd)).toFixed(1) + '" r="2.4" fill="#7aa7c9" opacity="0.65"/>';
+    });
+    s += '<circle cx="' + X(px).toFixed(1) + '" cy="' + Y(py).toFixed(1) + '" r="6" fill="#e8c478" stroke="#0c0e12" stroke-width="2"/>';
+    var lab = esc(row.name) + ' ' + fmtUsd(row.implied_value_usd);
+    var labX = X(px);
+    if (labX + 190 > W - 8) {
+      s += '<text x="' + (labX - 10).toFixed(1) + '" y="' + Math.max(Y(py) - 8, T + 10).toFixed(1) + '" fill="#e8c478" font-size="11" font-weight="bold" text-anchor="end">' + lab + '</text>';
+    } else {
+      s += '<text x="' + (labX + 10).toFixed(1) + '" y="' + Math.max(Y(py) - 8, T + 10).toFixed(1) + '" fill="#e8c478" font-size="11" font-weight="bold">' + lab + '</text>';
+    }
+    s += '<text x="' + L + '" y="' + (H - 8) + '" fill="#6f6d66" font-size="10">TVL (log) vs market cap (log). Line: fitted size curve log10(mcap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL).</text>';
+    s += '</svg>';
+    return s;
+  }
+  // Bubble market map: x = ln TVL, y = implied multiple (log), r = implied value, colour = verdict.
+  function bubbleMap(rows) {
+    var W = 1100, H = 300, L = 52, R = 16, T = 14, B = 52;
+    var xs = rows.map(function (r) { return Math.log(r.tvl_usd); });
+    var ys = rows.map(function (r) { return Math.log10(Math.max(r.multiple, 0.001)); });
+    var xlo = Math.min.apply(null, xs) - 0.2;
+    var xhi = Math.max.apply(null, xs) + 0.2;
+    var ylo = Math.min.apply(null, ys) - 0.15;
+    var yhi = Math.max.apply(null, ys) + 0.15;
+    var X = function (v) { return L + ((v - xlo) / (xhi - xlo)) * (W - L - R); };
+    var Y = function (v) { return T + (1 - (v - ylo) / (yhi - ylo)) * (H - T - B); };
+    var maxImp = Math.max.apply(null, rows.map(function (r) { return r.implied_value_usd; }));
+    var col = { 'P25-POSITIVE': '#2fd6a3', FARM: '#4caf7d', THIN: '#d9a441', SKIP: '#6b6f76' };
+    var s = svgOpen(W, H);
+    s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#14171d"/>';
+    logTicks(Math.log10(5e6), Math.log10(5e9)).forEach(function (e) {
+      var v = Math.log(Math.pow(10, e));
+      if (v < xlo || v > xhi) return;
+      s += '<text x="' + X(v).toFixed(1) + '" y="' + (H - 30) + '" fill="#9a978c" font-size="10" text-anchor="middle">' + fmtAxisDollar(e) + ' TVL</text>';
+    });
+    [-2, -1, 0].forEach(function (e) {
+      var y = Y(e);
+      // A tick whose label would clip is not drawn at all: when every
+      // multiple is below 1 the 1.00x line sits above the panel, and its
+      // clipped label showed as a row of dots ("...") at thumbnail scale.
+      if (y < T + 8 || y > H - B) return;
+      s += '<line x1="' + L + '" y1="' + y.toFixed(1) + '" x2="' + (W - R) + '" y2="' + y.toFixed(1) + '" stroke="#262b34"/>';
+      s += '<text x="' + (L - 6) + '" y="' + (y + 3).toFixed(1) + '" fill="#9a978c" font-size="10" text-anchor="end">' + Math.pow(10, e).toFixed(2) + 'x</text>';
+    });
+    rows.forEach(function (r) {
+      var rad = 3 + 11 * Math.sqrt(r.implied_value_usd / maxImp);
+      s += '<circle cx="' + X(Math.log(r.tvl_usd)).toFixed(1) + '" cy="' + Y(Math.log10(Math.max(r.multiple, 0.001))).toFixed(1) + '" r="' + rad.toFixed(1) + '" fill="' + (col[r.farm.verdict] || '#6b6f76') + '" opacity="0.75"/>';
+    });
+    s += '<text x="' + L + '" y="' + (H - 8) + '" fill="#6f6d66" font-size="10">Each bubble is a protocol: x = TVL, y = implied multiple, size = implied value, colour = verdict. The radar, at a glance.</text>';
+    s += '</svg>';
+    return s;
+  }
+  // Calibration chart: out-of-fold fitted values vs actuals for the fit peers, with a +/-2x band.
+  // Each peer is predicted by a model fitted without it — the same
+  // out-of-sample basis as the LOO numbers above, not the in-sample fit.
+  function calibrationChart() {
+    var W = 560, H = 300, L = 52, R = 14, T = 12, B = 34;
+    var pts = DATA.peers.map(function (p) {
+      var pred = (p.oofImplied !== null && p.oofImplied !== undefined && p.oofImplied > 0) ? p.oofImplied : impliedOf({ tvl_usd: p.tvl_usd, category: p.category, change_7d: null, age_days: null });
+      return { a: Math.log10(p.mcap_usd), p: Math.log10(pred) };
+    });
+    var all = pts.reduce(function (acc, q) { return acc.concat([q.a, q.p]); }, []);
+    var lo = Math.min.apply(null, all) - 0.15;
+    var hi = Math.max.apply(null, all) + 0.15;
+    var X = function (v) { return L + ((v - lo) / (hi - lo)) * (W - L - R); };
+    var Y = function (v) { return T + (1 - (v - lo) / (hi - lo)) * (H - T - B); };
+    var s = svgOpen(W, H);
+    s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#14171d"/>';
+    var band = 'M' + X(lo).toFixed(1) + ',' + Y(lo + Math.log10(2)).toFixed(1) + 'L' + X(hi).toFixed(1) + ',' + Y(hi + Math.log10(2)).toFixed(1) + 'L' + X(hi).toFixed(1) + ',' + Y(hi - Math.log10(2)).toFixed(1) + 'L' + X(lo).toFixed(1) + ',' + Y(lo - Math.log10(2)).toFixed(1) + 'Z';
+    s += '<path d="' + band + '" fill="#7aa7c9" opacity="0.12"/>';
+    s += '<line x1="' + X(lo).toFixed(1) + '" y1="' + Y(lo).toFixed(1) + '" x2="' + X(hi).toFixed(1) + '" y2="' + Y(hi).toFixed(1) + '" stroke="#e8c478" stroke-width="1.5"/>';
+    pts.forEach(function (q) {
+      s += '<circle cx="' + X(q.a).toFixed(1) + '" cy="' + Y(q.p).toFixed(1) + '" r="2.4" fill="#7aa7c9" opacity="0.65"/>';
+    });
+    s += '<text x="' + L + '" y="' + (H - 22) + '" fill="#6f6d66" font-size="10">Out-of-fold fitted vs actual market cap, log-log, for the ' + FIT.peerCount + ' peers. Band: +/-2x. Each peer is predicted by a model fitted without it, so this chart and the LOO numbers above share the same out-of-sample basis. The dots may look noisier than round 5\u2019s in-sample scatter \u2014 that is the point: the in-sample visual was flattering; out-of-fold is the honest basis.</text>';
+    s += '</svg>';
+    return s;
+  }
+
+  // Value-against-the-yardstick scatter: the fit peers, TVL (log) against
+  // actual market cap / implied value (log). The fitted line is ratio 1,
+  // because the implied value already carries the size curve; the shaded
+  // band is the middle half of the leave-one-out actual/implied ratios.
+  // The solid gold lines are the exact 1/3x and 3x scoring lines — distinct
+  // from the shaded residual band, which is the 25th–75th percentile of the
+  // LOO residuals, not the scoring band. The points are the peers'
+  // OUT-OF-FOLD implied values (each peer predicted by a model fitted
+  // without it), so the points and the shaded LOO residual band share the
+  // same out-of-sample basis — in-sample fitted values would sit
+  // systematically closer to ratio 1 than the band they are plotted
+  // against. Older data files without out-of-fold values fall back to the
+  // recomputed in-sample value.
+  function ratioScatter() {
+    var v = DATA.validation;
+    var pts = DATA.peers.map(function (p) {
+      var imp = (p.oofImplied !== null && p.oofImplied !== undefined && p.oofImplied > 0) ? p.oofImplied : impliedOf({ tvl_usd: p.tvl_usd, category: p.category, change_7d: null, age_days: null });
+      return { x: Math.log10(p.tvl_usd), y: Math.log10(p.mcap_usd / imp) };
+    });
+    if (pts.length === 0) return '';
+    var W = 1100, H = 320, L = 64, R = 16, T = 14, B = 52;
+    var xs = pts.map(function (q) { return q.x; });
+    var ys = pts.map(function (q) { return q.y; });
+    var xlo = Math.min.apply(null, xs) - 0.15;
+    var xhi = Math.max.apply(null, xs) + 0.15;
+    var ylo = Math.min.apply(null, ys) - 0.15;
+    var yhi = Math.max.apply(null, ys) + 0.15;
+    var hasBand = v.looBandRatioLo !== null && v.looBandRatioLo !== undefined && v.looBandRatioHi !== null && v.looBandRatioHi !== undefined && v.looBandRatioLo > 0 && v.looBandRatioHi > 0;
+    if (hasBand) {
+      ylo = Math.min(ylo, Math.log10(v.looBandRatioLo) - 0.05);
+      yhi = Math.max(yhi, Math.log10(v.looBandRatioHi) + 0.05);
+    }
+    ylo = Math.min(ylo, -0.05);
+    yhi = Math.max(yhi, 0.05);
+    // Keep the exact 3x scoring lines inside the plot area.
+    ylo = Math.min(ylo, Math.log10(1 / 3) - 0.05);
+    yhi = Math.max(yhi, Math.log10(3) + 0.05);
+    var X = function (val) { return L + ((val - xlo) / (xhi - xlo)) * (W - L - R); };
+    var Y = function (val) { return T + (1 - (val - ylo) / (yhi - ylo)) * (H - T - B); };
+    var s = svgOpen(W, H);
+    s += '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="#14171d"/>';
+    if (hasBand) {
+      s += '<rect x="' + L + '" y="' + Y(Math.log10(v.looBandRatioHi)).toFixed(1) + '" width="' + (W - L - R) + '" height="' + (Y(Math.log10(v.looBandRatioLo)) - Y(Math.log10(v.looBandRatioHi))).toFixed(1) + '" fill="#7aa7c9" opacity="0.12"/>';
+    }
+    logTicks(xlo, xhi).forEach(function (e) {
+      var x = X(e);
+      s += '<line x1="' + x.toFixed(1) + '" y1="' + T + '" x2="' + x.toFixed(1) + '" y2="' + (H - B) + '" stroke="#262b34"/>';
+      s += '<text x="' + x.toFixed(1) + '" y="' + (H - 30) + '" fill="#9a978c" font-size="10" text-anchor="middle">' + fmtAxisDollar(e) + ' TVL</text>';
+    });
+    logTicks(ylo, yhi).forEach(function (e) {
+      var y = Y(e);
+      var lab = Math.pow(10, e);
+      var lt = lab.toFixed(2) + 'x';
+      s += '<line x1="' + L + '" y1="' + y.toFixed(1) + '" x2="' + (W - R) + '" y2="' + y.toFixed(1) + '" stroke="#262b34"/>';
+      s += '<text x="' + (L - 6) + '" y="' + (y + 3).toFixed(1) + '" fill="#9a978c" font-size="10" text-anchor="end">' + lt + '</text>';
+    });
+    s += '<line x1="' + L + '" y1="' + Y(0).toFixed(1) + '" x2="' + (W - R) + '" y2="' + Y(0).toFixed(1) + '" stroke="#e8c478" stroke-width="1.5" stroke-dasharray="5,4"/>';
+    // Exact 3x scoring lines (solid gold), distinct from the shaded band.
+    var y3 = Y(Math.log10(3));
+    var ym3 = Y(Math.log10(1 / 3));
+    s += '<line x1="' + L + '" y1="' + y3.toFixed(1) + '" x2="' + (W - R) + '" y2="' + y3.toFixed(1) + '" stroke="#d9a441" stroke-width="1.2"/>';
+    s += '<line x1="' + L + '" y1="' + ym3.toFixed(1) + '" x2="' + (W - R) + '" y2="' + ym3.toFixed(1) + '" stroke="#d9a441" stroke-width="1.2"/>';
+    s += '<text x="' + (W - R - 4) + '" y="' + (y3 - 5).toFixed(1) + '" fill="#d9a441" font-size="10" text-anchor="end">3x</text>';
+    s += '<text x="' + (W - R - 4) + '" y="' + (ym3 - 5).toFixed(1) + '" fill="#d9a441" font-size="10" text-anchor="end">1/3x</text>';
+    pts.forEach(function (q) {
+      s += '<circle cx="' + X(q.x).toFixed(1) + '" cy="' + Y(q.y).toFixed(1) + '" r="3" fill="#7aa7c9" opacity="0.7"/>';
+    });
+    s += '<text x="' + L + '" y="' + (H - 8) + '" fill="#6f6d66" font-size="10">Each dot is one of the ' + DATA.peers.length + ' fit peers: x = TVL, y = actual market cap / out-of-fold implied value. The dots are out-of-fold predictions (each peer predicted by a model fitted without it), so the dots and the shaded LOO residual band share the same out-of-sample basis. The dots may look noisier than round 5\u2019s in-sample scatter \u2014 that is the point: the in-sample visual was flattering; out-of-fold is the honest basis. Dashed line: ratio 1, the market agreeing with the yardstick. Solid gold lines: the 3x scoring lines (actual/implied = 3 and 1/3) \u2014 a peer counts as within-3x when it falls between them.' + (hasBand ? ' Shaded band: the middle half of leave-one-out ratios, ' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x \u2014 a residual band (the 25th\u201375th percentile of the LOO residuals), not the scoring band.' : ' No leave-one-out band in this data file, so no shading is drawn.') + '</text>';
+    s += '</svg>';
+    return s;
+  }
+
+  // ---- views ----
+  // The P25-POSITIVE badge, renamed (round 6): the badge is defined on
+  // BOARD costs (gas + opportunity cost) and disagrees with the fully
+  // costed p25 on some of its rows, so the rendered label says so — the
+  // underlying verdict value in the data stays 'P25-POSITIVE' (filters,
+  // counts and the self-check compare against it), but no rendered text,
+  // class or option value carries the bare string. The filter uses the
+  // slug 'p25p' for the same reason.
+  function verdictLabel(v) {
+    return v === 'P25-POSITIVE' ? 'Board P25-positive (pre-fee)' : v;
+  }
+  function verdictClass(v) {
+    return v === 'P25-POSITIVE' ? 'P25P' : v;
+  }
+  function verdictFilterValue(v) {
+    return v === 'P25-POSITIVE' ? 'p25p' : v;
+  }
+  function verdictFromFilter(f) {
+    return f === 'p25p' ? 'P25-POSITIVE' : f;
+  }
+  // P25-FULL marker: the row still breaks even at p25 once every fee is
+  // counted. Only the rows that do carry it.
+  function p25FullMarker(row) {
+    if (!row.playbook || row.farm.verdict !== 'P25-POSITIVE' || row.playbook.netEvP25Full < 0) return '';
+    return ' <span class="badge P25FULL">P25-FULL \u2713</span>';
+  }
+  function verdictBadge(v) {
+    return '<span class="badge ' + verdictClass(v) + '">' + verdictLabel(v) + '</span>';
+  }
+  function filteredRows() {
+    var q = state.q.trim().toLowerCase();
+    var minImp = state.minImp === '' ? 0 : parseFloat(state.minImp) * 1e6;
+    var rows = DATA.rows.filter(function (r) {
+      if (q && (r.name.toLowerCase().indexOf(q) < 0 && r.slug.toLowerCase().indexOf(q) < 0)) return false;
+      if (state.category !== 'all' && (r.category || '') !== state.category) return false;
+      if (state.chain !== 'all' && (r.chains[0] || '') !== state.chain) return false;
+      if (state.verdict !== 'all' && r.farm.verdict !== verdictFromFilter(state.verdict)) return false;
+      if (minImp > 0 && r.implied_value_usd < minImp) return false;
+      return true;
+    });
+    var dir = state.dir;
+    var key = state.sort;
+    rows.sort(function (a, b) {
+      var av, bv;
+      if (key === 'implied') { av = a.implied_value_usd; bv = b.implied_value_usd; }
+      else if (key === 'odds') { av = a.odds; bv = b.odds; }
+      else if (key === 'tvl') { av = a.tvl_usd; bv = b.tvl_usd; }
+      else if (key === 'growth') { av = a.change_7d === null ? -999 : a.change_7d; bv = b.change_7d === null ? -999 : b.change_7d; }
+      else if (key === 'age') { av = a.age_days === null ? 99999 : a.age_days; bv = b.age_days === null ? 99999 : b.age_days; }
+      else if (key === 'breakeven') { av = (a.farm.breakevenOdds === null || a.farm.breakevenOdds === undefined) ? -1 : a.farm.breakevenOdds; bv = (b.farm.breakevenOdds === null || b.farm.breakevenOdds === undefined) ? -1 : b.farm.breakevenOdds; }
+      else if (key === 'perhour') { av = (a.farm.netPerHour === null || a.farm.netPerHour === undefined) ? -1e18 : a.farm.netPerHour; bv = (b.farm.netPerHour === null || b.farm.netPerHour === undefined) ? -1e18 : b.farm.netPerHour; }
+      else { av = a.rank; bv = b.rank; }
+      return (av - bv) * dir || (a.slug < b.slug ? -1 : 1);
+    });
+    return rows;
+  }
+  // The fitted formula, in one readable box, with the honest out-of-sample
+  // numbers beside it. Every number is read from DATA, never hardcoded.
+  // The formula shows the size curve PLUS the ridge category offset, so it
+  // reconciles with the full model's headline — the bare curve alone would
+  // give a different implied value for any row whose category differs.
+  function formulaBoxHtml() {
+    var v = DATA.validation;
+    var flat = looFlatRow();
+    var size = looRowNamed('size curve only');
+    var looN = (v.peerCount !== null && v.peerCount !== undefined) ? v.peerCount : FIT.peerCount;
+    var looU = fitUniverse() === null ? looN : fitUniverse();
+    var hits = DATA.peers.filter(function (p) { return p.oofWithin3; }).length;
+    var h = '<div class="panel formulabox"><h2>The yardstick, in one line</h2>' +
+      '<div class="bigformula">log<sub>10</sub>(value) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' &times; log<sub>10</sub>(TVL) + ridge offset[category] (&lambda;=' + (FIT.ridgeLambda === null || FIT.ridgeLambda === undefined ? 'n/a' : FIT.ridgeLambda) + '), &times; token odds</div>' +
+      '<p>That is the fitted size curve plus the jointly-fitted category offset: every implied value on this board starts from a protocol\u2019s TVL run through this line, then adjusted by its ridge category offset and the token odds (the probability the protocol ever records one). 7-day growth and maturity are dropped in round 8 \u2014 both factors are 1.00, so the board is the fitted model, no priors (see \u201cHow this is priced\u201d). The curve and the offsets are fitted together on ' + FIT.peerCount + ' live-token peers' + (setAsideCount() === null ? '' : ' (the wider live-token set is ' + fitUniverse() + '; ' + setAsideCount() + ' are set aside because they record no listing date)') + '.</p>' +
+      '<p>Out of sample, leave-one-out: <b>' + fnum(v.adoptedWithin3, '', 1, '%') + ' within 3x (' + hits + ' of ' + looN + ' peers with listing dates)</b>, median error x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' (median of max(pred/actual, actual/pred)), Spearman ' + fnum(v.adoptedSpearman, '', 3, '') + '. The flat baseline on the same peers manages ' + (flat ? fnum(flat.within3, '', 1, '%') + ' within 3x' : 'n/a') + ' and a median error of x' + (flat ? fnum(flat.medianMaxRatio, '', 2, '') : 'n/a') + '.</p>' +
+      '<p>Within-3x is the declared primary metric. The full model (' + fnum(v.adoptedWithin3, '', 1, '%') + ') and the bare size curve (' + (size ? fnum(size.within3, '', 1, '%') : 'n/a') + ') are statistically indistinguishable at n=' + looN + ' (noise floor \u00b18pp); the full model is shipped for category dispersion \u2014 it lets two protocols at the same TVL carry different implied values \u2014 not because it is proven better.</p></div>';
+    return h;
+  }
+  // Best return on the farmer's time: the highest net $/hour among the rows
+  // that clear FARM or P25-POSITIVE. Hidden entirely when the data file carries
+  // no $/hour figures. The p25 net EV sits beside the $/h figure, so the most
+  // prominent row is not oversold: a $/h lead with cents at p25 is a thin one.
+  function bestHourHtml() {
+    var best = bestPerHour();
+    if (!best) return '';
+    var mins = (best.farm.handsOnMinutes !== null && best.farm.handsOnMinutes !== undefined) ? ' for about ' + best.farm.handsOnMinutes + ' minutes of hands-on time' : '';
+    var p25 = (best.farm.netEvP25 !== null && best.farm.netEvP25 !== undefined) ? ', ' + (best.farm.netEvP25 >= 0 ? '+' : '') + fmtUsd2(best.farm.netEvP25) + ' at p25' : '';
+    return '<div class="panel callout"><h2>Best return on your time</h2>' +
+      '<p><b>' + esc(best.name) + '</b> ' + verdictBadge(best.farm.verdict) + ' &middot; <span class="bignum">' + fmtPerHour(best.farm.netPerHour) + '</span> net per hands-on hour' + mins + p25 + '. ' +
+      'That is the highest net expected value per hour among the rows that clear FARM or Board P25-positive (pre-fee) \u2014 the same farm arithmetic as every other row, divided by the time the plan asks you to spend. A big implied value that takes hours to chase can be worth less than a small one that takes minutes.</p>' +
+      '<p class="fine">Assumptions behind the $/h: $' + best.farm.capital.toLocaleString('en-US') + ' of capital, gas at November 2026 typical levels, opportunity cost ' + (MODEL.oppRate * 100).toFixed(1) + '% a year for ' + MODEL.holdDays + ' days, and the airdrop pool (' + (MODEL.poolShare * 100).toFixed(0) + '% of implied value) paid in full with no vesting or lockup \u2014 the snapshot cannot establish that a token or an airdrop will happen at all.</p></div>';
+  }
+  // The aggregate session plan: the P25-positive farms together, as one
+  // honest plan — totals computed from the rows, never hardcoded.
+  function sessionPlanHtml() {
+    var rows = DATA.rows.filter(function (r) { return r.farm.verdict === 'P25-POSITIVE'; });
+    if (rows.length === 0) return '';
+    var tot = 0, tot25 = 0, mins = 0, thin = 0;
+    rows.forEach(function (r) {
+      tot += r.farm.netEv;
+      tot25 += (r.farm.netEvP25 === null || r.farm.netEvP25 === undefined) ? 0 : r.farm.netEvP25;
+      mins += r.farm.handsOnMinutes || 0;
+      if (r.farm.netEvP25 !== null && r.farm.netEvP25 !== undefined && r.farm.netEvP25 < 1) thin++;
+    });
+    var names = rows.map(function (r) { return esc(r.name); }).join(', ');
+    return '<div class="panel callout"><h2>The whole plan, in one paragraph</h2>' +
+      '<p>Farm all ' + rows.length + ' Board P25-positive (pre-fee) rows (' + names + '): <b>+$' + tot.toFixed(2) + ' expected net EV</b>, <b>+$' + tot25.toFixed(2) + ' at p25</b>, ' + mins + ' hands-on minutes (about ' + (mins / 60).toFixed(1) + ' hours). That is the entire plan this board can stand behind \u2014 ' + rows.length + ' farms, $' + Math.round(tot) + ' expected, $' + Math.round(tot25) + ' if the value lands at the 25th percentile. The floor is thin: ' + thin + ' of the ' + rows.length + ' clear break-even at p25 by less than a dollar, and 1 in 4 realisations lands below p25. Fully costed, ' + p25FullyCostedNegative().neg + ' of the ' + rows.length + ' no longer break even at p25 \u2014 see the playbooks.</p></div>';
+  }
+  // The fee disclosures, in one place: every playbook header and the
+  // methodology carry this same block, so a reader never has to hunt for
+  // what the costing leaves out. All six are stated assumptions, not
+  // measured prices — the snapshot carries no fee data. The opportunity
+  // cost is NOT excluded: the board counts it at 4.5% a year for 90 days
+  // ($27.74 on $2,500), which is above the ~$25 risk-free benchmark at
+  // 4% APY, so the board's figure is the conservative one. The deposit /
+  // withdrawal sensitivity is 0.5% of the $2,500 capital ($12.50).
+  function playbookDisclosuresHtml() {
+    return '<p class="fine"><b>What this costing leaves out.</b> Deposit/withdrawal assumed $0 (not verified per-protocol; would be $12.50 at 0.5% of the $2,500 capital). Slippage not modeled (0.30% = pool fee only). Bridge $2.00 flat per non-Ethereum chain (point estimate). Gas snapshot ' + esc(DATA.as_of) + '. Opportunity cost is counted, not excluded: the board charges 4.5% a year for 90 days ($27.74 on $2,500), above the ~$25 risk-free benchmark at 4% APY. Counts 1 entry + 1 exit transaction per chain (assumes pre-approved spend); the actual exit is 1\u20134 transactions per chain by mechanism.</p>';
+  }
+  // The extra-fee split as one line: swap / bridge (chain count) / gas
+  // (tx count), total = extra. When the swap is $0 the mechanism is
+  // named, so "no swap" reads as a property of the farm, not a missing fee.
+  function feeSplitText(pb, row) {
+    var sp = pb.feeSplit;
+    var s = 'swap ' + fmtUsd2(sp.swap) + (sp.swap === 0 ? ' (no swap \u2014 ' + esc(row.mechanism || 'this farm') + ' takes USDC directly, no paired-asset swap)' : ' (entry + exit at 0.30%)') +
+      ' \u00b7 bridge ' + fmtUsd2(sp.bridge) + ' (' + sp.bridgeChains + ' chain' + (sp.bridgeChains === 1 ? '' : 's') + ')' +
+      ' \u00b7 gas ' + fmtUsd2(sp.gas) + ' (' + sp.gasTxs + ' tx' + (sp.gasTxs === 1 ? '' : 's') + ')' +
+      ' = ' + fmtUsd2(pb.extraTotal) + ' total';
+    return s;
+  }
+  // The playbooks, at a glance: every P25-positive row and the top-5 FARM
+  // rows, with the full costing the board's cost model does not count
+  // (swaps, bridges, the exit transaction). The Net EVs here are FULLY
+  // COSTED — the board's NetEV minus the extra fees — so they are lower
+  // than the board's NetEV by exactly the extra fees. The board's verdicts
+  // are unchanged: they are defined on board costs (gas + opportunity
+  // cost), and the playbook does not re-decide them. The honest headline
+  // is counted from the rows, never hardcoded.
+  function playbooksHtml() {
+    var rows = DATA.rows.filter(function (r) { return r.playbook; });
+    if (rows.length === 0) return '';
+    rows.sort(function (a, b) { return b.playbook.netEvFull - a.playbook.netEvFull; });
+    var p25rows = rows.filter(function (r) { return r.farm.verdict === 'P25-POSITIVE'; });
+    var p25survive = p25rows.filter(function (r) { return r.playbook.netEvP25Full >= 0; }).length;
+    // The dedup, stated explicitly: the top-5 FARM rows by NetEV are the
+    // pre-fee P25-positive rows plus the pure FARM rows — the playbooks
+    // cover all the pre-fee P25-positive rows and the pure FARM rows.
+    var farmTop = DATA.rows.filter(function (r) { return r.farm.verdict === 'FARM' || r.farm.verdict === 'P25-POSITIVE'; })
+      .sort(function (a, b) { return b.farm.netEv - a.farm.netEv || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0); }).slice(0, 5);
+    var pureFarm = farmTop.filter(function (r) { return r.farm.verdict === 'FARM'; });
+    var p10min = null, p10max = null;
+    rows.forEach(function (r) {
+      if (p10min === null || r.playbook.netEvP10Full < p10min) p10min = r.playbook.netEvP10Full;
+      if (p10max === null || r.playbook.netEvP10Full > p10max) p10max = r.playbook.netEvP10Full;
+    });
+    var h = '<div class="panel"><h2>Playbooks: the farms, fully costed</h2>' +
+      '<p>Each farm below carries a complete playbook on its detail view: the entry, every fee, the hold and the exit. Playbooks cover all ' + p25rows.length + ' Board P25-positive (pre-fee) rows plus the top-5 FARM rows by NetEV, deduped \u2014 the top-5 FARM by NetEV are ' + farmTop.map(function (r) { return esc(r.name); }).join(', ') + ', of which ' + pureFarm.length + ' are pure FARM rows (' + pureFarm.map(function (r) { return esc(r.name); }).join(', ') + ') and the rest are already Board P25-positive (pre-fee), so the dedup leaves ' + rows.length + ' playbooks in total. <b>Net EVs here are fully costed</b> \u2014 the board\u2019s NetEV minus the extra fees (swaps at the standard 0.30% AMM tier, a $2.00 flat bridge allowance per non-Ethereum chain, one exit transaction per chain; no protocol-level deposit or withdrawal fee is assumed) \u2014 so each is lower than the board\u2019s NetEV by exactly the extra fees. The board\u2019s verdicts are unchanged: they are defined on board costs (gas + opportunity cost), and the playbook does not re-decide them.</p>' +
+      '<table class="plain"><thead><tr><th>Farm</th><th class="num">Entry</th><th class="num">Board cost</th><th class="num">Extra fees</th><th class="num">Hold</th><th class="num">Net EV p10</th><th class="num">Net EV p25</th><th class="num">Net EV</th><th class="num">Net EV p75</th><th class="num">Break-even / Implied (market cap, fully-costed)</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      var pb = r.playbook;
+      var margin = (pb.breakevenFull > 0 && r.implied_value_usd > 0) ? (r.implied_value_usd / pb.breakevenFull) : null;
+      h += '<tr><td><b>' + esc(r.name) + '</b> ' + verdictBadge(r.farm.verdict) + p25FullMarker(r) + '<span class="cat">' + esc(pb.entryChain || 'main chain') + (pb.secondChain ? ' + ' + esc(pb.secondChain) : '') + ' &middot; ' + esc(r.mechanism || '') + '</span></td>' +
+        '<td class="num">$' + pb.capital.toLocaleString('en-US') + '</td>' +
+        '<td class="num">' + fmtUsd2(pb.boardTotal) + '</td>' +
+        '<td class="num">' + fmtUsd2(pb.extraTotal) + '<span class="feesplit">' + feeSplitText(pb, r) + '</span></td>' +
+        '<td class="num">' + pb.holdDays + 'd</td>' +
+        '<td class="num">' + (pb.netEvP10Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP10Full) + '</td>' +
+        '<td class="num">' + (pb.netEvP25Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Full) + '<span class="feesplit">board ' + (pb.netEvP25Board >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Board) + '</span></td>' +
+        '<td class="num"><b>' + (pb.netEvFull >= 0 ? '+' : '') + fmtUsd2(pb.netEvFull) + '</b></td>' +
+        '<td class="num">' + (pb.netEvP75Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP75Full) + '</td>' +
+        '<td class="num">' + fmtUsd(pb.breakevenFull) + ' / ' + fmtUsd(r.implied_value_usd) + (margin === null ? '' : '<span class="feesplit">' + margin.toFixed(2) + 'x safety margin</span>') + '</td></tr>';
+    });
+    h += '</tbody></table>' +
+      '<p class="fine">Fully costed, ' + p25survive + ' of the ' + p25rows.length + ' Board P25-positive (pre-fee) rows still break even at p25 (' + p25rows.filter(function (r) { return r.playbook.netEvP25Full >= 0; }).map(function (r) { return esc(r.name); }).join(', ') + (p25survive > 0 ? '' : 'none') + '); the others clear break-even at the median but not at the 25th percentile once swaps, bridges and the exit are counted. That does not change their Board P25-positive (pre-fee) badge \u2014 the badge is defined on board costs \u2014 but a farmer should know the fully costed floor before committing capital. At p10 every playbook is negative (' + fmtUsd2(p10min) + ' to ' + fmtUsd2(p10max) + ' fully costed): the 10th percentile of the 80% band is below break-even on every farm, which is why the board\u2019s verdict is a median rule, not a p10 rule. Every figure in this table is computed from the row\u2019s own data; the swap, bridge and exit assumptions are stated on each playbook.</p>' +
+      playbookDisclosuresHtml() + '</div>';
+    return h;
+  }
+  // The 758-protocol accounting: every snapshot protocol in exactly one
+  // group, computed in main.ts from the snapshot's own fields — nothing
+  // left out, nothing counted twice. Plus the integrity strip: the checks
+  // this page verifies in-page, so the ledger is checkable on sight.
+  function accountingHtml() {
+    var acc = DATA.accounting;
+    if (!acc || !acc.groups) return '';
+    var sum = 0;
+    acc.groups.forEach(function (g) { sum += g.count; });
+    var wlRanked = 0;
+    DATA.rows.forEach(function (r) { if (r.is_watchlist) wlRanked++; });
+    var ranksOk = true;
+    var valuesOk = true;
+    for (var i = 0; i < DATA.rows.length; i++) {
+      if (DATA.rows[i].rank !== i + 1) ranksOk = false;
+      if (i > 0 && DATA.rows[i].implied_value_usd > DATA.rows[i - 1].implied_value_usd) valuesOk = false;
+    }
+    var h = '<div class="panel"><h2>Where every protocol went</h2>' +
+      '<p>All ' + acc.total + ' snapshot protocols, in exactly one group each. The board ranks ' + DATA.board_size + '; the rest are the yardstick, set aside, or excluded by rule.</p>' +
+      '<table class="plain"><thead><tr><th>Group</th><th class="num">Protocols</th><th>Why they are there</th></tr></thead><tbody>' +
+      acc.groups.map(function (g) {
+        return '<tr><td>' + esc(g.label) + '</td><td class="num">' + g.count + '</td><td>' + esc(g.note) + '</td></tr>';
+      }).join('') +
+      '<tr><td><b>Total</b></td><td class="num"><b>' + sum + '</b></td><td>' + (sum === acc.total ? 'Reconciles to the snapshot total of ' + acc.total + '.' : 'Does NOT reconcile to the snapshot total of ' + acc.total + ' \u2014 the ledger is broken.') + '</td></tr>' +
+      '</tbody></table>' +
+      '<p class="fine"><b>Integrity, checked in-page:</b> ' + (DATA.rows.length - recomputeBad) + ' of ' + DATA.rows.length + ' implied values recomputed here and matched the board\u2019s data' + (recomputeBad > 0 ? ' (' + recomputeBad + ' mismatched)' : '') + ' &middot; ranks 1\u2013' + DATA.rows.length + ' in order, values never rise: ' + (ranksOk && valuesOk ? 'yes' : 'NO') + ' &middot; accounting totals equal: ' + (sum === acc.total ? sum + ' of ' + acc.total : 'NO') + ' &middot; watchlist ' + wlRanked + ' of ' + DATA.watchlist_size + ' ranked &middot; ledger ' + sum + ' of ' + acc.total + ' protocols &middot; built by main.ts from snapshot ' + esc(DATA.as_of) + ' (' + esc(DATA.source) + ').</p></div>';
+    return h;
+  }
+  // Board-level worked example: row 1 stepped through the model, computed
+  // in-page from the row's own data — never hardcoded, so it stays true
+  // when the board re-ranks.
+  function workedExampleHtml() {
+    var row = DATA.rows[0];
+    if (!row) return '';
+    var b = breakdownOf(row);
+    var base = row.tvl_usd * b.mult;
+    var afterSize = base * b.sizeF;
+    var afterGrowth = afterSize * b.growthMult;
+    var afterMat = afterGrowth * b.mat;
+    var afterOdds = afterMat * b.odds;
+    var h = '<div class="panel"><h2>Worked example: row 1, ' + esc(row.name) + '</h2>' +
+      '<p>The top row, step by step through the model. Every figure is the row\u2019s own data, recomputed in-page.</p>' +
+      '<table class="plain"><thead><tr><th>Step</th><th class="num">Factor</th><th class="num">Running value</th></tr></thead><tbody>' +
+      '<tr><td>TVL</td><td class="num">\u2014</td><td class="num">' + fmtUsd(row.tvl_usd) + '</td></tr>' +
+      '<tr><td>Category multiple (' + esc(row.category || 'Uncategorised') + ', ' + b.n + ' peers)</td><td class="num">' + b.mult.toFixed(3) + 'x</td><td class="num">' + fmtUsd(base) + '</td></tr>' +
+      '<tr><td>Size factor (category median TVL ' + fmtUsd(b.medTvl) + ')</td><td class="num">' + b.sizeF.toFixed(3) + 'x</td><td class="num">' + fmtUsd(afterSize) + '</td></tr>' +
+      '<tr><td>Growth (7d ' + fmtPct(b.growth) + ')' + (MODEL.growthWeight === 0 ? ' \u2014 dropped in round 8' : '') + '</td><td class="num">' + b.growthMult.toFixed(3) + 'x</td><td class="num">' + fmtUsd(afterGrowth) + '</td></tr>' +
+      '<tr><td>Maturity (' + fmtAge(row.age_days) + ' old)' + (MODEL.maturityRange === 0 ? ' \u2014 dropped in round 8' : '') + '</td><td class="num">' + b.mat.toFixed(3) + 'x</td><td class="num">' + fmtUsd(afterMat) + '</td></tr>' +
+      '<tr><td>Token odds (P records a token)</td><td class="num">' + b.odds.toFixed(2) + '</td><td class="num">' + fmtUsd(afterOdds) + '</td></tr>' +
+      '<tr><td><b>Implied value (expected)</b></td><td class="num"></td><td class="num"><b>' + fmtUsd(row.implied_value_usd) + '</b></td></tr>' +
+      '</tbody></table>' +
+      '<p class="fine">The value if a token launches is ' + fmtUsd(row.model.value_if_launches) + '; the implied value is that, times the ' + (b.odds * 100).toFixed(0) + '% token odds. The farm verdict on this row is ' + verdictLabel(row.farm.verdict) + ' (net EV ' + (row.farm.netEv >= 0 ? '+' : '') + fmtUsd2(row.farm.netEv) + ') \u2014 the biggest implied value is not the best farm, because the pool is a share of TVL and this row\u2019s TVL is the largest on the board. Open the row for the full derivation and farm plan.</p></div>';
+    return h;
+  }
+  // Verdict counts and the central band, across the whole board (not the
+  // filtered view, so a search never rewrites them). P25-POSITIVE is a
+  // subset of FARM, so the strip reports the FARM total with the subset
+  // inside it — never four disjoint tiers that sum to the board.
+  function boardSummaryHtml() {
+    var c = verdictCounts();
+    var farmTotal = (c['P25-POSITIVE'] || 0) + c.FARM;
+    var w = medianBand50Width();
+    var v = DATA.validation;
+    var h = '<div class="panel bandstrip"><p><b>Verdicts:</b> FARM ' + farmTotal + ', incl. ' + (c['P25-POSITIVE'] || 0) + ' Board P25-positive (pre-fee) &middot; THIN ' + c.THIN + ' &middot; SKIP ' + c.SKIP + '. Board P25-positive (pre-fee) is a subset of FARM (' + (c['P25-POSITIVE'] || 0) + ' of ' + farmTotal + '), not a fourth tier. Fully costed p25 nets all fees; ' + p25FullyCostedNegative().neg + ' of the ' + p25FullyCostedNegative().total + ' pre-fee P25-positive rows are negative once costs are counted (see playbooks).</p>';
+    if (w !== null) h += '<p><b>The middle half:</b> across the board, the central band (45% coverage, p25\u2013p75) spans a median of ' + w.toFixed(1) + 'x from low end to high end \u2014 half of each row\u2019s plausible value sits inside that range, and half sits outside it.</p>';
+    if (v.looBandRatioLo !== null && v.looBandRatioLo !== undefined && v.looBandRatioHi !== null && v.looBandRatioHi !== undefined) {
+      h += '<p><b>Leave-one-out check:</b> the middle half of actual/implied ratios across the fit peers runs ' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x \u2014 that is the shaded band in the scatter chart above.</p>';
+    }
+    h += '</div>';
+    return h;
+  }
+  // First-view calibration panel: the complete headline, above the fold,
+  // on the board tab before the scatter — LOO, blind and time-split side by
+  // side with the baselines, the band coverage and the noise floor, so the
+  // honesty story is visible in the landing state and not only behind a tab.
+  // Every number is read from DATA; the Wilson interval is computed in-page.
+  function calibrationStripHtml() {
+    var v = DATA.validation;
+    var b = v.bands || {};
+    var flat025 = looRowNamed('flat 0.25x');
+    var flatGlobal = looFlatRow();
+    var size = looRowNamed('size curve only');
+    var hits = DATA.peers.filter(function (p) { return p.oofWithin3; }).length;
+    var looN = (v.peerCount !== null && v.peerCount !== undefined) ? v.peerCount : FIT.peerCount;
+    var looU = fitUniverse() === null ? looN : fitUniverse();
+    var ci = wilsonCI(hits, looN);
+    var lift = (v.adoptedWithin3 !== null && v.adoptedWithin3 !== undefined && flatGlobal) ? v.adoptedWithin3 - flatGlobal.within3 : null;
+    var h = '<div class="panel calibstrip"><h2>Calibration, on the first screen</h2>' +
+      '<p><b>LOO within-3x ' + fnum(v.adoptedWithin3, '', 1, '%') + ' (' + hits + '/' + looN + ', Wilson 95% CI ' + Math.round(ci[0] * 100) + '\u2013' + Math.round(ci[1] * 100) + '%)</b> &middot; Blind 80/20 ' + fnum(v.blindWithin3, '', 1, '%') + ' &middot; Time-split ' + fnum(v.timeSplitWithin3, '', 1, '%') + ' &middot; Baselines ' + (flat025 ? fnum(flat025.within3, '', 1, '%') : 'n/a') + ' / ' + (flatGlobal ? fnum(flatGlobal.within3, '', 1, '%') : 'n/a') + (lift === null ? '' : ' (lift +' + lift.toFixed(1) + 'pp over the global-median baseline)') + ' &middot; 80% band covers ' + (b.blindCov80 === undefined ? 'n/a' : (b.blindCov80 * 100).toFixed(1) + '%') + ' blind, central band covers ' + (b.blindCov50 === undefined ? 'n/a' : (b.blindCov50 * 100).toFixed(1) + '%') + ' &middot; Noise floor \u00b18pp / \u00b10.16 &middot; Bare size curve ' + (size ? fnum(size.within3, '', 1, '%') + ' / ' + fnum(size.spearman, '', 3, '') : 'n/a') + ' vs full model ' + fnum(v.adoptedWithin3, '', 1, '%') + ' / ' + fnum(v.adoptedSpearman, '', 3, '') + '.</p>' +
+      '<p>LOO on the ' + looN + ' peers with listing dates; ' + fnum(v.loo128Within3, '', 1, '%') + ' on all ' + looU + ' traded peers \u2014 the 33 peers without a listing date are systematically harder. Denominators, reconciled: ' + DATA.board_size + ' board rows \u2192 ' + looU + ' traded-token universe \u2192 ' + looN + ' scored peers \u2192 ' + v.timeSplitN + ' time-split. As of ' + esc(DATA.as_of) + ' \u00b7 Source: ' + esc(DATA.source) + '. Blind numbers are the mean across five 80/20 splits (seeds 11, 23, 37, 41, 53), each n=19 \u2014 not a pooled rate.</p></div>';
+    return h;
+  }
+  function boardHtml() {
+    var rows = filteredRows();
+    var cats = {};
+    DATA.rows.forEach(function (r) { cats[r.category || 'Uncategorised'] = 1; });
+    var chains = {};
+    DATA.rows.forEach(function (r) { if (r.chains[0]) chains[r.chains[0]] = 1; });
+    var catOpts = ['<option value="all">All categories</option>'].concat(Object.keys(cats).sort().map(function (c) {
+      return '<option value="' + esc(c === 'Uncategorised' ? '' : c) + '"' + (state.category === (c === 'Uncategorised' ? '' : c) ? ' selected' : '') + '>' + esc(c) + '</option>';
+    })).join('');
+    var chainOpts = ['<option value="all">All chains</option>'].concat(Object.keys(chains).sort().map(function (c) {
+      return '<option value="' + esc(c) + '"' + (state.chain === c ? ' selected' : '') + '>' + esc(c) + '</option>';
+    })).join('');
+    var wlTotal = 0;
+    DATA.rows.forEach(function (r) { if (r.is_watchlist) wlTotal += r.implied_value_usd; });
+    var wlVilTotal = 0;
+    DATA.rows.forEach(function (r) { if (r.is_watchlist) wlVilTotal += r.model.value_if_launches; });
+    var h = '<div class="panel mapwrap">' + bubbleMap(DATA.rows) +
+      '<div class="legend"><span><i style="background:#2fd6a3"></i>Board P25-positive (pre-fee)</span><span><i style="background:#4caf7d"></i>FARM</span><span><i style="background:#d9a441"></i>THIN</span><span><i style="background:#6b6f76"></i>SKIP</span><span>' + DATA.board_size + ' protocols, ' + DATA.watchlist_size + ' on the watchlist, ranked by expected token market capitalisation (value-if-launches &times; token odds). Board P25-positive (pre-fee) is a subset of FARM, not a separate tier. Fully costed p25 nets all fees; ' + p25FullyCostedNegative().neg + ' of ' + p25FullyCostedNegative().total + ' pre-fee P25-positive rows are negative once costs are counted (see playbooks). Watchlist total ' + fmtUsd(wlTotal) + ' is the sum of the ' + DATA.watchlist_size + ' watchlist rows\u2019 point-estimate implied values (expected value: value-if-launches &times; token odds); the value-if-launches watchlist total is ' + fmtUsd(wlVilTotal) + ' \u2014 the total before the odds weighting. Neither is expected capture.</span></div></div>';
+    h += calibrationStripHtml();
+    h += accountingHtml();
+    h += '<div class="panel mapwrap"><h2>Where the market sits against the yardstick</h2>' + ratioScatter() + '</div>';
+    h += formulaBoxHtml();
+    h += workedExampleHtml();
+    h += bestHourHtml();
+    h += sessionPlanHtml();
+    h += playbooksHtml();
+    h += boardSummaryHtml();
+    h += '<div class="filters">' +
+      '<input id="f-q" type="search" placeholder="Search name or slug" value="' + esc(state.q) + '">' +
+      '<select id="f-cat">' + catOpts + '</select>' +
+      '<select id="f-chain">' + chainOpts + '</select>' +
+      '<select id="f-verdict"><option value="all">All verdicts</option>' +
+      ['P25-POSITIVE', 'FARM', 'THIN', 'SKIP'].map(function (v) { return '<option value="' + verdictFilterValue(v) + '"' + (verdictFromFilter(state.verdict) === v ? ' selected' : '') + '>' + verdictLabel(v) + '</option>'; }).join('') + '</select>' +
+      '<input id="f-min" type="number" min="0" step="1" placeholder="Min implied $M" value="' + esc(state.minImp) + '" style="flex:0 1 130px">' +
+      '<span class="count">showing ' + rows.length + ' of ' + DATA.rows.length + '</span></div>';
+    h += '<table><thead><tr>' +
+      '<th data-sort="rank">Rank</th><th>Protocol</th><th class="num" data-sort="tvl">TVL</th><th class="num" data-sort="growth">7d</th><th class="num" data-sort="age">Age</th><th class="num" data-sort="implied">Implied value</th><th class="num" data-sort="odds">Token odds</th><th class="num">P10\u2013P90</th><th class="num">P25\u2013P75</th><th class="num">Multiple</th><th class="num">Gross</th><th class="num">Cost</th><th class="num">Net EV</th><th class="num" data-sort="breakeven">BE odds</th><th class="num" data-sort="perhour">Net $/h</th><th class="num">Fees &middot; Hold</th><th>Verdict</th>' +
+      '</tr></thead><tbody>';
+    rows.forEach(function (r) {
+      var chainList = (r.chains || []);
+      var chainShown = chainList.slice(0, 3).join(', ') + (chainList.length > 3 ? ' +' + (chainList.length - 3) + ' more' : '');
+      // Verdict cell: the renamed badge, the P25-FULL marker where the row
+      // still breaks even fully costed, and the fully costed p25 inline
+      // beside the pre-fee p25 — the badge is defined on board costs, so
+      // the two p25 figures sit next to each other instead of disagreeing
+      // across tabs.
+      var vTitle = r.farm.verdict === 'THIN' ? 'THIN: net EV at least $0, but under $40 or under 1.5x the cost \u2014 clears neither FARM gate.' : r.farm.verdict === 'P25-POSITIVE' ? 'Board P25-positive (pre-fee): net EV still at least $0 at the 25th percentile of the model\u2019s out-of-sample error (1 in 4 realisations is worse), on board costs (gas + opportunity cost) only \u2014 the fully costed p25 is shown beside the badge.' : r.farm.verdict === 'FARM' ? 'FARM: net EV at least $40 and at least 1.5x the cost at the median.' : 'SKIP: net EV below $0 at the median.';
+      var vCell = verdictBadge(r.farm.verdict) + p25FullMarker(r);
+      if (r.farm.verdict === 'P25-POSITIVE' && r.playbook) {
+        vCell += '<span class="p25full">pre-fee p25 ' + (r.playbook.netEvP25Board >= 0 ? '+' : '') + fmtUsd2(r.playbook.netEvP25Board) + ' \u00b7 fully costed p25 ' + (r.playbook.netEvP25Full >= 0 ? '+' : '') + fmtUsd2(r.playbook.netEvP25Full) + '</span>';
+      }
+      h += '<tr data-slug="' + esc(r.slug) + '">' +
+        '<td class="num">' + r.rank + '</td>' +
+        '<td><b>' + esc(r.name) + '</b><span class="cat">' + esc(r.category || 'Uncategorised') + ' &middot; ' + esc(chainShown || 'no chain') + '</span><span class="slug">' + esc(r.slug) + '</span>' + (r.is_watchlist ? '<span class="wl">WATCHLIST</span>' : '') + '<span class="mech">' + esc(r.mechanism || '') + '</span></td>' +
+        '<td class="num">' + fmtUsd(r.tvl_usd) + '</td>' +
+        '<td class="num">' + fmtPct(r.change_7d === null ? null : r.change_7d) + '</td>' +
+        '<td class="num">' + fmtAge(r.age_days) + '</td>' +
+        '<td class="num"><b>' + fmtUsd(r.implied_value_usd) + '</b></td>' +
+        '<td class="num" title="P(' + esc(r.name) + ' ever records a token) under the fitted odds model — a logistic on age and ln(TVL), validated by Brier score. The implied value is the value if a token launches, times these odds.">' + (r.odds * 100).toFixed(0) + '%</td>' +
+        '<td class="num">' + fmtBand(r) + '</td>' +
+        '<td class="num">' + fmtBand50(r) + '</td>' +
+        '<td class="num">' + fmtMult(r.multiple) + '</td>' +
+        '<td class="num">' + fmtUsd2(r.farm.share) + '</td>' +
+        '<td class="num">' + fmtUsd2(r.farm.totalCost) + '</td>' +
+        '<td class="num">' + fmtUsd2(r.farm.netEv) + '</td>' +
+        '<td class="num">' + fmtOdds(r.farm.breakevenOdds) + '</td>' +
+        '<td class="num">' + fmtPerHour(r.farm.netPerHour) + '</td>' +
+        '<td class="num" title="Total farm cost: gas ' + fmtUsd2(r.farm.gasTotal) + ' + opportunity cost ' + fmtUsd2(r.farm.oppCost) + '; hold ' + holdDaysFor(r.age_days) + ' days">' + fmtUsd2(r.farm.totalCost) + ' &middot; ' + holdDaysFor(r.age_days) + 'd</td>' +
+        '<td title="' + vTitle + '">' + vCell + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    h += '<p class="small">Implied value is the <b>expected</b> value: the value if a token launches, times the token odds (the probability the protocol ever records one, from the fitted odds model). The value-if-launches is shown on each row\u2019s detail view. A protocol is said to record no token, never that it has none. <b>Fees &middot; Hold</b> is the row\u2019s total farm cost (gas + opportunity cost) and the hold period in days \u2014 the farm verdict costed at a glance; the full costing, with swaps, bridges and the exit, is in the playbook on each FARM row\u2019s detail view.</p>';
+    return h;
+  }
+  function liveHtml() {
+    var h = '<div class="panel"><h2>Live tokens</h2><p>The top ' + DATA.live_size + ' protocols that already trade, by market cap. These are the market\u2019s own values, not a model\u2019s \u2014 they are <b>not ranked</b> and they are not farm targets here. They are the peers the model is fitted on, shown so the board visibly separates live from pre-token.</p></div>';
+    h += '<table class="plain"><thead><tr><th>Protocol</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">MC / TVL</th><th class="num">7d</th></tr></thead><tbody>';
+    DATA.live.forEach(function (r) {
+      h += '<tr><td><b>' + esc(r.name) + '</b><span class="cat">' + esc(r.category || 'Uncategorised') + ' &middot; ' + esc((r.chains || []).join(', ')) + '</span></td>' +
+        '<td class="num">' + fmtUsd(r.tvl_usd) + '</td><td class="num">' + fmtUsd(r.mcap_usd) + '</td>' +
+        '<td class="num">' + (r.mcap_usd && r.tvl_usd ? fmtMult(r.mcap_usd / r.tvl_usd) : 'n/a') + '</td>' +
+        '<td class="num">' + fmtPct(r.change_7d) + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    return h;
+  }
+  // The playbook costing, for the method tab: what the board's cost model
+  // leaves out, what the playbooks add, and what survives fully costed.
+  // Every number is counted from the rows, never hardcoded.
+  function playbookMethodHtml() {
+    var rows = DATA.rows.filter(function (r) { return r.playbook; });
+    if (rows.length === 0) return '';
+    var p25rows = rows.filter(function (r) { return r.farm.verdict === 'P25-POSITIVE'; });
+    var survive = p25rows.filter(function (r) { return r.playbook.netEvP25Full >= 0; });
+    var farmTop5 = DATA.rows.filter(function (r) { return r.farm.verdict === 'FARM' || r.farm.verdict === 'P25-POSITIVE'; })
+      .sort(function (a, b) { return b.farm.netEv - a.farm.netEv || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0); }).slice(0, 5);
+    var pureFarm5 = farmTop5.filter(function (r) { return r.farm.verdict === 'FARM'; });
+    var minFull = null, maxFull = null, minExtra = null, maxExtra = null;
+    rows.forEach(function (r) {
+      if (minFull === null || r.playbook.netEvFull < minFull) minFull = r.playbook.netEvFull;
+      if (maxFull === null || r.playbook.netEvFull > maxFull) maxFull = r.playbook.netEvFull;
+      if (minExtra === null || r.playbook.extraTotal < minExtra) minExtra = r.playbook.extraTotal;
+      if (maxExtra === null || r.playbook.extraTotal > maxExtra) maxExtra = r.playbook.extraTotal;
+    });
+    return '<h3>Playbooks: the farms, fully costed</h3>' +
+      '<p>Every Board P25-positive (pre-fee) row and the top-5 FARM rows carry a complete playbook on their detail view \u2014 the entry, every fee, the hold and the exit. Playbooks cover all ' + p25rows.length + ' Board P25-positive (pre-fee) rows plus the top-5 FARM rows by NetEV, deduped: the top-5 FARM by NetEV include ' + (farmTop5.length - pureFarm5.length) + ' rows already Board P25-positive (pre-fee), leaving ' + pureFarm5.length + ' pure FARM rows, so the dedup leaves ' + rows.length + ' playbooks in total. The board\u2019s cost model counts gas and opportunity cost only. A real farm also pays to get the capital in and out: a liquidity provision swaps half the capital into the paired asset at entry and back to USDC at exit (0.30% each way, the standard AMM tier); a stake swaps the whole capital both ways; a bridge to a non-Ethereum chain costs a $2.00 flat allowance per chain touched; unwinding the position costs one transaction per chain touched. The deposit/withdrawal protocol fee is assumed $0 \u2014 the protocols on this board charge no protocol-level deposit or withdrawal fee, and the playbook says to verify that on the protocol\u2019s own page. The swap rate and the bridge allowance are stated assumptions, not measured prices: the snapshot carries no fee data.</p>' +
+      '<p>Fully costed, the ' + rows.length + ' playbook farms net ' + fmtUsd2(minFull) + ' to ' + fmtUsd2(maxFull) + ' at the median (board NetEV minus the extra fees, which run ' + fmtUsd2(minExtra) + ' to ' + fmtUsd2(maxExtra) + ' per farm). At p25, ' + survive.length + ' of the ' + p25rows.length + ' Board P25-positive (pre-fee) rows still break even (' + survive.map(function (r) { return esc(r.name); }).join(', ') + (survive.length > 0 ? '' : 'none') + '); the others clear break-even at the median but not at the 25th percentile once the extra fees are counted. Their Board P25-positive (pre-fee) badge does not change \u2014 the badge is defined on board costs \u2014 but the fully costed floor is the number a farmer actually pockets, so the playbook prints both. Each playbook also breaks its extra fees into swap / bridge (chain count) / exit gas (tx count), so a $2.05 row reads as no swap plus one $2.00 bridge plus $0.05 exit gas \u2014 a property of its mechanism, not a missing fee.</p>' +
+      playbookDisclosuresHtml();
+  }
+  function methodHtml() {
+    var v = DATA.validation;
+    var b = v.bands;
+    var isHuber = FIT.ridgeHuber === true;
+    var big = DATA.rows[0];
+    DATA.rows.forEach(function (r) { if (r.tvl_usd > big.tvl_usd) big = r; });
+    var wlTotal = 0, wlP25 = 0, wlP75 = 0, vilTotal = 0;
+    DATA.rows.forEach(function (r) { if (r.is_watchlist) { wlTotal += r.implied_value_usd; wlP25 += r.uncertainty.p25; wlP75 += r.uncertainty.p75; vilTotal += r.model.value_if_launches; } });
+    var size = looRowNamed('size curve only');
+    // Best p25 net EV on the board (name + value, computed from the rows).
+    var bestP25 = null;
+    DATA.rows.forEach(function (r) {
+      if (r.farm.netEvP25 !== null && r.farm.netEvP25 !== undefined && (bestP25 === null || r.farm.netEvP25 > bestP25.farm.netEvP25)) bestP25 = r;
+    });
+    var vc = verdictCounts();
+    var farmTotal = (vc['P25-POSITIVE'] || 0) + vc.FARM;
+    // Risk Curators' single live peer, for the "what if we used it" counterfactual:
+    // the raw category median and what the biggest row would be worth at it.
+    var rcCat = catOf('Risk Curators');
+    var rcMed = rcCat === null ? null : rcCat.median;
+    var rcAlt = rcMed === null ? null : big.tvl_usd * rcMed * breakdownOf(big).sizeF * breakdownOf(big).growthMult * breakdownOf(big).mat;
+    var h = '<div class="panel"><h2>How this is priced</h2>' +
+      '<h3>The blind test first</h3>' +
+      '<p>Before anything else, the test \u2014 and the comparator. The model is fit on 80% of the ' + FIT.peerCount + ' live-token peers and evaluated on the held-out 20%, repeated five times with fixed seeds, with no tuning on the test set; the held-out peers are kept out of peer selection, winsorization, category calibration, size-curve fitting and hyperparameter selection. On that blind test the model\u2019s median error is <b>x' + fnum(v.blindMedianMaxRatio, '', 2, '') + ' against x' + fnum(v.flatBlindMedianMaxRatio, '', 2, '') + ' for a flat baseline</b> (the global median multiple, ' + FIT.globalMedian.toFixed(3) + 'x, applied to every peer \u2014 which ranks by TVL alone), and it wins on within-3x (' + v.blindWithin3.toFixed(1) + '% vs ' + fnum(v.flatBlindWithin3, '', 1, '%') + '). The paired 95% interval for the blind median advantage (1+|error|) is [' + fnum(v.flatBlindCiLo, '', 3, '') + ', ' + fnum(v.flatBlindCiHi, '', 3, '') + '] \u2014 it crosses zero, so the median advantage is not established on the blind splits; the advantage that holds up is on within-3x. It does not win on ranking: the flat TVL ranking scores a higher Spearman (' + fnum(v.flatBlindSpearman, '', 3, '') + ' vs ' + fnum(v.blindSpearman, '', 3, '') + ' blind), and the same holds on the time split \u2014 noise at n=' + v.timeSplitN + ', but stated plainly. The table below has every number, model against flat, on the identical frozen splits.</p>' +
+      '<h3>Validation \u2014 model vs flat, same splits</h3>' +
+      '<table class="plain"><thead><tr><th>Metric</th><th class="num">M0 blind x5</th><th class="num">Flat blind x5</th><th class="num">M0 time-split</th><th class="num">Flat time-split</th><th class="num">M0 LOO</th><th class="num">Flat LOO</th></tr></thead><tbody>' +
+      '<tr><td>Median 1+|error| (1+MdAPE)</td><td class="num">' + fnum(v.blindMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatBlindMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.timeSplitMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatTimeSplitMedian, 'x', 2, '') + '</td><td class="num">' + fnum(v.adoptedMedian, 'x', 2, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().median, 'x', 2, '') + '</td></tr>' +
+      '<tr><td>Median error (max-ratio)</td><td class="num">' + fnum(v.blindMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatBlindMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.timeSplitMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.flatTimeSplitMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(v.adoptedMedianMaxRatio, 'x', 2, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().medianMaxRatio, 'x', 2, '') + '</td></tr>' +
+      '<tr><td>Within 2x</td><td class="num">' + fnum(v.blindWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.flatBlindWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.timeSplitWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.flatTimeSplitWithin2, '', 1, '%') + '</td><td class="num">' + fnum(v.adoptedWithin2, '', 1, '%') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().within2, '', 1, '%') + '</td></tr>' +
+      '<tr><td>Within 3x</td><td class="num">' + fnum(v.blindWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.flatBlindWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.timeSplitWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.flatTimeSplitWithin3, '', 1, '%') + '</td><td class="num">' + fnum(v.adoptedWithin3, '', 1, '%') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().within3, '', 1, '%') + '</td></tr>' +
+      '<tr><td>Spearman(pred, act)</td><td class="num">' + fnum(v.blindSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.flatBlindSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.timeSplitSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.flatTimeSplitSpearman, '', 3, '') + '</td><td class="num">' + fnum(v.adoptedSpearman, '', 3, '') + '</td><td class="num">' + fnum(looFlatRow() === null ? null : looFlatRow().spearman, '', 3, '') + '</td></tr>' +
+      '<tr><td>Central band coverage</td><td class="num">' + (b.blindCov50 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.timeCov50 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.looCov50 === undefined ? 'n/a' : (b.looCov50 * 100).toFixed(1) + '%') + '</td><td class="num">\u2014</td></tr>' +
+      '<tr><td>80% band coverage</td><td class="num">' + (b.blindCov80 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.timeCov80 * 100).toFixed(1) + '%</td><td class="num">\u2014</td><td class="num">' + (b.looCov80 === undefined ? 'n/a' : (b.looCov80 * 100).toFixed(1) + '%') + '</td><td class="num">\u2014</td></tr>' +
+      '<tr><td>n</td><td class="num">' + b.blindN + '</td><td class="num">' + b.blindN + '</td><td class="num">' + v.timeSplitN + '</td><td class="num">' + v.timeSplitN + '</td><td class="num">' + v.peerCount + '</td><td class="num">' + v.peerCount + '</td></tr>' +
+      '</tbody></table>' +
+      '<p>Reading it honestly: the model beats flat on median error and within-3x (blind and time-split); it is tied on within-2x blind; and it is <b>worse on Spearman</b> \u2014 the flat TVL ranking out-ranks it on every split, so the value is in the point estimates and the tail, not the ordering. On leave-one-out the model wins on median error too (x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' vs x' + fnum(looFlatRow() === null ? null : looFlatRow().medianMaxRatio, '', 2, '') + ' flat) and on within-3x (' + v.adoptedWithin3.toFixed(1) + '% vs ' + fnum(looFlatRow() === null ? null : looFlatRow().within3, '', 1, '%') + '). Flat has no bands, so no coverage row.</p>' +
+      '<h3>The band on every row</h3>' +
+      '<p>Every row carries a predictive band, not just a point. The band is built by resampling the ' + FIT.peerCount + ' peers 200 times, refitting the model each time, predicting the row, and multiplying by one draw from the leave-one-out residual distribution; the p10/p90 ends are the 80% band and p25/p75 the central band (' + (b.blindCov50 * 100).toFixed(1) + '% coverage blind). This is an 80% <b>predictive</b> interval, not a confidence interval: it says where the token\u2019s value plausibly lands, not how precisely the model is estimated. On the blind splits the 80% band holds the true market cap <b>' + (b.blindCov80 * 100).toFixed(1) + '%</b> of the time (target 80%) and the central band <b>' + (b.blindCov50 * 100).toFixed(1) + '%</b> (target 50%) \u2014 the 80% band is calibrated and the central band slightly narrow, not decorative. On the time split they under-cover (' + (b.timeCov80 * 100).toFixed(1) + '% / ' + (b.timeCov50 * 100).toFixed(1) + '% on ' + b.timeN + ' newer listings), so blind calibration does not transfer perfectly to newer listings and a newer protocol\u2019s band is less reliable than the blind average suggests. The bands are wide \u2014 the median 80% band spans <b>' + b.boardWidth80.toFixed(0) + 'x</b> across the board \u2014 because the error distribution is heavy-tailed: the median leave-one-out error is x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ', but 1 in 10 peers is off by more than x' + v.adoptedP90MaxRatio.toFixed(1) + '. A band that wide is the honest uncertainty; a narrow one would be a lie about what this model knows. Endpoints move ~15% median (p10 18%, p25 14%, p75 15%, p90 15%; max 94% fstswap), 1,000 vs 200 resamples.</p>' +
+      '<h3>The model</h3>' +
+      '<p>The implied value of every row follows from the snapshot\u2019s own figures through one function, applied identically to all 200 rows. No protocol name is special-cased. The model is a <b>pricing yardstick, not a price target</b>.</p>' +
+      '<p><b>No top-10 scalar.</b> Round 3 lifted the top 10 rows by 1.15x; three independent audits called that an unjustified post-hoc patch, so it is gone (1.00x) \u2014 no rank #10/#11 cliff, and the watchlist total is ' + fmtUsd(wlTotal) + ' \u2014 the sum of point-estimate implied values (P25\u2013P75 ' + fmtUsd(wlP25) + '\u2013' + fmtUsd(wlP75) + '). That is the <b>expected</b> value (value-if-launches times token odds); the value-if-launches watchlist total is ' + fmtUsd(vilTotal) + '. <b>Ship rule, re-based in round 8:</b> the watchlist-total clause is evaluated on the value-if-launches total against the re-based reference ' + fmtUsd(vilTotal) + ' (band ' + fmtUsd(vilTotal * 0.75) + '\u2013' + fmtUsd(vilTotal * 1.25) + '). The old reference was $0.637B (band $478M\u2013$796M); the round-8 total is ' + ((vilTotal / 637e6 - 1) * 100).toFixed(1) + '% above it, outside the old band, because the maturity discount is gone (it cut young protocols by up to 40%) \u2014 the reference moves because the model\u2019s scale moved for a measured reason, and future variants are judged against the new band. The odds-weighted total sits below the old band by construction. The odds weighting lowers the expected total because the odds are a validated model (Brier ' + DATA.odds.brierLoo.toFixed(3) + ' / ' + DATA.odds.brierWf.toFixed(3) + ' against base-rate ' + DATA.odds.baseBrierLoo.toFixed(3) + ' / ' + DATA.odds.baseBrierWf.toFixed(3) + '), not a board error.</p>' +
+      '<p><b>Peers:</b> ' + FIT.peerCount + ' protocols that record a token with a market cap and a TVL (416 record a token; only 128 carry a market cap). ' + (fitUniverse() === null ? '' : 'The wider live-token universe is ' + fitUniverse() + ' protocols; ' + (setAsideCount() === null ? '' : setAsideCount() + ' of them are set aside from the fit because they record no listing date: they cannot be placed in the time split, and including them worsens the headline walk-forward (x2.19 to x2.80, measured). ')) +
+      '<b>Winsor bounds:</b> peer ratios clipped to [' + FIT.winsorLo.toFixed(4) + ', ' + FIT.winsorHi.toFixed(4) + ']. ' +
+      '<b>Global median multiple:</b> ' + FIT.globalMedian.toFixed(3) + 'x.</p>' +
+      '<p><b>Category offset (ridge):</b> each category carries an offset fitted jointly with the size curve by Huber-weighted ridge regression (penalty \u03bb=' + (FIT.ridgeLambda === null || FIT.ridgeLambda === undefined ? 'n/a' : FIT.ridgeLambda) + ' on the offsets only, intercept and slope unpenalised). A category with fewer than 3 live peers gets offset 0 and falls back to the global median TVL \u2014 so Risk Curators (12 of the 40 watchlist rows, 1 live peer) is priced at the global ' + FIT.globalMedian.toFixed(3) + 'x anchor, not at its single peer\u2019s ' + (rcMed === null ? 'n/a' : rcMed.toFixed(3) + 'x') + '. Using that one peer would put ' + esc(big.name) + ' at ' + (rcAlt === null ? 'n/a' : fmtUsd(rcAlt)) + '. The ridge replaces the round-6 two-stage shrunk-median category term, which helped leave-one-out and hurt walk-forward; the joint ridge improves walk-forward from x3.43 to x' + fnum(v.timeSplitMedianMaxRatio, '', 2, '') + ' (2025 cutoff) and x4.05 to x' + fnum(v.wfHalfMedianMaxRatio, '', 2, '') + ' (half/half). The ridge outcome is winsorized: log<sub>10</sub>(market cap) is clipped to the train set\u2019s 5th/95th percentiles (' + fmtUsd(Math.pow(10, FIT.ridgeWinsorLo)) + '\u2013' + fmtUsd(Math.pow(10, FIT.ridgeWinsorHi)) + ' on this fit) before the solve, so a few far-off peers cannot drag the slope \u2014 the winsorization is what takes the headline walk-forward from x2.65 (round 7, unwinsorized) to x' + fnum(v.timeSplitMedianMaxRatio, '', 2, '') + '.</p>' +
+      '<p><b>Size curve:</b> log10(market cap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL) + ridge offset[category], fitted on the ' + FIT.peerCount + ' peers (the slope is ' + Math.abs((FIT.sizeB - 1) / FIT.sizeSeB).toFixed(1) + ' standard errors below 1.0, so a flat multiple is rejected). Applied as a factor relative to the category\u2019s median TVL, so a big protocol is penalised against its own category\u2019s typical size.</p>' +
+      '<p><b>Why the biggest rows look cheap.</b> The size curve is sub-linear (\u03b2 = ' + FIT.sizeB.toFixed(3) + '), so a protocol far above its category\u2019s median TVL is priced at a small fraction of the category multiple. Take the largest TVL on the board, ' + esc(big.name) + ' (' + fmtUsd(big.tvl_usd) + '): its size factor is ' + breakdownOf(big).sizeF.toFixed(3) + 'x, so its implied ' + fmtUsd(big.implied_value_usd) + ' is only a ' + big.multiple.toFixed(3) + 'x multiple \u2014 not the raw ' + FIT.globalMedian.toFixed(3) + 'x global median. The multiples on the board are post-dampening, not raw category multiples.</p>' +
+      '<p><b>Growth and maturity: dropped in round 8.</b> Both multipliers are 1.00 for every row \u2014 the board is the fitted model, no priors. Measured: applying maturity to peers worsens the headline walk-forward from x2.65 to x3.05 (it discounts the newest test tokens by 17\u201340%), and kiencx and europa-nova both tested age for value and rejected it; growth alone is roughly neutral on prediction (walk-forward x2.61 with growth only vs x2.65 with neither, leave-one-out x2.81 vs x2.77) and dropping it raises the FARM count from 6 to 8 with the winsor fit. The value-model term table on the calibration tab shows both as tested terms.</p>' +
+      '<p><b>No chain multiplier.</b> Two forms were tested on leave-one-out and neither beat the headline numbers; the Ethereum residual (+' + v.chainEthDex.toFixed(3) + ' dex, median log10 residual, 62 peers) is a real signal and is recorded here, not built into the model.</p>' +
+      '<h3>Validation \u2014 the leave-one-out table</h3>' +
+      '<p>Leave-one-out on the ' + v.peerCount + ' live-token peers (full refit each fold, growth and maturity excluded): median error x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' (the median of max(pred/actual, actual/pred)), ' + v.adoptedWithin2.toFixed(1) + '% within 2x, ' + v.adoptedWithin3.toFixed(1) + '% within 3x. Median error is the median max-ratio: if half the peers land within 3x, the median error has to sit near 3x, and it does (x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + '). The older 1+|error| figure (x' + fnum(v.adoptedMedian, '', 2, '') + ' LOO) is a different statistic \u2014 1 plus the median absolute percentage error, which caps an under-prediction at 2x \u2014 and is not shown as the headline. The two definitions are not interchangeable, so the max-ratio is the like-for-like number to compare against another entry\u2019s quoted error.</p>' +
+      '<p>One systematic note: the median leave-one-out log10 residual is ' + fnum(v.adoptedBiasDex, '', 3, '') + ' dex \u2014 the typical prediction sits about ' + Math.round((1 - Math.pow(10, v.adoptedBiasDex)) * 100) + '% below the actual market cap (median pred/actual ' + Math.pow(10, v.adoptedBiasDex).toFixed(2) + 'x). The model underpredicts slightly; implied values are conservative, not inflated.</p>' +
+      '<table class="plain"><thead><tr><th>Model</th><th class="num">Median error (max-ratio)</th><th class="num">Median 1+|error|</th><th class="num">Within 2x</th><th class="num">Within 3x</th></tr></thead><tbody>' +
+      v.loo.map(function (r) {
+        return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">x' + r.medianMaxRatio.toFixed(2) + '</td><td class="num">x' + r.median.toFixed(2) + '</td><td class="num">' + r.within2.toFixed(1) + '%</td><td class="num">' + r.within3.toFixed(1) + '%</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p>On the median error (max-ratio) the adopted model is the best of the five (x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + '; the bare size curve is next at x' + (size ? fnum(size.medianMaxRatio, '', 2, '') : 'n/a') + ') and it wins on the tail (best within-3x) while keeping the board sane. No model clearly dominates on the median 1+|error|, which runs x' + Math.min.apply(null, v.loo.map(function (r) { return r.median; })).toFixed(2) + '\u2013x' + Math.max.apply(null, v.loo.map(function (r) { return r.median; })).toFixed(2) + ' across all five. ' + (isHuber ? 'The adopted fit is a Huber fit (\u03b4=1.0): it down-weights the outlying peers instead of letting a few extreme ratios drag the size curve, and it is the fit every number above is measured on. Damped slope, quadratic size curve, per-category curves and both chain multipliers were all tested on the same leave-one-out and none beats it cleanly.' : 'Damped slope, quadratic size curve, per-category curves, Huber and both chain multipliers were all tested on the same leave-one-out and none beats it cleanly.') + '</p>' +
+      '<p class="small">For completeness, the small print: the size curve\u2019s R\u00b2 is ' + FIT.sizeR2.toFixed(3) + ' (TVL explains only ' + (FIT.sizeR2 * 100).toFixed(1) + '% of the variance in market cap \u2014 the relationship is a yardstick, not a law), and Spearman(pred, act) is ' + v.adoptedSpearman.toFixed(3) + ' on leave-one-out and ' + (v.blindSpearman === null ? 'n/a' : v.blindSpearman.toFixed(3)) + ' on the blind splits.</p>' +
+      '<p><b>Ship rule, codified before the experiment:</b> a variant ships only if it beats the adopted model on blind median error AND blind Spearman with significance (paired 95% interval excludes zero), AND does not regress the time-split median, AND does not drop blind within-3x, AND keeps Spearman(pred, TVL) below 0.95, AND keeps the value-if-launches watchlist total within 25% of the re-based reference ' + fmtUsd(vilTotal) + ' (round 8 re-basing \u2014 the old $0.637B reference was set under the growth/maturity-discounted board; dropping both multipliers raised the value-if-launches total to ' + fmtUsd(vilTotal) + ', ' + ((vilTotal / 637e6 - 1) * 100).toFixed(1) + '% above the old reference, so the reference moves and future variants are judged against the new band ' + fmtUsd(vilTotal * 0.75) + '\u2013' + fmtUsd(vilTotal * 1.25) + '). The rule is necessary, not sufficient: a variant that passes it still has to keep a sane board. Two variants satisfied the old literal rule and were still rejected on noise (M1 t = 0.99, M2 t = 0.62). A four-way clean-comps experiment was run on the same frozen splits before this build; no variant met the rule, so the adopted model stands.</p>' +
+      '<p class="small">The numbers above are for the predictor without growth and maturity \u2014 and in round 8 the production board includes neither: both multipliers are 1.00, so the production board IS the validated predictor. (In round 7 the board applied them while the validation excluded them; the validation is unchanged in form, the board changed to match it.)</p>' +
+      '<p><b>Coherence:</b> Spearman between TVL and implied value across the 40 watchlist rows is ' + v.coherence.toFixed(3) + ' (bar 0.75) \u2014 the multipliers do not overpower TVL. <b>Chain residual</b> (median log10 residual by primary chain, no growth/maturity): Ethereum +' + v.chainEthDex.toFixed(3) + ' dex, Solana ' + v.chainSolDex.toFixed(3) + ' dex.</p>' +
+      '<h3>Calibration</h3>' + calibrationChart() +
+      '<h3>Farm verdicts</h3>' +
+      '<p>Each row\u2019s verdict is a visible subtraction, not a threshold on value. The hypothetical airdrop pool is 8% of the implied value (a stated assumption \u2014 the snapshot cannot establish whether an airdrop will happen); the farmer\u2019s share is the pool times $2,500 of capital over the protocol\u2019s TVL; the cost is the steps\u2019 gas plus 4.5% a year on the capital for 90 days. <b>FARM</b> needs a net expected value of at least $40 and at least 1.5x the cost; <b>THIN</b> needs a net expected value of at least $0; anything else is <b>SKIP</b>. The $40 threshold was set from the distribution so that it adds nothing the 1.5x ratio test has not already selected. A $2.75B-TVL curator gives a $2,500 position almost nothing \u2014 that is dilution, honestly reported, and why an impressive TVL never automatically means FARM.</p>' +
+      '<p><b>Board P25-positive (pre-fee)</b> is a FARM row whose net expected value is still at least $0 at the 25th percentile of the model\u2019s out-of-sample error (1 in 4 realisations is worse \u2014 p25 is not the low end), on top of the FARM gates ($40 net EV and 1.5x the cost at the median). No row on this board clears $40 at p25; the strongest p25 case is ' + (bestP25 === null ? 'n/a' : esc(bestP25.name) + ' at +' + fmtUsd2(bestP25.farm.netEvP25)) + '. The original $40-at-p25 bar returned zero rows, so the tier is defined by the break-even floor instead \u2014 a disclosed change, not a hidden one. Board P25-positive (pre-fee) is a subset of FARM (' + (vc['P25-POSITIVE'] || 0) + ' of ' + farmTotal + '), not a fourth tier. The badge is defined on board costs (gas + opportunity cost) only: fully costed p25 nets all fees, and ' + p25FullyCostedNegative().neg + ' of the ' + p25FullyCostedNegative().total + ' pre-fee P25-positive rows are negative once costs are counted (see playbooks). Every row also carries its <b>break-even odds</b> \u2014 the chance the token\u2019s value lands above the value at which the farm breaks even \u2014 and its <b>net $/hour</b>, the net expected value divided by the hands-on minutes the plan asks for, so a slow farm can be compared with a quick one on the same footing.</p>' +
+      playbookMethodHtml() +
+      '<h3>What this does not do</h3>' +
+      '<p>It does not predict <i>when</i> a token launches \u2014 the odds model gives the probability one ever does, not a date. It does not use any data outside the snapshot\u2019s ten fields. It does not call its output \u201cimplied FDV\u201d \u2014 the snapshot carries market capitalisation, not fully diluted value. Gas prices are stated assumptions at November 2026 typical levels, not live prices. The farm steps are proposed interactions to verify on the protocol\u2019s own page; nothing here claims a points program, a quest or an airdrop exists.</p>' +
+      '</div>';
+    return h;
+  }
+  // Model & calibration: the numbers behind the board, in one place. The
+  // method tab keeps the narrative; this tab is the ledger. Every figure is
+  // read from DATA; anything an older data file does not carry reads 'n/a'
+  // or is left out instead of throwing.
+  function calibrationHtml() {
+    var v = DATA.validation;
+    var b = v.bands || {};
+    var isHuber = FIT.ridgeHuber === true;
+    var flat = looFlatRow();
+    var h = '<div class="panel"><h2>Model &amp; calibration</h2>' +
+      '<p>The numbers behind the board, in one place. The narrative is on the \u201cHow this is priced\u201d tab; this tab is the ledger.</p>' +
+      '<h3>Fit peers</h3>' +
+      '<p><b>' + FIT.peerCount + '</b> fit peers' + (fitUniverse() === null ? '' : ' out of a <b>' + fitUniverse() + '</b>-protocol live-token universe') + (setAsideCount() === null ? '' : '; <b>' + setAsideCount() + '</b> set aside because they record no listing date: they cannot be placed in the time split, and including them worsens walk-forward (x2.19 to x2.80, measured)') + '. The traded-anchors tab lists the fit peers one by one.</p>' +
+      '<h3>The size curve (ridge)</h3>' +
+      '<p>log<sub>10</sub>(market cap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' &times; log<sub>10</sub>(TVL) + ridge offset[category], R\u00b2 = ' + FIT.sizeR2.toFixed(3) + (FIT.sizeSeB ? ' (slope standard error ' + FIT.sizeSeB.toFixed(3) + ')' : '') + '. ' +
+      'Fitted jointly by Huber-weighted ridge regression (\u03b4=1.0, iteratively reweighted least squares, 20 iterations; penalty \u03bb=' + (FIT.ridgeLambda === null || FIT.ridgeLambda === undefined ? 'n/a' : FIT.ridgeLambda) + ' on the category offsets only, intercept and slope unpenalised): the size curve and every category offset are fitted together, so a category\u2019s offset is what remains after the size curve, not a second-stage correction of it. The outcome is winsorized first: log<sub>10</sub>(market cap) is clipped to the train set\u2019s 5th/95th percentiles ([' + FIT.ridgeWinsorLo.toFixed(2) + ', ' + FIT.ridgeWinsorHi.toFixed(2) + '] on this fit) before the solve, so a few far-off peers cannot drag the slope. Outlying peers are down-weighted instead of dropped. Categories with fewer than ' + MODEL.minPeers + ' peers get offset 0. The ridge replaces the round-6 two-stage shrunk-median category term: the two-stage term helped leave-one-out and hurt walk-forward; the joint ridge improves walk-forward from x3.43 to x' + fnum(v.timeSplitMedianMaxRatio, '', 2, '') + ' (2025 cutoff) and x4.05 to x' + fnum(v.wfHalfMedianMaxRatio, '', 2, '') + ' (half/half) while leave-one-out improves to x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + '. Huber weighting wins leave-one-out (x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' vs x2.76 OLS) and both walk-forward splits (x' + fnum(v.timeSplitMedianMaxRatio, '', 2, '') + ' vs x2.28; x' + fnum(v.wfHalfMedianMaxRatio, '', 2, '') + ' vs x2.61) but loses the blind test (x' + fnum(v.blindMedianMaxRatio, '', 2, '') + ' vs x3.48 OLS; within-3x ' + v.blindWithin3.toFixed(1) + '% vs 47.4% OLS); it is kept for the headline splits (leave-one-out + 2025-cutoff walk-forward). Without winsorization, Huber lost the half/half split to OLS (x3.01 vs x2.83 in round 7) \u2014 the winsorization is what fixed that split.</p>' +
+      '<h3>Ridge settings and clamps</h3>' +
+      '<table class="plain"><thead><tr><th>Setting</th><th class="num">Value</th><th>What it does</th></tr></thead><tbody>' +
+      '<tr><td>Ridge penalty \u03bb</td><td class="num">' + (FIT.ridgeLambda === null || FIT.ridgeLambda === undefined ? 'n/a' : FIT.ridgeLambda) + '</td><td>Penalty on the category offsets only; intercept and slope unpenalised. Robust across \u03bb=1\u201364.</td></tr>' +
+      '<tr><td>Huber \u03b4</td><td class="num">' + (FIT.ridgeHuber ? '1.0' : 'off \u2014 OLS') + '</td><td>Iteratively reweighted least squares: outlying peers down-weighted, not dropped' + (FIT.ridgeHuber ? '' : ' (Huber off: plain OLS ridge)') + '</td></tr>' +
+      '<tr><td>Minimum peers per category</td><td class="num">' + MODEL.minPeers + '</td><td>Below this, the category offset is 0 and the median TVL falls back to the global median</td></tr>' +
+      '<tr><td>Winsor bounds</td><td class="num">[' + FIT.winsorLo.toFixed(4) + ', ' + FIT.winsorHi.toFixed(4) + ']</td><td>Peer ratios clipped to this range before fitting</td></tr>' +
+      '<tr><td>Ridge winsor (log<sub>10</sub> mcap)</td><td class="num">[' + FIT.ridgeWinsorLo.toFixed(3) + ', ' + FIT.ridgeWinsorHi.toFixed(3) + ']</td><td>Outcome clipped to the train set\u2019s 5th/95th percentiles before the ridge solve (round 8)</td></tr>' +
+      '<tr><td>Global median multiple</td><td class="num">' + FIT.globalMedian.toFixed(3) + 'x</td><td>The fallback multiple, and the flat baseline</td></tr>' +
+      '<tr><td>Growth clamp</td><td class="num">' + MODEL.growthFloor + '% to +' + MODEL.growthCap + '%</td><td>7-day change clipped before the growth factor (weight 0 in round 8, so the factor is 1.00)</td></tr>' +
+      '<tr><td>Growth weight</td><td class="num">' + MODEL.growthWeight + '</td><td>Growth factor 1 + clamp(change) / 100 &times; weight \u2014 weight 0 in round 8, so the factor is 1.00 (dropped; the board is the fitted model, no priors)</td></tr>' +
+      '<tr><td>Maturity</td><td class="num">1.00 (dropped)</td><td>Round 8 drops the maturity discount: every row is priced at full maturity. It worsened walk-forward (x2.65 to x3.05) and the top tier rejects age for value.</td></tr>' +
+      '<tr><td>Top-10 scalar</td><td class="num">' + MODEL.topScalar.toFixed(2) + 'x</td><td>Multiplier on the top 10 board rows (1.00x: none)</td></tr>' +
+      '</tbody></table>' +
+      '<h3>Leave-one-out, full table</h3>' +
+      '<p>Full refit each fold, growth and maturity excluded, on ' + v.peerCount + ' peers. The adopted row is bold. Median error is the median of max(pred/actual, actual/pred) \u2014 the statistic that reconciles with within-3x. The older 1+|error| figure is a different statistic and is not the headline.</p>' +
+      '<table class="plain"><thead><tr><th>Model</th><th class="num">Median error (max-ratio)</th><th class="num">Median 1+|error|</th><th class="num">Within 2x</th><th class="num">Within 3x</th></tr></thead><tbody>' +
+      v.loo.map(function (r) {
+        return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">x' + r.medianMaxRatio.toFixed(2) + '</td><td class="num">x' + r.median.toFixed(2) + '</td><td class="num">' + r.within2.toFixed(1) + '%</td><td class="num">' + r.within3.toFixed(1) + '%</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p>Adopted headline: median error x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' (max-ratio), 1+|error| x' + fnum(v.adoptedMedian, '', 2, '') + ', ' + fnum(v.adoptedWithin2, '', 1, '%') + ' within 2x, ' + fnum(v.adoptedWithin3, '', 1, '%') + ' within 3x (' + DATA.peers.filter(function (p) { return p.oofWithin3; }).length + ' of ' + v.peerCount + ' peers with listing dates), Spearman ' + fnum(v.adoptedSpearman, '', 3, '') + ', 1 in 10 peers off by more than x' + fnum(v.adoptedP90MaxRatio, '', 1, '') + '. Flat on the same peers: ' + (flat ? 'median error x' + fnum(flat.medianMaxRatio, '', 2, '') + ', within-3x ' + fnum(flat.within3, '', 1, '%') : 'n/a') + '.</p>' +
+      '<p>Median LOO log10 residual ' + fnum(v.adoptedBiasDex, '', 3, '') + ' dex: the typical prediction sits about ' + Math.round((1 - Math.pow(10, v.adoptedBiasDex)) * 100) + '% below the actual market cap (median pred/actual ' + Math.pow(10, v.adoptedBiasDex).toFixed(2) + 'x). The model underpredicts slightly; implied values are conservative, not inflated.</p>' +
+      (v.valueTermTable ? '<h3>Two-test term table (value model)</h3>' +
+      '<p>Each candidate value term, scored in leave-one-out and the 2025-cutoff walk-forward on the median max-ratio. A term is kept only when it lowers the miss in <b>both</b> tests relative to the adopted model (size curve + category ridge). The shipped model is <b>size curve + category ridge</b>.</p>' +
+      '<table class="plain"><thead><tr><th>Terms</th><th class="num">Median error LOO</th><th class="num">Within-3x LOO</th><th class="num">Median error walk-forward</th><th class="num">Within-3x WF</th><th>Status</th></tr></thead><tbody>' +
+      v.valueTermTable.map(function (r) {
+        return '<tr><td>' + (r.status === 'kept' ? '<b>' + esc(r.terms) + '</b>' : esc(r.terms)) + '</td><td class="num">x' + r.missLoo.toFixed(2) + '</td><td class="num">' + r.within3Loo.toFixed(1) + '%</td><td class="num">x' + r.missWf.toFixed(2) + '</td><td class="num">' + r.within3Wf.toFixed(1) + '%</td><td>' + esc(r.status) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p>Family: no name stem repeats among the 95 fit peers (all 95 have distinct first-word stems), so the family term adds no columns and the fit is identical to the adopted model \u2014 there is nothing for a family effect to fit on this peer set. 7-day growth and chain count are worse on both tests; age is much worse on walk-forward (x3.64 vs x2.19) \u2014 age does not price a token, it only predicts whether one is recorded, so it enters through the odds model. The control \u2014 the growth of another row \u2014 is much worse on walk-forward (x3.25 vs x2.19), so it does not help, as a placebo must not; its small leave-one-out edge (x2.71 vs x2.74) is noise at n=95.</p>' : '') +
+      '<h3>The 95-peer headline, and the 128-peer sensitivity</h3>' +
+      '<p>LOO within-3x <b>' + fnum(v.adoptedWithin3, '', 1, '%') + ' on the ' + v.peerCount + ' peers with listing dates; ' + fnum(v.loo128Within3, '', 1, '%') + ' on all ' + (fitUniverse() === null ? v.peerCount : fitUniverse()) + ' traded peers</b>. The 33 peers without a listing date are systematically harder \u2014 the difference is the cost of the listing-date requirement. The headline LOO is measured on the 95 peers with listing dates (the 33 cannot be placed in the time split, and including them worsens walk-forward); the 128 number is the same LOO run on the full traded universe (the predictor used here does not consume the listing date, so the 33 can be scored).</p>' +
+      '<table class="plain"><thead><tr><th>Model</th><th class="num">Within-3x (n=95)</th><th class="num">Within-3x (n=128)</th><th class="num">Change</th></tr></thead><tbody>' +
+      v.loo.map(function (r) {
+        var w128 = null;
+        if (r.model.indexOf('adopted') >= 0) w128 = v.loo128Within3;
+        else if (r.model.indexOf('size curve only') >= 0) w128 = v.loo128SizeWithin3;
+        else if (r.model.indexOf('flat 0.25x') >= 0) w128 = v.loo128FlatWithin3;
+        else if (r.model.indexOf('global median') >= 0) w128 = v.loo128GlobalWithin3;
+        return '<tr><td>' + (r.model.indexOf('adopted') >= 0 ? '<b>' + esc(r.model) + '</b>' : esc(r.model)) + '</td><td class="num">' + r.within3.toFixed(1) + '%</td><td class="num">' + (w128 === null || w128 === undefined ? 'n/a' : w128.toFixed(1) + '%') + '</td><td class="num">' + (w128 === null || w128 === undefined ? 'n/a' : (w128 - r.within3 >= 0 ? '+' : '') + (w128 - r.within3).toFixed(1) + 'pp') + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p>Spearman rises on n=128 for the adopted model (' + fnum(v.adoptedSpearman, '', 3, '') + ' \u2192 ' + fnum(v.loo128Spearman, '', 3, '') + ') and the size curve (' + (looRowNamed('size curve only') ? fnum(looRowNamed('size curve only').spearman, '', 3, '') : 'n/a') + ' \u2192 ' + fnum(v.loo128SizeSpearman, '', 3, '') + '): the dateless peers are harder to place within 3x but the overall ranking is preserved. The lift over the flat baselines survives the expansion (+' + (flat ? (v.adoptedWithin3 - flat.within3).toFixed(1) : 'n/a') + 'pp on n=95, +' + (v.loo128Within3 - v.loo128GlobalWithin3).toFixed(1) + 'pp on n=128).</p>' +
+      '<p>Denominators, reconciled: ' + DATA.board_size + ' board rows \u2192 ' + (fitUniverse() === null ? v.peerCount : fitUniverse()) + ' traded-token universe \u2192 ' + v.peerCount + ' scored peers \u2192 ' + v.timeSplitN + ' time-split.</p>' +
+      '<h3>Token odds model</h3>' +
+      '<p>P(protocol ever records a token), a logistic regression on the snapshot\u2019s own record: logit(P) = ' + DATA.odds.intercept.toFixed(3) + ' + ' + DATA.odds.ageCoef.toFixed(3) + ' &times; age in years + ' + DATA.odds.sizeCoef.toFixed(3) + ' &times; (ln(TVL) \u2212 ln($100M)). Fitted on ' + DATA.odds.trainN + ' rankable-type protocols with a listing date (base rate ' + (DATA.odds.baseRate * 100).toFixed(1) + '% record a token). The board\u2019s implied value is the value if a token launches, times these odds \u2014 the expected value. Brier score: <b>' + DATA.odds.brierLoo.toFixed(3) + ' leave-one-out</b> and <b>' + DATA.odds.brierWf.toFixed(3) + ' walk-forward</b> (fit listed before 2025-01-01, test listed on/after, n=' + DATA.odds.wfTestN + '), against base-rate Brier ' + DATA.odds.baseBrierLoo.toFixed(3) + ' / ' + DATA.odds.baseBrierWf.toFixed(3) + '; called right ' + (DATA.odds.calledRightLoo * 100).toFixed(0) + '% / ' + (DATA.odds.calledRightWf * 100).toFixed(0) + '%.</p>' +
+      '<p>One honest limit: the outcome is \u201crecords a token <i>by the snapshot date</i>\u201d. A protocol that has not recorded one yet may still do so, so the odds are a lower bound on the eventual probability, most of all for young protocols \u2014 the model knows a 6-month-old protocol has had less time to launch than a 3-year-old one, and that is exactly what the age term measures.</p>' +
+      '<h3>Two-test term table (token odds)</h3>' +
+      '<p>Each candidate term set, scored in leave-one-out and walk-forward. A term is kept only when it lowers the Brier score in <b>both</b> tests. The shipped model is <b>age + size</b>.</p>' +
+      '<table class="plain"><thead><tr><th>Terms</th><th class="num">Brier LOO</th><th class="num">Brier walk-forward</th><th class="num">Called right LOO</th><th class="num">Called right WF</th><th>Status</th></tr></thead><tbody>' +
+      DATA.odds.termTable.map(function (r) {
+        return '<tr><td>' + (r.status === 'kept' ? '<b>' + esc(r.terms) + '</b>' : esc(r.terms)) + '</td><td class="num">' + (r.brierLoo === null || r.brierLoo === undefined ? 'n/a' : r.brierLoo.toFixed(3)) + '</td><td class="num">' + (r.brierWf === null || r.brierWf === undefined ? 'n/a' : r.brierWf.toFixed(3)) + '</td><td class="num">' + (r.calledRightLoo === null || r.calledRightLoo === undefined ? 'n/a' : (r.calledRightLoo * 100).toFixed(0) + '%') + '</td><td class="num">' + (r.calledRightWf === null || r.calledRightWf === undefined ? 'n/a' : (r.calledRightWf * 100).toFixed(0) + '%') + '</td><td>' + esc(r.status) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<p>Family (a ridge on the name stem) improves leave-one-out only and ties walk-forward, so it is not kept; 7-day growth does not lower walk-forward Brier; chain count does not help; the control \u2014 the growth of another row \u2014 does not help, as a placebo must not.</p>' +
+      '<h3>Band calibration</h3>' +
+      '<p>80% band coverage on the blind splits: ' + (b.blindCov80 === undefined ? 'n/a' : (b.blindCov80 * 100).toFixed(1) + '%') + ' (target 80%); central band: ' + (b.blindCov50 === undefined ? 'n/a' : (b.blindCov50 * 100).toFixed(1) + '%') + ' (target 50%). On the time split: ' + (b.timeCov80 === undefined ? 'n/a' : (b.timeCov80 * 100).toFixed(1) + '%') + ' / ' + (b.timeCov50 === undefined ? 'n/a' : (b.timeCov50 * 100).toFixed(1) + '%') + ' on ' + (b.timeN === undefined ? 'n/a' : b.timeN) + ' newer listings. The median 80% band across the board spans ' + (b.boardWidth80 === undefined ? 'n/a' : b.boardWidth80.toFixed(0) + 'x') + '.</p>' +
+      '<h3>Range-honesty audit: do the stated bands hold?</h3>' +
+      '<table class="plain"><thead><tr><th>Cohort</th><th class="num">n</th><th class="num">P25\u2013P75 measured (stated 50%)</th><th class="num">P10\u2013P90 measured (stated 80%)</th></tr></thead><tbody>' +
+      '<tr><td>Leave-one-out</td><td class="num">' + (b.looN === undefined ? 'n/a' : b.looN) + '</td><td class="num">' + (b.looCov50 === undefined ? 'n/a' : (b.looCov50 * 100).toFixed(1) + '% (' + Math.round(b.looCov50 * b.looN) + '/' + b.looN + ')') + '</td><td class="num">' + (b.looCov80 === undefined ? 'n/a' : (b.looCov80 * 100).toFixed(1) + '% (' + Math.round(b.looCov80 * b.looN) + '/' + b.looN + ')') + '</td></tr>' +
+      '<tr><td>Blind 80/20, five splits \u00d7 19</td><td class="num">' + (b.blindN === undefined ? 'n/a' : b.blindN) + '</td><td class="num">' + (b.blindCov50 === undefined ? 'n/a' : (b.blindCov50 * 100).toFixed(1) + '% (' + Math.round(b.blindCov50 * b.blindN) + '/' + b.blindN + ')') + '</td><td class="num">' + (b.blindCov80 === undefined ? 'n/a' : (b.blindCov80 * 100).toFixed(1) + '% (' + Math.round(b.blindCov80 * b.blindN) + '/' + b.blindN + ')') + '</td></tr>' +
+      '<tr><td>Time-split walk-forward, listed 2025+</td><td class="num">' + (b.timeN === undefined ? 'n/a' : b.timeN) + '</td><td class="num">' + (b.timeCov50 === undefined ? 'n/a' : (b.timeCov50 * 100).toFixed(1) + '% (' + Math.round(b.timeCov50 * b.timeN) + '/' + b.timeN + ')') + '</td><td class="num">' + (b.timeCov80 === undefined ? 'n/a' : (b.timeCov80 * 100).toFixed(1) + '% (' + Math.round(b.timeCov80 * b.timeN) + '/' + b.timeN + ')') + '</td></tr>' +
+      '</tbody></table>' +
+      '<p>Reading it: the bands are honest on leave-one-out and on the blind splits \u2014 the measured coverage sits within a few points of the stated 50% and 80% on both \u2014 and the central band is slightly narrow blind (' + (b.blindCov50 === undefined ? 'n/a' : (b.blindCov50 * 100).toFixed(1) + '%') + ' vs 50%). The 80% band under-covers on the time split (' + (b.timeCov80 === undefined ? 'n/a' : (b.timeCov80 * 100).toFixed(1) + '%') + ' on ' + (b.timeN === undefined ? 'n/a' : b.timeN) + ' newer listings), so a newer protocol\u2019s band is less reliable than the blind average suggests. Method: each leave-one-out peer\u2019s band is built from the other 94 peers and their leave-one-out residuals \u2014 the peer\u2019s own residual never enters its band \u2014 through the same bootstrap refits the board bands use, so this tests the implemented band construction, not just the residual quantiles. Blind n=95 is five splits \u00d7 19 held-out peers, pooled.</p>' +
+      (v.looBandRatioLo !== null && v.looBandRatioLo !== undefined && v.looBandRatioHi !== null && v.looBandRatioHi !== undefined ? '<p>Leave-one-out band for actual/implied: the middle half of ratios runs <b>' + v.looBandRatioLo.toFixed(2) + 'x\u2013' + v.looBandRatioHi.toFixed(2) + 'x</b> \u2014 this is the shaded band in the scatter chart on the board tab.</p>' : '') +
+      '</div>';
+    return h;
+  }
+  // Traded anchors: the fit peers, kept apart from the board because their
+  // tokens already trade. Each row shows the peer's OUT-OF-FOLD implied
+  // value — the prediction from a model fitted without that peer — plus a
+  // within-3x hit flag, so the 48/95 leave-one-out count is checkable here.
+  // Full-fit implied values are never shown for the peers: they would not
+  // reproduce the count. Sortable by ratio, TVL, market cap, out-of-fold
+  // implied value and name, through the shared th[data-sort] handler.
+  function anchorsHtml() {
+    var peers = DATA.peers.slice();
+    var hits = peers.filter(function (p) { return p.oofWithin3; }).length;
+    var key = state.sort;
+    var dir = state.dir;
+    function oofOf(p) {
+      return (p.oofImplied === null || p.oofImplied === undefined) ? -1 : p.oofImplied;
+    }
+    function oofRatio(p) {
+      return (p.oofImplied === null || p.oofImplied === undefined || p.oofImplied <= 0) ? -1 : p.mcap_usd / p.oofImplied;
+    }
+    peers.sort(function (a, b) {
+      var av, bv;
+      if (key === 'atvl') { av = a.tvl_usd; bv = b.tvl_usd; }
+      else if (key === 'amcap') { av = a.mcap_usd; bv = b.mcap_usd; }
+      else if (key === 'aimplied') { av = oofOf(a); bv = oofOf(b); }
+      else if (key === 'aname') { return (a.name < b.name ? -1 : 1) * dir; }
+      else { av = oofRatio(a); bv = oofRatio(b); }
+      return (av - bv) * dir || (a.slug < b.slug ? -1 : 1);
+    });
+    var h = '<div class="panel"><h2>Traded anchors</h2><p>The ' + DATA.peers.length + ' live-token peers the size curve is fitted on, kept apart from the board because these tokens already trade \u2014 they are the yardstick, not farm targets. <b>' + hits + ' of ' + DATA.peers.length + ' peers land within 3x out-of-fold \u2014 count them here.</b> Each row shows the peer\u2019s out-of-fold implied value: the prediction from a model fitted without that peer, so the hit count is the honest leave-one-out score, not the in-sample fit.' + (setAsideCount() === null ? '' : ' Another ' + setAsideCount() + ' live-token protocols are set aside from this list: they record no listing date, so the fit cannot place them.') + ' Click a column to sort; the ratio column sorts by actual market cap over out-of-fold implied value.</p></div>';
+    h += '<table class="plain"><thead><tr><th data-sort="aname">Peer</th><th class="num" data-sort="atvl">TVL</th><th class="num" data-sort="amcap">Market cap</th><th class="num" data-sort="aimplied">Out-of-fold implied</th><th class="num" data-sort="aratio">Actual / implied</th><th>Within 3x</th></tr></thead><tbody>';
+    peers.forEach(function (p) {
+      var imp = p.oofImplied;
+      var ratio = (imp === null || imp === undefined || imp <= 0) ? null : p.mcap_usd / imp;
+      h += '<tr><td><b>' + esc(p.name) + '</b><span class="cat">' + esc(p.category || 'Uncategorised') + '</span></td>' +
+        '<td class="num">' + fmtUsd(p.tvl_usd) + '</td><td class="num">' + fmtUsd(p.mcap_usd) + '</td><td class="num">' + (imp === null || imp === undefined ? 'n/a' : fmtUsd(imp)) + '</td><td class="num">' + (ratio === null ? 'n/a' : fmtMult(ratio)) + '</td><td>' + (p.oofWithin3 === true ? '\u2713 hit' : p.oofWithin3 === false ? '\u2717 miss' : 'n/a') + '</td></tr>';
+    });
+    h += '</tbody></table>';
+    return h;
+  }
+  // The fully costed playbook for one FARM row: the entry, every fee the
+  // board does not count, the hold, the exit, and the net EV at p10/p25/p50/p75
+  // after those fees. The board's NetEV is shown beside the fully costed
+  // figure at every percentile, so the two reconcile on sight: fully
+  // costed = board − extra fees. The verdict is not re-decided here — it
+  // is defined on board costs — and when the fully costed p25 goes
+  // negative on a P25-POSITIVE row, the text says so plainly.
+  function playbookHtml(row) {
+    var pb = row.playbook;
+    if (!pb) return '';
+    var f = row.farm;
+    var p25survives = pb.netEvP25Full >= 0;
+    var margin = (pb.breakevenFull > 0 && row.implied_value_usd > 0) ? (row.implied_value_usd / pb.breakevenFull) : null;
+    var h = '<h3 id="playbook">Playbook: fully costed</h3>' +
+      '<p><b>Entry:</b> $' + pb.capital.toLocaleString('en-US') + ' into ' + esc(row.name) + '\u2019s ' + esc(row.mechanism || '') + ' on ' + esc(pb.entryChain || 'its main chain') + (pb.secondChain ? ' and ' + esc(pb.secondChain) : '') + '; hold ' + pb.holdDays + ' days; ' + pb.handsOnMinutes + ' hands-on minutes. <b>Exit:</b> ' + esc(pb.exit) + '</p>' +
+      '<table class="plain"><thead><tr><th>Cost line</th><th class="num">Amount</th><th>What it is</th></tr></thead><tbody>' +
+      '<tr><td>Board gas</td><td class="num">' + fmtUsd2(pb.boardGas) + '</td><td>16 transactions at the chain\u2019s gas price (setup, deposit, weekly actions, claim)</td></tr>' +
+      '<tr><td>Board opportunity cost</td><td class="num">' + fmtUsd2(pb.boardOpp) + '</td><td>4.5% a year on the capital for ' + MODEL.holdDays + ' days</td></tr>' +
+      pb.extraFees.map(function (fee) {
+        return '<tr><td>' + esc(fee.label) + '</td><td class="num">' + fmtUsd2(fee.amountUsd) + '</td><td>' + esc(fee.basis) + '</td></tr>';
+      }).join('') +
+      '<tr><td><b>Total, fully costed</b></td><td class="num"><b>' + fmtUsd2(pb.fullyCostedTotal) + '</b></td><td>Board cost ($' + fmtUsd2(pb.boardTotal) + ') + extra fees ($' + fmtUsd2(pb.extraTotal) + ')</td></tr>' +
+      '</tbody></table>' +
+      '<p class="small"><b>Extra-fee split:</b> ' + feeSplitText(pb, row) + '. The split sums exactly to the extra fees above.</p>' +
+      '<table class="plain"><thead><tr><th>Net EV</th><th class="num">p10</th><th class="num">p25</th><th class="num">Median</th><th class="num">p75</th></tr></thead><tbody>' +
+      '<tr><td>Board costs</td><td class="num">' + (pb.netEvP10Board >= 0 ? '+' : '') + fmtUsd2(pb.netEvP10Board) + '</td><td class="num">' + (pb.netEvP25Board >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Board) + '</td><td class="num">' + (pb.netEvBoard >= 0 ? '+' : '') + fmtUsd2(pb.netEvBoard) + '</td><td class="num">' + (pb.netEvP75Board >= 0 ? '+' : '') + fmtUsd2(pb.netEvP75Board) + '</td></tr>' +
+      '<tr><td><b>Fully costed</b></td><td class="num"><b>' + (pb.netEvP10Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP10Full) + '</b></td><td class="num"><b>' + (pb.netEvP25Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Full) + '</b></td><td class="num"><b>' + (pb.netEvFull >= 0 ? '+' : '') + fmtUsd2(pb.netEvFull) + '</b></td><td class="num"><b>' + (pb.netEvP75Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP75Full) + '</b></td></tr>' +
+      '</tbody></table>' +
+      '<p class="small"><b>Break-even / Implied (market cap, fully-costed):</b> ' + fmtUsd(pb.breakevenFull) + ' / ' + fmtUsd(row.implied_value_usd) + (margin === null ? '' : ' \u2014 ' + margin.toFixed(2) + 'x safety margin') + '. The token must be worth at least the break-even for the position to pay for itself after all fees; on board costs alone the break-even is ' + fmtUsd(pb.breakevenBoard) + '. Both figures are market capitalisation, not fully diluted value \u2014 the snapshot carries market capitalisation.</p>' +
+      '<p class="small">' + (p25survives ? '<b>Fully costed, this row still breaks even at p25</b> (' + (pb.netEvP25Full >= 0 ? '+' : '') + fmtUsd2(pb.netEvP25Full) + ') \u2014 the plan pays even if the value lands at the 25th percentile after every fee is counted.' : '<b>Fully costed, this row no longer breaks even at p25</b> (' + fmtUsd2(pb.netEvP25Full) + ') \u2014 the ' + verdictLabel(f.verdict) + ' badge is defined on board costs (gas + opportunity cost) only, and the extra fees move the floor below zero. At the median it still pays (' + (pb.netEvFull >= 0 ? '+' : '') + fmtUsd2(pb.netEvFull) + ' fully costed), but the downside case is a loss, not a wash.') + ' The swap rate (0.30%, the standard AMM tier) and the $2.00 bridge allowance are stated assumptions, not measured prices \u2014 the snapshot carries no fee data \u2014 and the deposit/withdrawal fee is assumed $0; check the protocol\u2019s own page before farming, because a protocol that charges an exit fee breaks this arithmetic.</p>' +
+      playbookDisclosuresHtml();
+    return h;
+  }
+  function detailHtml(row) {
+    var b = breakdownOf(row);
+    var base = row.tvl_usd * b.mult;
+    var afterSize = base * b.sizeF;
+    var afterGrowth = afterSize * b.growthMult;
+    var afterMat = afterGrowth * b.mat;
+    var afterOdds = afterMat * b.odds;
+    var f = row.farm;
+    // Downside economics at the band's low end (p25): the same pool/share
+    // arithmetic as the verdict, but with the implied value at p25 instead of
+    // the median. The cost is unchanged (gas + opportunity cost do not depend
+    // on the implied value). Computed here from the row's own band and farm
+    // fields, so the page never pastes a number it cannot recompute.
+    var p25 = row.uncertainty ? row.uncertainty.p25 : null;
+    var pool25 = p25 === null ? null : MODEL.poolShare * p25;
+    var share25 = pool25 === null ? null : pool25 * (f.capital / row.tvl_usd);
+    var netEv25 = share25 === null ? null : share25 - f.totalCost;
+    var p10 = row.uncertainty.p10;
+    var netEv10 = MODEL.poolShare * p10 * f.capital / row.tvl_usd - f.totalCost;
+    var width80 = row.uncertainty ? row.uncertainty.p90 / row.uncertainty.p10 : null;
+    // P25-POSITIVE note: clears the FARM gates at the median ($40 net EV, 1.5x
+    // the cost) AND net EV at least $0 at the 25th percentile of the model's
+    // out-of-sample error (1 in 4 realisations is worse — p25 is not the low
+    // end). Prefer the model's own p25 economics when the data file
+    // carries them; otherwise fall back to the p25 arithmetic computed above.
+    var p25ev = (f.netEvP25 !== null && f.netEvP25 !== undefined) ? f.netEvP25 : netEv25;
+    var p25Note = '';
+    if (f.verdict === 'P25-POSITIVE') p25Note = ' <b>Board P25-positive (pre-fee)</b> means this row clears the FARM gates at the median ($40 net EV, 1.5x the cost) and its net EV is still at least $0 at the 25th percentile of the model\u2019s out-of-sample error: net EV at p25 is ' + (p25ev === null ? 'n/a' : (p25ev >= 0 ? '+' : '') + fmtUsd2(p25ev)) + (f.netEvRatioP25 !== null && f.netEvRatioP25 !== undefined ? ' (' + f.netEvRatioP25.toFixed(2) + 'x the cost)' : '') + ' \u2014 the plan still pays even if the value lands at the 25th percentile. The badge is defined on board costs only; the fully costed p25 is in the playbook below.';    var beNote = '';
+    if (f.breakevenOdds !== null && f.breakevenOdds !== undefined) {
+      beNote = ' Break-even odds ' + fmtOdds(f.breakevenOdds) + (f.breakevenValue !== null && f.breakevenValue !== undefined ? ' \u2014 the farm breaks even at an implied value of ' + fmtUsd(f.breakevenValue) : '') + (f.netPerHour !== null && f.netPerHour !== undefined ? '; net ' + fmtPerHour(f.netPerHour) + ' per hands-on hour' : '') + '.';
+    }
+    // Nearest traded comps: the 3 closest peers in the same category by
+    // log-TVL distance; when the category has no peer at all, the nearest
+    // by TVL across all categories, and the caption says so.
+    var sameCat = DATA.peers.filter(function (p) { return p.category === row.category; });
+    var compPool = sameCat.length > 0 ? sameCat : DATA.peers.slice();
+    var compNote = sameCat.length > 0 ? 'Nearest live-token peers in the same category (by TVL):' : 'No peer in this category \u2014 nearest by TVL across all categories:';
+    var peers = compPool.map(function (p) {
+      return { p: p, d: Math.abs(Math.log(p.tvl_usd) - Math.log(row.tvl_usd)) };
+    }).sort(function (a, c) { return a.d - c.d; }).slice(0, 3);
+    var h = '<div class="detail"><div class="sheet">' +
+      '<button class="close" id="d-close">Close</button>' +
+      '<h2>' + esc(row.name) + '</h2>' +
+      '<p class="meta">Rank #' + row.rank + ' &middot; ' + esc(row.category || 'Uncategorised') + ' &middot; ' + esc((row.chains || []).join(', ') || 'no chain') + ' &middot; ' + esc(row.slug) + (row.is_watchlist ? ' &middot; <span class="wl">WATCHLIST</span>' : '') + '</p>' +
+      '<div class="kv">' +
+      '<div><div class="k">Implied value</div><div class="v">' + fmtUsd(row.implied_value_usd) + '</div></div>' +
+      '<div><div class="k">Value if launches</div><div class="v">' + fmtUsd(row.model.value_if_launches) + '</div></div>' +
+      '<div><div class="k">Token odds</div><div class="v">' + (row.odds * 100).toFixed(0) + '%</div></div>' +
+      '<div><div class="k">Multiple</div><div class="v">' + fmtMult(row.multiple) + ' <small>of TVL</small></div></div>' +
+      '<div><div class="k">TVL</div><div class="v">' + fmtUsd(row.tvl_usd) + '</div></div>' +
+      '<div><div class="k">7-day change</div><div class="v">' + fmtPct(row.change_7d) + '</div></div>' +
+      '<div><div class="k">Age</div><div class="v">' + fmtAge(row.age_days) + '</div></div>' +
+      '<div><div class="k">Verdict</div><div class="v">' + verdictBadge(f.verdict) + '</div></div>' +
+      (f.breakevenOdds === null || f.breakevenOdds === undefined ? '' : '<div><div class="k">Break-even odds</div><div class="v">' + fmtOdds(f.breakevenOdds) + '</div></div>') +
+      (f.netPerHour === null || f.netPerHour === undefined ? '' : '<div><div class="k">Net $/hour</div><div class="v">' + fmtPerHour(f.netPerHour) + '</div></div>') +
+      (f.handsOnMinutes === null || f.handsOnMinutes === undefined ? '' : '<div><div class="k">Hands-on time</div><div class="v">' + f.handsOnMinutes + ' min</div></div>') +
+      '<div><div class="k">Central band (45% coverage)</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p25) + ' \u2013 ' + fmtUsd(row.uncertainty.p75) + ' <small>(' + (row.uncertainty.p75 / row.uncertainty.p25).toFixed(1) + 'x)</small>' : 'n/a') + '</div></div>' +
+      '<div><div class="k">80% band (predictive)</div><div class="v">' + (row.uncertainty ? fmtUsd(row.uncertainty.p10) + ' \u2013 ' + fmtUsd(row.uncertainty.p90) + ' <small>(' + (row.uncertainty.p90 / row.uncertainty.p10).toFixed(0) + 'x)</small>' : 'n/a') + '</div></div>' +
+      '<div><div class="k">Farm mechanism</div><div class="v">' + esc(row.mechanism || '') + '</div></div>' +
+      '</div>' +
+      '<h3>How the value is derived</h3>' +
+      '<div class="formula">implied = TVL &times; ' + b.mult.toFixed(3) + ' (' + esc(row.category || 'Uncategorised') + ', ' + b.n + ' peer' + (b.n === 1 ? '' : 's') + (b.n < MODEL.minPeers ? ' \u2014 global fallback' : '') + ') &times; ' + b.sizeF.toFixed(3) + ' (size) &times; ' + b.growthMult.toFixed(3) + ' (growth) &times; ' + b.mat.toFixed(3) + ' (maturity) &times; ' + b.odds.toFixed(2) + ' (token odds) = ' + fmtUsd(row.implied_value_usd) + '</div>' +
+      '<div class="wf">' +
+      '<div class="step"><div class="op">TVL</div><div class="val">' + fmtUsd(row.tvl_usd) + '</div><div class="lab">the protocol\u2019s locked value</div></div><span class="arr">&times;</span>' +
+      '<div class="step"><div class="op">category ' + b.mult.toFixed(3) + 'x</div><div class="val">' + fmtUsd(base) + '</div><div class="lab">ridge-anchored multiple' + (b.n < MODEL.minPeers ? ' (global fallback)' : ' (n=' + b.n + ')') + '</div></div><span class="arr">&times;</span>' +
+      '<div class="step"><div class="op">size ' + b.sizeF.toFixed(3) + 'x</div><div class="val">' + fmtUsd(afterSize) + '</div><div class="lab">category median TVL ' + fmtUsd(b.medTvl) + '</div></div><span class="arr">&times;</span>' +
+      '<div class="step"><div class="op">growth ' + b.growthMult.toFixed(3) + 'x</div><div class="val">' + fmtUsd(afterGrowth) + '</div><div class="lab">7d ' + fmtPct(b.growth) + '</div></div><span class="arr">&times;</span>' +
+      '<div class="step"><div class="op">maturity ' + b.mat.toFixed(3) + 'x</div><div class="val">' + fmtUsd(afterMat) + '</div><div class="lab">' + fmtAge(row.age_days) + ' old</div></div><span class="arr">&times;</span>' +
+      '<div class="step"><div class="op">token odds ' + b.odds.toFixed(2) + '</div><div class="val">' + fmtUsd(afterOdds) + '</div><div class="lab">P(records a token)</div></div>' +
+      '</div>' +
+      '<p class="small">Every number above is hand-recomputable from the snapshot: the category multiple is the ridge anchor \u2014 10^(size curve at the category median TVL + ridge offset) / median TVL \u2014 over ' + b.n + ' live peers, with the ridge offset fitted jointly with the size curve (penalty \u03bb=' + (FIT.ridgeLambda === null || FIT.ridgeLambda === undefined ? 'n/a' : FIT.ridgeLambda) + ' on the offsets only). The fitted size curve is log10(mcap) = ' + FIT.sizeA.toFixed(3) + ' + ' + FIT.sizeB.toFixed(3) + ' x log10(TVL) + offset, R\u00b2 = ' + FIT.sizeR2.toFixed(3) + '. The token odds come from a logistic on age and ln(TVL) (Brier ' + DATA.odds.brierLoo.toFixed(3) + ' leave-one-out, ' + DATA.odds.brierWf.toFixed(3) + ' walk-forward, against base-rate ' + DATA.odds.baseBrierLoo.toFixed(3) + ' / ' + DATA.odds.baseBrierWf.toFixed(3) + '), so the implied value is the expected value \u2014 the value if a token launches (' + fmtUsd(row.model.value_if_launches) + '), times the probability one ever does. The value is shown to 3 significant figures; the model\u2019s median error is x' + DATA.validation.adoptedMedianMaxRatio.toFixed(2) + ' (median max-ratio), so read it as a yardstick, not a price target.</p>' +
+      '<p class="small">The band is a bootstrap predictive interval, not a confidence interval: 200 resamples of the ' + FIT.peerCount + ' peers, refit each time, plus one draw from the leave-one-out residual distribution. On the blind splits the 80% band holds the true market cap ' + (DATA.validation.bands.blindCov80 * 100).toFixed(1) + '% of the time and the central band ' + (DATA.validation.bands.blindCov50 * 100).toFixed(1) + '%. On the time split the bands under-cover (' + (DATA.validation.bands.timeCov80 * 100).toFixed(1) + '% / ' + (DATA.validation.bands.timeCov50 * 100).toFixed(1) + '%), so blind calibration does not transfer perfectly to newer listings. The band is wide because the error distribution is heavy-tailed: the median leave-one-out error is x' + DATA.validation.adoptedMedianMaxRatio.toFixed(2) + ' but 1 in 10 peers is off by more than x' + DATA.validation.adoptedP90MaxRatio.toFixed(1) + '.</p>' +
+      '<h3>Nearest traded comps</h3>' + compsChart(row) +
+      '<p class="small">' + compNote + '</p>' +
+      '<table class="plain"><thead><tr><th>Peer</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">Out-of-fold implied</th><th class="num">Actual / implied</th></tr></thead><tbody>' +
+      peers.map(function (q) {
+        var oof = q.p.oofImplied;
+        var ratio = (oof === null || oof === undefined || oof <= 0) ? null : q.p.mcap_usd / oof;
+        return '<tr><td>' + esc(q.p.name) + '</td><td class="num">' + fmtUsd(q.p.tvl_usd) + '</td><td class="num">' + fmtUsd(q.p.mcap_usd) + '</td><td class="num">' + (oof === null || oof === undefined ? 'n/a' : fmtUsd(oof)) + '</td><td class="num">' + (ratio === null ? 'n/a' : fmtMult(ratio)) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      '<h3>Farm plan</h3>' +
+      '<div class="verdictbox ' + verdictClass(f.verdict) + '"><b>' + verdictLabel(f.verdict) + '</b>' + p25FullMarker(row) + ' &middot; net expected value <span class="net">' + (f.netEv >= 0 ? '+' : '') + fmtUsd2(f.netEv) + '</span> on $' + f.capital.toLocaleString('en-US') + ' of capital' +
+      '<br><span class="small">Hypothetical pool 8% of implied value = ' + fmtUsd(f.pool) + '; your share (pool x $' + f.capital.toLocaleString('en-US') + ' / ' + fmtUsd(row.tvl_usd) + ' TVL) = ' + fmtUsd2(f.share) + '; gas ' + fmtUsd2(f.gasTotal) + ' + opportunity cost ' + fmtUsd2(f.oppCost) + ' = ' + fmtUsd2(f.totalCost) + ' total; share &minus; cost = ' + fmtUsd2(f.netEv) + ' (' + f.netEvRatio.toFixed(2) + 'x the cost). FARM needs at least $40 and 1.5x; THIN needs at least $0.' + p25Note + beNote + '</span></div>' +
+      '<ol class="steps">' + row.farm_steps.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ol>' +
+      '<p class="small"><b>Downside:</b> at the 25th percentile (p25 ' + (p25 === null ? 'n/a' : fmtUsd(p25)) + ') the pool is ' + (pool25 === null ? 'n/a' : fmtUsd(pool25)) + ', your share ' + (share25 === null ? 'n/a' : fmtUsd2(share25)) + ', the same cost ' + fmtUsd2(f.totalCost) + ', so net EV ' + (netEv25 === null ? 'n/a' : (netEv25 >= 0 ? '+' : '') + fmtUsd2(netEv25)) + '. Judged at the median; p25 is the 25th percentile of the model\u2019s out-of-sample error \u2014 1 in 4 realisations is worse, not the low end.</p>' +
+      (f.verdict === 'FARM' || f.verdict === 'P25-POSITIVE' ? '<p class="small"><b>P10:</b> ' + fmtUsd(p10) + ' net EV ' + (netEv10 >= 0 ? '+' : '') + fmtUsd2(netEv10) + '. Farm only if it clears p10.</p>' : '') +
+      '<p class="small"><b>Risk:</b> the implied value is a yardstick, not a price target; the 80% band spans ' + (width80 === null ? 'n/a' : width80.toFixed(0) + 'x') + ', so the token could land far from the median. The airdrop pool is hypothetical (8% of implied value, a stated assumption) \u2014 the snapshot cannot establish that a token or an airdrop will happen. ' + ((f.verdict === 'FARM' || f.verdict === 'P25-POSITIVE') ? 'Even a FARM row is a bet on an uncertain launch, not a guaranteed return.' : 'This row does not clear FARM at the median value, and the downside is thinner still.') + '</p>' +
+      playbookHtml(row) +
+      '<p class="small">Gas at November 2026 typical levels (Ethereum $4.00/tx, L2s $0.30, Solana-class $0.05, Bitcoin L2s $2.00); opportunity cost 4.5% a year on the capital for 90 days. The steps are proposed interactions to verify on the protocol\u2019s own page; nothing here claims a points program, a quest or an airdrop exists. Claim only from a link the protocol itself publishes; never pay to claim.</p>' +
+      '</div></div>';
+    return h;
+  }
+
+  // ---- render ----
+  function render() {
+    var v = DATA.validation;
+    var vc = verdictCounts();
+    var warn = '';
+    if (recomputeBad > 0 || farmBad > 0 || playbookBad > 0) {
+      warn = '<div class="warn" id="recompute-warn">Warning: this page recomputed ' + recomputeBad + ' implied values, ' + farmBad + ' farm plans and ' + playbookBad + ' playbooks that do not match the board\u2019s data. The screenshots and the code do not agree.</div>';
+    }
+    var h = '<div class="wrap">' +
+      '<header><h1>Tidegauge<span class="dot">.</span></h1>' +
+      '<p class="sub">Pre-token protocols, ranked by expected token market capitalisation (value-if-launches &times; token odds) \u2014 fitted from ' + FIT.peerCount + ' live-token peers, blind-tested against a flat baseline, and costed to the dollar. As of ' + esc(DATA.as_of) + '.</p>' +
+      '<div class="kpi"><span>Walk-forward median error <b>x' + fnum(v.timeSplitMedianMaxRatio, '', 2, '') + ' vs x' + fnum(v.flatTimeSplitMedianMaxRatio, '', 2, '') + ' flat</b></span><span>Walk-forward within-3x <b>' + (v.timeSplitWithin3 === null || v.timeSplitWithin3 === undefined ? 'n/a' : v.timeSplitWithin3.toFixed(1) + '% (n=' + v.timeSplitN + ')') + '</b></span><span>LOO median error <b>x' + fnum(v.adoptedMedianMaxRatio, '', 2, '') + ' vs x' + (looFlatRow() === null ? 'n/a' : fnum(looFlatRow().medianMaxRatio, '', 2, '')) + ' flat</b></span><span>LOO within-3x <b>' + (v.adoptedWithin3 === null || v.adoptedWithin3 === undefined ? 'n/a' : v.adoptedWithin3.toFixed(1) + '% (' + DATA.peers.filter(function (p) { return p.oofWithin3; }).length + ' of ' + (v.peerCount || FIT.peerCount) + ')') + '</b></span><span>Blind median error <b>x' + fnum(v.blindMedianMaxRatio, '', 2, '') + ' vs x' + fnum(v.flatBlindMedianMaxRatio, '', 2, '') + ' flat</b></span><span>Token odds Brier <b>' + DATA.odds.brierLoo.toFixed(3) + ' LOO / ' + DATA.odds.brierWf.toFixed(3) + ' WF vs ' + DATA.odds.baseBrierLoo.toFixed(3) + ' / ' + DATA.odds.baseBrierWf.toFixed(3) + ' base</b></span><span><b>' + DATA.board_size + '</b> protocols &middot; <b>' + DATA.watchlist_size + '/' + DATA.watchlist_size + '</b> watchlist</span><span>FARM <b>' + ((vc['P25-POSITIVE'] || 0) + vc.FARM) + '</b>, incl. <b>' + (vc['P25-POSITIVE'] || 0) + '</b> Board P25-positive (pre-fee)</span></div></header>' +
+      '<nav class="tabs">' +
+      '<button data-tab="board"' + (state.tab === 'board' ? ' class="on"' : '') + '>Board</button>' +
+      '<button data-tab="live"' + (state.tab === 'live' ? ' class="on"' : '') + '>Live tokens (' + DATA.live_size + ')</button>' +
+      '<button data-tab="anchors"' + (state.tab === 'anchors' ? ' class="on"' : '') + '>Traded anchors (' + DATA.peers.length + ')</button>' +
+      '<button data-tab="method"' + (state.tab === 'method' ? ' class="on"' : '') + '>How this is priced</button>' +
+      '<button data-tab="calibration"' + (state.tab === 'calibration' ? ' class="on"' : '') + '>Model &amp; calibration</button></nav>' +
+      warn;
+    if (state.tab === 'board') h += boardHtml();
+    else if (state.tab === 'live') h += liveHtml();
+    else if (state.tab === 'anchors') h += anchorsHtml();
+    else if (state.tab === 'calibration') h += calibrationHtml();
+    else h += methodHtml();
+    h += '<footer><b>Tidegauge</b> \u00b7 model ' + esc(DATA.model_version) + ' \u00b7 snapshot ' + esc(DATA.as_of) + ' \u00b7 coherence Spearman(TVL, implied) ' + v.coherence.toFixed(3) + ' \u00b7 The implied value is the expected value: the value if a token launches, times the token odds. A protocol is said to record no token, never that it has none.</footer></div>';
+    app.innerHTML = h;
+    app.removeAttribute('aria-busy');
+    // wire events
+    var tabs = app.querySelectorAll('[data-tab]');
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].addEventListener('click', function (ev) {
+        state.tab = ev.currentTarget.getAttribute('data-tab');
+        state.selected = null;
+        // Board and anchors sort by different keys; reset when crossing over
+        // so a stale key never silently re-sorts the other view.
+        var ak = state.sort === 'aratio' || state.sort === 'atvl' || state.sort === 'amcap' || state.sort === 'aimplied' || state.sort === 'aname';
+        if (state.tab === 'anchors' && !ak) { state.sort = 'aratio'; state.dir = -1; }
+        if (state.tab !== 'anchors' && ak) { state.sort = 'implied'; state.dir = -1; }
+        location.hash = '#/' + state.tab;
+        render();
+      });
+    }
+    var q = document.getElementById('f-q');
+    if (q) q.addEventListener('input', function () { state.q = q.value; renderBoardOnly(); });
+    var cat = document.getElementById('f-cat');
+    if (cat) cat.addEventListener('change', function () { state.category = cat.value === '' ? '' : cat.value; if (cat.value === 'all') state.category = 'all'; render(); });
+    var ch = document.getElementById('f-chain');
+    if (ch) ch.addEventListener('change', function () { state.chain = ch.value; render(); });
+    var vd = document.getElementById('f-verdict');
+    if (vd) vd.addEventListener('change', function () { state.verdict = vd.value; render(); });
+    var mn = document.getElementById('f-min');
+    if (mn) mn.addEventListener('input', function () { state.minImp = mn.value; renderBoardOnly(); });
+    var ths = app.querySelectorAll('th[data-sort]');
+    for (var j = 0; j < ths.length; j++) {
+      ths[j].addEventListener('click', function (ev) {
+        var k = ev.currentTarget.getAttribute('data-sort');
+        if (state.sort === k) state.dir = -state.dir;
+        else { state.sort = k; state.dir = k === 'rank' ? 1 : -1; }
+        render();
+      });
+    }
+    var rows = app.querySelectorAll('tbody tr[data-slug]');
+    for (var k = 0; k < rows.length; k++) {
+      rows[k].addEventListener('click', function (ev) {
+        openDetail(ev.currentTarget.getAttribute('data-slug'));
+      });
+    }
+    var close = document.getElementById('d-close');
+    if (close) close.addEventListener('click', closeDetail);
+    var det = document.querySelector('.detail');
+    if (det) det.addEventListener('click', function (ev) { if (ev.target === det) closeDetail(); });
+  }
+  function renderBoardOnly() {
+    // Re-render just the table + count, keeping the filter inputs focused.
+    var wrap = app.querySelector('.wrap');
+    if (!wrap) { render(); return; }
+    var h = boardHtml();
+    // boardHtml includes the map; keep the map and replace from the filters down.
+    var tmp = document.createElement('div');
+    tmp.innerHTML = h;
+    var oldFilters = app.querySelector('.filters');
+    var oldTable = app.querySelector('table');
+    var oldSmall = app.querySelector('p.small');
+    if (oldFilters && tmp.querySelector('.filters')) oldFilters.replaceWith(tmp.querySelector('.filters'));
+    if (oldTable && tmp.querySelector('table')) oldTable.replaceWith(tmp.querySelector('table'));
+    if (oldSmall && tmp.querySelector('p.small')) oldSmall.replaceWith(tmp.querySelector('p.small'));
+    wireBoardEvents();
+  }
+  function wireBoardEvents() {
+    var q = document.getElementById('f-q');
+    if (q) { q.addEventListener('input', function () { state.q = q.value; renderBoardOnly(); }); }
+    var mn = document.getElementById('f-min');
+    if (mn) mn.addEventListener('input', function () { state.minImp = mn.value; renderBoardOnly(); });
+    var rows = app.querySelectorAll('tbody tr[data-slug]');
+    for (var k = 0; k < rows.length; k++) {
+      rows[k].addEventListener('click', function (ev) { openDetail(ev.currentTarget.getAttribute('data-slug')); });
+    }
+  }
+  function openDetail(slug) {
+    var row = null;
+    for (var i = 0; i < DATA.rows.length; i++) if (DATA.rows[i].slug === slug) { row = DATA.rows[i]; break; }
+    if (!row) return;
+    state.selected = slug;
+    var old = document.querySelector('.detail');
+    if (old) old.remove();
+    var tmp = document.createElement('div');
+    tmp.innerHTML = detailHtml(row);
+    document.body.appendChild(tmp.firstChild);
+    var close = document.getElementById('d-close');
+    if (close) close.addEventListener('click', closeDetail);
+    var det = document.querySelector('.detail');
+    if (det) det.addEventListener('click', function (ev) { if (ev.target === det) closeDetail(); });
+    location.hash = '#/proto/' + slug;
+  }
+  function closeDetail() {
+    var det = document.querySelector('.detail');
+    if (det) det.remove();
+    state.selected = null;
+    if (location.hash.indexOf('#/proto/') === 0) location.hash = '#/board';
+  }
+  function route() {
+    var hash = location.hash || '#/board';
+    if (hash.indexOf('#/proto/') === 0) {
+      var slug = hash.slice(8);
+      state.tab = 'board';
+      render();
+      openDetail(slug);
+      return;
+    }
+    if (hash === '#/live') state.tab = 'live';
+    else if (hash === '#/method') state.tab = 'method';
+    else if (hash === '#/calibration') state.tab = 'calibration';
+    else if (hash === '#/anchors') state.tab = 'anchors';
+    else state.tab = 'board';
+    // Same sort reset as the tab click handler, for deep links.
+    var ak2 = state.sort === 'aratio' || state.sort === 'atvl' || state.sort === 'amcap' || state.sort === 'aimplied' || state.sort === 'aname';
+    if (state.tab === 'anchors' && !ak2) { state.sort = 'aratio'; state.dir = -1; }
+    if (state.tab !== 'anchors' && ak2) { state.sort = 'implied'; state.dir = -1; }
+    // Close any open detail overlay: it lives on body, render() won't.
+    closeDetail();
+    // Deep-link a filtered board, e.g. #/board?verdict=FARM. The old
+    // P25-POSITIVE spelling still links: it is normalised to the filter slug.
+    var vm = hash.match(/verdict=(P25-POSITIVE|p25p|FARM|THIN|SKIP)/);
+    if (vm) state.verdict = verdictFilterValue(vm[1]);
+    render();
+  }
+  window.addEventListener('hashchange', route);
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeDetail(); });
+  route();
+})();
