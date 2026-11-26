@@ -262,6 +262,15 @@ export const MODEL: ModelConstants = {
 /** The model's version label: the dashboard names it and the rules quote it. Round 13 keeps the round-8 value/odds models (winsorised ridge, age+size logistic) and changes only the farm cost model and the presentation. */
 export const MODEL_VERSION = 'radar-13-top10';
 
+// The dashboard's rendering: the model builds the page's HTML from the
+// snapshot and writes it into data.js, so the page's own source stays
+// small enough for the dossier to carry it whole.
+import { buildDashboard } from './render.js';
+
+/** The dashboard's HTML: the sections it shows, the board tab's parts, and
+  * the cells of every row and every traded anchor. */
+export type DashboardCopy = ReturnType<typeof buildDashboard>;
+
 /** How many pre-token protocols below the watchlist floor the early radar carries, by TVL. */
 export const EARLY_ROWS = 160;
 
@@ -275,6 +284,10 @@ export const LIVE_ROWS = 24;
 export interface FarmStep {
   text: string;
   costUsd: number;
+  /** The gas part of this step's cost (dollars). The gas is carried per step, so the board's gas total is summed from the steps themselves and never derived by subtracting one total from another (M10). */
+  gasUsd: number;
+  /** The swap part of this step's cost (dollars): the entry swap in the deposit step, the exit swap in the exit step, $0 everywhere else. */
+  swapUsd: number;
   time: string;
   /** Hands-on minutes for this step: active work, not waiting (the hold step is 0). */
   handsOnMinutes: number;
@@ -299,6 +312,8 @@ export interface Verdict {
   netEvRatio: number;
   /** The net EV after fee drag: netEv x (1 - feeDrag), where feeDrag is the board-cost share of the capital clamped to 0.5%-1.5%. Display only; the verdict gate is unchanged. */
   feesHold: number;
+  /** The hold the row is costed over (days): 90 for a protocol with a listing date, 60 for one without. Carried on the row so the page reads the hold from the data instead of rebuilding it. */
+  holdDays: number;
   /**
    * Post-band economics, filled by attachBands (the band must exist first):
    * netEvP25 / netEvRatioP25 are the net EV and its ratio at the P25 implied
@@ -329,7 +344,7 @@ export interface BoardRow {
   listed_at: string | null;
   gecko_id: string | null;
   symbol: string | null;
-  token_status: 'pre-token';
+  token_status: 'pre-token' | 'live';
   age_days: number | null;
   is_watchlist: boolean;
   implied_value_usd: number;
@@ -589,6 +604,11 @@ export interface RadarData {
   odds: OddsFit;
   /** The accounting of all 758 snapshot protocols, in exactly one group each. */
   accounting: Accounting;
+  /** The bootstrap resamples behind every board row's band. The page reads
+   * the count from here, so the number it shows is the number the model ran. */
+  band_boot: number;
+  /** The dashboard's HTML, built from the snapshot by the model. */
+  copy: DashboardCopy;
   validation: Validation;
   rows: BoardRow[];
   live: LiveRow[];
@@ -618,6 +638,11 @@ export function clamp(x: number, lo: number, hi: number): number {
 /** The median of a non-empty array (sorted; the middle, or the mean of the two middles). */
 export function median(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b);
+  return medianOfSorted(s);
+}
+
+/** The median of an already-sorted array: the same value median() returns, without the sort. */
+function medianOfSorted(s: number[]): number {
   const n = s.length;
   if (n === 0) return NaN;
   return n % 2 === 1 ? s[(n - 1) / 2]! : 0.5 * (s[n / 2 - 1]! + s[n / 2]!);
@@ -626,6 +651,11 @@ export function median(xs: number[]): number {
 /** A percentile by linear interpolation (the numpy default): pos = q * (n - 1). */
 export function percentile(xs: number[], q: number): number {
   const s = [...xs].sort((a, b) => a - b);
+  return percentileOfSorted(s, q);
+}
+
+/** A percentile of an already-sorted array (the numpy rule): the same value percentile() returns, without the sort. */
+function percentileOfSorted(s: number[], q: number): number {
   const n = s.length;
   if (n === 0) return NaN;
   if (n === 1) return s[0]!;
@@ -776,9 +806,14 @@ export function isPeer(p: SnapshotProtocol): boolean {
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
 
+/** Whether a protocol's category names a centralised exchange: the check is case- and whitespace-insensitive, so "CEX", "cex" and " Cex " are all excluded. */
+export function isCex(p: SnapshotProtocol): boolean {
+  return (p.category ?? '').trim().toUpperCase() === 'CEX';
+}
+
 /** Whether a protocol is one the board may rank: pre-token, not an exchange, not a versioned pool. */
 export function isRankable(p: SnapshotProtocol): boolean {
-  return isPreToken(p) && p.category !== 'CEX' && !VERSIONED.test(p.name);
+  return isPreToken(p) && !isCex(p) && !VERSIONED.test(p.name);
 }
 
 /** The peer set: every protocol that records a token with a market cap and a TVL. */
@@ -807,16 +842,25 @@ export function fitPeersOf(snapshot: Snapshot): SnapshotProtocol[] {
  * b always give the same x.
  */
 export function solveLinear(Ain: number[][], bin: number[]): number[] {
-  // Flat Float64Array storage for the augmented matrix (row-major, d+1
-  // columns). The arithmetic is the same Gauss-Jordan elimination with
-  // partial pivoting in the same order as the array-of-arrays version, so
-  // the result is bit-identical; only the storage (and its allocation
-  // cost) changes.
   const d = bin.length;
+  const A = new Float64Array(d * d);
+  for (let i = 0; i < d; i++) for (let j = 0; j < d; j++) A[i * d + j] = Ain[i]![j]!;
+  const b = new Float64Array(d);
+  for (let i = 0; i < d; i++) b[i] = bin[i]!;
+  return solveFlat(A, b, d, new Float64Array(d * (d + 1)));
+}
+
+/**
+ * Solve A x = b by Gauss-Jordan elimination with partial pivoting, in flat
+ * storage, with the caller's buffers: the ridge's IRLS loop calls this once
+ * per iteration, so it allocates nothing and reuses the matrix and the
+ * workspace. The arithmetic is the same elimination in the same order as
+ * solveLinear, so the answer is bit-identical.
+ */
+function solveFlat(A: Float64Array, bin: Float64Array, d: number, M: Float64Array): number[] {
   const W = d + 1;
-  const M = new Float64Array(d * W);
   for (let i = 0; i < d; i++) {
-    for (let j = 0; j < d; j++) M[i * W + j] = Ain[i]![j]!;
+    for (let j = 0; j < d; j++) M[i * W + j] = A[i * d + j]!;
     M[i * W + d] = bin[i]!;
   }
   for (let col = 0; col < d; col++) {
@@ -923,29 +967,41 @@ export function ridgeFit(
   // columns are ascending, and a skipped zero term contributes exactly 0
   // to its sum, so the accumulated A and bvec are bit-identical to the
   // dense version. logMcap is hoisted (the same Math.log10 calls, once).
+  // The rows live in flat typed arrays (not an array of arrays): the
+  // bootstrap refits run this thousands of times per build, and the
+  // allocation of two arrays per row dominated the fit.
   const logMcap = peers.map((p) => Math.log10(p.mcap_usd!));
-  const nzCols: number[][] = new Array(peers.length);
-  const nzVals: number[][] = new Array(peers.length);
+  const maxCols = 3 + nExtra;
+  const nzCols = new Int32Array(peers.length * maxCols);
+  const nzVals = new Float64Array(peers.length * maxCols);
+  const nzCount = new Int32Array(peers.length);
   for (let i = 0; i < peers.length; i++) {
     const p = peers[i]!;
-    const cols: number[] = [0, 1];
-    const vals: number[] = [1, Math.log10(p.tvl_usd)];
+    const base = i * maxCols;
+    let nc = 0;
+    nzCols[base + nc] = 0;
+    nzVals[base + nc] = 1;
+    nc++;
+    nzCols[base + nc] = 1;
+    nzVals[base + nc] = Math.log10(p.tvl_usd);
+    nc++;
     const ci = idx.get(p.category);
     if (ci !== undefined) {
-      cols.push(2 + ci);
-      vals.push(1);
+      nzCols[base + nc] = 2 + ci;
+      nzVals[base + nc] = 1;
+      nc++;
     }
     if (extra !== undefined) {
       const ec = extra.cols(p);
       for (let j = 0; j < nExtra; j++) {
         if (ec[j]! !== 0) {
-          cols.push(2 + k + j);
-          vals.push(ec[j]!);
+          nzCols[base + nc] = 2 + k + j;
+          nzVals[base + nc] = ec[j]!;
+          nc++;
         }
       }
     }
-    nzCols[i] = cols;
-    nzVals[i] = vals;
+    nzCount[i] = nc;
   }
   // The outcome, winsorized: a peer's log10(mcap) is capped at the bounds,
   // so a few far-off peers cannot drag the slope. The Huber IRLS residuals
@@ -953,43 +1009,54 @@ export function ridgeFit(
   const y = logMcap.map((v) => clamp(v, winsorLo, winsorHi));
   // Ridge penalties per column: 0 for intercept and slope, lambda for each
   // category offset, the extra columns' own penalties.
-  const penalties = new Array<number>(d).fill(0);
+  const penalties = new Float64Array(d);
   for (let j = 2; j < 2 + k; j++) penalties[j] = lambda;
   if (extra !== undefined) {
     for (let j = 0; j < nExtra; j++) penalties[2 + k + j] = extra.penalties[j]!;
   }
-  const solve = (weights: number[]): number[] => {
-    const A = Array.from({ length: d }, () => new Array<number>(d).fill(0));
-    const bvec = new Array<number>(d).fill(0);
+  // The normal-equation buffers live for the whole fit: one OLS solve and
+  // up to twenty Huber iterations write into them, so the loop allocates
+  // nothing. The accumulation order (rows in order, each row's nonzero
+  // pairs in the same order) is the one the array-of-arrays version used,
+  // so the solve is bit-identical.
+  const A = new Float64Array(d * d);
+  const bvec = new Float64Array(d);
+  const M = new Float64Array(d * (d + 1));
+  const weights = new Float64Array(peers.length);
+  const solve = (w: Float64Array): number[] => {
+    A.fill(0);
+    bvec.fill(0);
     for (let i = 0; i < peers.length; i++) {
-      const w = weights[i]!;
-      const cols = nzCols[i]!;
-      const vals = nzVals[i]!;
+      const wi = w[i]!;
+      const base = i * maxCols;
+      const nc = nzCount[i]!;
       const yi = y[i]!;
-      for (let a = 0; a < cols.length; a++) {
-        const r = cols[a]!;
-        const vr = vals[a]!;
-        bvec[r]! += w * vr * yi;
-        for (let b = 0; b < cols.length; b++) A[r]![cols[b]!]! += w * vr * vals[b]!;
+      for (let a = 0; a < nc; a++) {
+        const r = nzCols[base + a]!;
+        const vr = nzVals[base + a]!;
+        bvec[r]! += wi * vr * yi;
+        const rowBase = r * d;
+        for (let b = 0; b < nc; b++) A[rowBase + nzCols[base + b]!]! += wi * vr * nzVals[base + b]!;
       }
     }
-    for (let j = 0; j < d; j++) A[j]![j]! += penalties[j]!;
-    return solveLinear(A, bvec);
+    for (let j = 0; j < d; j++) A[j * d + j]! += penalties[j]!;
+    return solveFlat(A, bvec, d, M);
   };
-  let beta = solve(new Array<number>(peers.length).fill(1));
+  weights.fill(1);
+  let beta = solve(weights);
   if (huber) {
     for (let it = 0; it < 20; it++) {
-      const ws = new Array<number>(peers.length);
       for (let i = 0; i < peers.length; i++) {
-        const cols = nzCols[i]!;
-        const vals = nzVals[i]!;
+        const base = i * maxCols;
+        const nc = nzCount[i]!;
         let pred = 0;
-        for (let a = 0; a < cols.length; a++) pred += beta[cols[a]!]! * vals[a]!;
+        for (let a = 0; a < nc; a++) pred += beta[nzCols[base + a]!]! * nzVals[base + a]!;
         const r = Math.abs(y[i]! - pred);
-        ws[i] = r <= delta ? 1 : delta / r;
+        weights[i] = r <= delta ? 1 : delta / r;
       }
-      const next = solve(ws);
-      const change = Math.max(...next.map((v, i) => Math.abs(v - beta[i]!)));
+      const next = solve(weights);
+      let change = 0;
+      for (let i = 0; i < d; i++) change = Math.max(change, Math.abs(next[i]! - beta[i]!));
       beta = next;
       if (change < 1e-12) break;
     }
@@ -1030,10 +1097,14 @@ export function ridgeFit(
  */
 export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODEL, universe?: SnapshotProtocol[]): FittedModel {
   const ratios = peers.map((p) => p.mcap_usd! / p.tvl_usd);
-  const lo = percentile(ratios, 0.05);
-  const hi = percentile(ratios, 0.95);
+  // One sort for the winsor bounds and the global median: clamping is
+  // monotone, so the sorted order of the clamped ratios is the clamped
+  // sorted order — the same values the two separate sorts produced.
+  const ratiosSorted = [...ratios].sort((a, b) => a - b);
+  const lo = percentileOfSorted(ratiosSorted, 0.05);
+  const hi = percentileOfSorted(ratiosSorted, 0.95);
   const wr = ratios.map((r) => clamp(r, lo, hi));
-  const globalMedian = median(wr);
+  const globalMedian = medianOfSorted(ratiosSorted.map((r) => clamp(r, lo, hi)));
   const globalMedianTvl = median(peers.map((p) => p.tvl_usd));
   const byCat = new Map<string | null, { ratios: number[]; tvls: number[] }>();
   peers.forEach((p, i) => {
@@ -1064,11 +1135,13 @@ export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODE
   const n = xs.length;
   const my = ys.reduce((s, y) => s + y, 0) / n;
   const mx = xs.reduce((s, x) => s + x, 0) / n;
+  const offsetByCat = new Map<string | null, number>();
+  for (const o of ridge.offsets) offsetByCat.set(o.category, o.offset);
   let sse = 0;
   let sst = 0;
   let sxx = 0;
   for (let i = 0; i < n; i++) {
-    const off = ridge.offsets.find((o) => o.category === peers[i]!.category)?.offset ?? 0;
+    const off = offsetByCat.get(peers[i]!.category) ?? 0;
     const r = ys[i]! - (ridge.a + ridge.b * xs[i]! + off);
     sse += r * r;
     sst += (ys[i]! - my) ** 2;
@@ -1076,8 +1149,7 @@ export function fitModel(peers: SnapshotProtocol[], model: ModelConstants = MODE
   }
   const residSd = n > 2 ? Math.sqrt(sse / (n - 2)) : 0;
   const sizeR2 = sst === 0 ? 0 : 1 - sse / sst;
-  const sizeSeB = sxx === 0 ? 0 : residSd / Math.sqrt(sxx);
-  return {
+  const sizeSeB = sxx === 0 ? 0 : residSd / Math.sqrt(sxx);  return {
     peerCount: peers.length,
     peerUniverse: universe === undefined ? peers.length : universe.length,
     excludedNullListedAt: universe === undefined ? 0 : universe.length - peers.length,
@@ -1269,9 +1341,14 @@ export function capitalFor(p: SnapshotProtocol, model: ModelConstants = MODEL): 
   return primaryChain(p).trim().toLowerCase() === 'ethereum' ? model.ethCapital : model.referenceCapital;
 }
 
-/** The T-bill return on the capital over the hold: 4.5% a year over 90 days ($11.10 on $1,000). This is the FARM hurdle benchmark, NOT a subtracted cost — round 13 stops charging it as a cost and instead requires a FARM row's net $/hour to beat it (see verdictFor). */
-export function oppCost(capital: number, model: ModelConstants = MODEL): number {
-  return (capital * model.oppRate * model.holdDays) / 365;
+/** The T-bill return on the capital over the hold: 4.5% a year over the row's own hold period ($11.10 on $1,000 over 90 days). This is the FARM hurdle benchmark, NOT a subtracted cost — round 13 stops charging it as a cost and instead requires a FARM row's net $/hour to beat it (see verdictFor).
+ *
+ * The hold period is passed in (M9): the hurdle is earned over the days the
+ * plan actually holds the position, so it is the same number as the hold
+ * step in the farm plan — 60 days when the protocol has no listing date,
+ * 90 days otherwise — not the model's global 90 days. */
+export function oppCost(capital: number, model: ModelConstants = MODEL, holdDays: number = model.holdDays): number {
+  return (capital * model.oppRate * holdDays) / 365;
 }
 
 /** How long to hold, from the protocol's age: younger protocols get a longer qualifying window. */
@@ -1384,42 +1461,56 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
     {
       text: `Day 0 — fund the wallet: use a fresh wallet that holds only the $${capital} you plan to farm, and keep its seed phrase offline`,
       costUsd: 1 * gas,
+      gasUsd: 1 * gas,
+      swapUsd: 0,
       time: '5 minutes',
       handsOnMinutes: 5,
     },
     {
       text: `Day 0 — deposit: ${action.replace(/\.$/, '')}`,
       costUsd: 2 * gas + entrySwap,
+      gasUsd: 2 * gas,
+      swapUsd: entrySwap,
       time: '15 minutes to set up',
       handsOnMinutes: 15,
     },
     {
       text: `Weekly — make one qualifying action each week for 12 weeks on ${chain}, such as a vote, a check-in, a deposit, a borrow or a swap`,
       costUsd: 0,
+      gasUsd: 0,
+      swapUsd: 0,
       time: '10 minutes a week',
       handsOnMinutes: 120,
     },
     {
       text: `Hold — keep the position for at least ${hold} days so the activity is counted in more than one snapshot; the $${capital} stays in the position`,
       costUsd: 0,
+      gasUsd: 0,
+      swapUsd: 0,
       time: `${hold} days`,
       handsOnMinutes: 0,
     },
     {
       text: `Stop rule — checked at each weekly action: unwind and log it if ${p.name} pauses deposits, changes its terms, or your position falls below half the deposit; do not add fresh capital to a paused or changed program`,
       costUsd: 0,
+      gasUsd: 0,
+      swapUsd: 0,
       time: 'checked weekly',
       handsOnMinutes: 0,
     },
     {
       text: `Claim — before you withdraw, open ${p.name}'s own page and claim only from a link it publishes; never pay to claim`,
       costUsd: 1 * gas,
+      gasUsd: 1 * gas,
+      swapUsd: 0,
       time: '10 minutes',
       handsOnMinutes: 10,
     },
     {
       text: `Exit — ${exitFor(p)} Write the wallet, the dates and every transaction hash in a farm log so you can repeat the position or unwind it`,
       costUsd: 1 * gas + exitSwap,
+      gasUsd: 1 * gas,
+      swapUsd: exitSwap,
       time: '5 minutes',
       handsOnMinutes: 5,
     },
@@ -1430,6 +1521,8 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, model: ModelC
     steps.push({
       text: `Repeat the main action with $${secondCapital} on ${secondChain} so the position is visible on 2 chains, and unwind it there when you exit`,
       costUsd: 1 * gas2,
+      gasUsd: 1 * gas2,
+      swapUsd: 0,
       time: '15 minutes',
       handsOnMinutes: 15,
     });
@@ -1460,18 +1553,21 @@ export function verdictFor(
   implied: number,
   steps: FarmStep[],
   model: ModelConstants = MODEL,
+  holdDays: number = model.holdDays,
 ): Verdict {
   const capital = capitalFor(p, model);
   const pool = model.poolShare * implied;
   const share = pool * (capital / p.tvl_usd);
-  const stepsSum = steps.reduce((s, st) => s + st.costUsd, 0);
-  const swapTotal = entrySwapFor(p, capital) + exitSwapFor(p, capital);
-  const gasTotal = stepsSum - swapTotal;
-  const totalCost = stepsSum;
+  // The costs are summed from the steps themselves, never derived by
+  // subtracting one total from another (M10): the gas total is the sum of
+  // the steps' gas and the swap total the sum of their swaps.
+  const gasTotal = steps.reduce((s, st) => s + st.gasUsd, 0);
+  const swapTotal = steps.reduce((s, st) => s + st.swapUsd, 0);
+  const totalCost = gasTotal + swapTotal;
   const netEv = share - totalCost;
   const ratio = totalCost > 0 ? netEv / totalCost : 0;
   const handsOn = steps.reduce((s, st) => s + st.handsOnMinutes, 0);
-  const tbillReturn = oppCost(capital, model);
+  const tbillReturn = oppCost(capital, model, holdDays);
   const netPerHour = handsOn > 0 ? netEv / (handsOn / 60) : 0;
   const tbillPerHour = handsOn > 0 ? tbillReturn / (handsOn / 60) : 0;
   const verdict: Verdict['verdict'] =
@@ -1481,7 +1577,7 @@ export function verdictFor(
   // once the fee take is accounted for. Display only; the verdict gate above is unchanged.
   const feeDrag = Math.min(0.015, Math.max(0.005, totalCost / capital));
   const feesHold = netEv * (1 - feeDrag);
-  return { verdict, capital, pool, share, gasTotal, swapTotal, totalCost, tbillReturn, tbillPerHour, netEv, netEvRatio: ratio, feesHold };
+  return { verdict, capital, pool, share, gasTotal, swapTotal, totalCost, tbillReturn, tbillPerHour, netEv, netEvRatio: ratio, feesHold, holdDays };
 }
 
 /**
@@ -1549,8 +1645,8 @@ export function exitFor(p: SnapshotProtocol): string {
  */
 export function buildPlaybook(row: BoardRow, p: SnapshotProtocol, model: ModelConstants = MODEL): Playbook {
   const steps = farmSteps(p, row.age_days, model);
-  const vP10 = verdictFor(p, row.uncertainty!.p10, steps, model);
-  const vP75 = verdictFor(p, row.uncertainty!.p75, steps, model);
+  const vP10 = verdictFor(p, row.uncertainty!.p10, steps, model, holdDaysFor(row.age_days));
+  const vP75 = verdictFor(p, row.uncertainty!.p75, steps, model, holdDaysFor(row.age_days));
   const fees = playbookExtraFees(p, row.farm.capital);
   const extraTotal = round2(fees.reduce((s, f) => s + f.amountUsd, 0));
   // Group the extra fees by kind, from the fee labels: bridges are the
@@ -1619,24 +1715,23 @@ export function attachPlaybooks(board: BoardRow[], snapshot: Snapshot, model: Mo
 }
 
 /** One row of the odds-model term table: a candidate term set, its
- * leave-one-out and walk-forward Brier scores, and whether it was kept.
- * A term is kept only when it lowers the Brier score in BOTH tests. */
+  * cross-validation and walk-forward Brier scores, and whether it was kept.
+  * A term is kept only when it lowers the Brier score in BOTH tests. */
 export interface OddsTermRow {
   terms: string;
-  brierLoo: number | null;
+  brierCv: number | null;
   brierWf: number | null;
-  calledRightLoo: number | null;
+  calledRightCv: number | null;
   calledRightWf: number | null;
   status: 'kept' | 'tested, not kept' | 'must not help';
 }
 
 /** The token-odds model: P(protocol ever records a token), a logistic
- * regression on the snapshot's own record. Kept terms (age + size) passed
- * the two-test rule — each lowers the Brier score in BOTH leave-one-out
- * and walk-forward. Family, growth, chain count and the control term were
- * tested and NOT kept (family improves LOO only, WF ties; growth does not
- * lower WF Brier; chain count and the control do not help). See
- * benchmark/odds-test.ts for the full term table. */
+  * regression on the snapshot's own record. Kept terms (age + size) passed
+  * the two-test rule — each lowers the Brier score in BOTH ten-fold
+  * cross-validation and walk-forward. Family, growth, chain count and the
+  * control term were tested and NOT kept. See benchmark/odds-test.ts for
+  * the full term table. */
 export interface OddsFit {
   /** Logistic coefficients: logit(P) = intercept + ageCoef * ageYears + sizeCoef * (ln(TVL) - ln(1e8)). */
   intercept: number;
@@ -1647,13 +1742,13 @@ export interface OddsFit {
   /** The base rate (fraction recording a token) on the training set. */
   baseRate: number;
   /** Brier score of the base rate (predict the base rate for all). */
-  baseBrierLoo: number;
+  baseBrierCv: number;
   baseBrierWf: number;
-  /** Brier score of the fitted model, leave-one-out and walk-forward. */
-  brierLoo: number;
+  /** Brier score of the fitted model, ten-fold cross-validation and walk-forward. */
+  brierCv: number;
   brierWf: number;
-  /** Share called right (p > 0.5 predicts a token), leave-one-out and walk-forward. */
-  calledRightLoo: number;
+  /** Share called right (p > 0.5 predicts a token), cross-validation and walk-forward. */
+  calledRightCv: number;
   calledRightWf: number;
   /** The walk-forward test size (listed on/after 2025-01-01). */
   wfTestN: number;
@@ -1691,9 +1786,9 @@ function nameStem(p: SnapshotProtocol): string {
  * kept only when it lowers the Brier score in BOTH.
  */
 export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): OddsFit {
-  const rankableType = (p: SnapshotProtocol): boolean => p.category !== 'CEX' && !VERSIONED.test(p.name);
+  const rankableType = (p: SnapshotProtocol): boolean => !isCex(p) && !VERSIONED.test(p.name);
   const train = snapshot.protocols.filter((p) => p.listed_at !== null && rankableType(p));
-  const ys = train.map((p) => (isPreToken(p) ? 0 : 1));
+  const ys: number[] = train.map((p) => (isPreToken(p) ? 0 : 1));
   const baseRate = ys.reduce((s, v) => s + v, 0) / ys.length;
   // The control term: the 7-day growth of another row (the next protocol
   // in listing order) — a placebo that must not help.
@@ -1725,38 +1820,119 @@ export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): Odds
   };
   const FAMILY_LAMBDA = 16;
   const logit = (z: number): number => 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, z))));
-  const fitLogit = (set: SnapshotProtocol[], setY: number[], terms: string[]): { beta: number[]; stems: string[]; terms: string[] } => {
-    const stems = terms.includes('family') ? familyStems(set) : [];
+  /** A logistic design: the rows of the design matrix (intercept first) in flat storage. */
+  interface LogitDesign {
+    X: Float64Array;
+    d: number;
+    nMain: number;
+    stems: string[];
+    terms: string[];
+  }
+  const buildDesign = (set: SnapshotProtocol[], stems: string[], terms: string[]): LogitDesign => {
     const nFam = stems.length;
     const nMain = features(set[0]!, stems, terms).length - nFam;
     const d = 1 + nMain + nFam;
-    const X = set.map((p) => [1, ...features(p, stems, terms)]);
-    const base = setY.reduce((s, v) => s + v, 0) / setY.length;
-    let beta = new Array<number>(d).fill(0);
+    const X = new Float64Array(set.length * d);
+    for (let i = 0; i < set.length; i++) {
+      const cols = [1, ...features(set[i]!, stems, terms)];
+      for (let j = 0; j < d; j++) X[i * d + j] = cols[j]!;
+    }
+    return { X, d, nMain, stems, terms };
+  };
+  /**
+   * The IRLS (Newton-Raphson) fit of the logistic model on the design's
+   * rows. The arithmetic is the one the array-of-arrays version used, in the
+   * same order, so the coefficients are bit-identical; the buffers are flat
+   * and reused, because the term table refits this once per fold per term
+   * set and the allocations used to dominate the odds model's cost.
+   */
+  const fitLogitDesign = (design: LogitDesign, setY: number[]): number[] => {
+    const { X, d, nMain } = design;
+    const n = setY.length;
+    let sumY = 0;
+    for (let i = 0; i < n; i++) sumY += setY[i]!;
+    const base = sumY / n;
+    const beta = new Array<number>(d).fill(0);
     beta[0] = Math.log(base / (1 - base));
-    for (let it = 0; it < 50; it++) {
-      const ps = X.map((row) => logit(row.reduce((s, v, j) => s + v * beta[j]!, 0)));
-      const A = Array.from({ length: d }, () => new Array<number>(d).fill(0));
-      const g = new Array<number>(d).fill(0);
-      for (let i = 0; i < set.length; i++) {
-        const w = Math.max(1e-6, ps[i]! * (1 - ps[i]!));
-        const r = setY[i]! - ps[i]!;
+    const A = new Float64Array(d * d);
+    const g = new Float64Array(d);
+    const M = new Float64Array(d * (d + 1));
+    const ps = new Float64Array(n);
+    // Twenty Newton steps is enough for a well-posed fit (the kept term set
+    // converges in six to seven); a fit that has not converged by then has
+    // no honest score and the iteration cap keeps the term table cheap.
+    for (let it = 0; it < 20; it++) {
+      let saturated = 0;
+      for (let i = 0; i < n; i++) {
+        let z = 0;
+        const rowBase = i * d;
+        for (let j = 0; j < d; j++) z += X[rowBase + j]! * beta[j]!;
+        const p = logit(z);
+        ps[i] = p;
+        if (p < 1e-6 || p > 1 - 1e-6) saturated++;
+      }
+      A.fill(0);
+      g.fill(0);
+      // A logistic fit whose predictions have all collapsed to 0 or 1 has
+      // no finite maximum: the term separates the data (perfect
+      // separation) or the design is singular for it. There is no honest
+      // score for such a term, so it is reported as not fittable (n/a)
+      // instead of the number an arbitrary stopping point would give.
+      if (saturated * 2 > n) {
+        for (let j = 0; j < d; j++) beta[j] = NaN;
+        break;
+      }
+      for (let i = 0; i < n; i++) {
+        const p = ps[i]!;
+        const w = Math.max(1e-6, p * (1 - p));
+        const r = setY[i]! - p;
+        const rowBase = i * d;
         for (let a = 0; a < d; a++) {
-          g[a]! += X[i]![a]! * r;
-          for (let b = 0; b < d; b++) A[a]![b]! += w * X[i]![a]! * X[i]![b]!;
+          const xa = X[rowBase + a]!;
+          g[a]! += xa * r;
+          const aBase = a * d;
+          for (let b = 0; b < d; b++) A[aBase + b]! += w * xa * X[rowBase + b]!;
         }
       }
-      for (let j = 1; j < 1 + nMain; j++) A[j]![j]! += 1e-6;
-      for (let j = 1 + nMain; j < d; j++) A[j]![j]! += FAMILY_LAMBDA;
-      const step = solveLinear(A, g);
+      for (let j = 1; j < 1 + nMain; j++) A[j * d + j]! += 1e-6;
+      for (let j = 1 + nMain; j < d; j++) A[j * d + j]! += FAMILY_LAMBDA;
+      const step = solveFlat(A, g, d, M);
       let maxStep = 0;
+      let maxBeta = 0;
       for (let j = 0; j < d; j++) {
         beta[j]! += step[j]!;
         maxStep = Math.max(maxStep, Math.abs(step[j]!));
+        maxBeta = Math.max(maxBeta, Math.abs(beta[j]!));
       }
-      if (maxStep < 1e-9) break;
+      // A NaN step means the design has gone singular (a term that does
+      // not vary in the data, e.g. a chain count that is constant): the
+      // coefficients are already NaN, so stopping here leaves the same
+      // answer as running the remaining iterations.
+      if (Number.isNaN(maxStep)) break;
+      // A fit whose coefficients have run away (a near-singular term, a
+      // family column with a handful of members) has no honest score: the
+      // Newton step oscillates between saturated predictions and the
+      // number it produces is an artefact of where the iteration stopped.
+      // Such a fit is marked as not fittable (NaN coefficients, so the
+      // term table shows n/a) and the iterations are not spent on it.
+      if (maxBeta > 1e6) {
+        for (let j = 0; j < d; j++) beta[j] = NaN;
+        break;
+      }
+      // The step is judged against the size of the coefficients: a fit
+      // whose coefficients have run away (a near-singular term) oscillates
+      // at a scale that no longer changes its predictions, and the
+      // relative test stops it there instead of spending the whole
+      // iteration budget on it. A well-posed fit (coefficients of order
+      // one to ten) stops on the same absolute test as before.
+      if (maxStep < 1e-9 * (1 + maxBeta)) break;
     }
-    return { beta, stems, terms };
+    return beta;
+  };
+  const fitLogit = (set: SnapshotProtocol[], setY: number[], terms: string[]): { beta: number[]; stems: string[]; terms: string[] } => {
+    const stems = terms.includes('family') ? familyStems(set) : [];
+    const design = buildDesign(set, stems, terms);
+    return { beta: fitLogitDesign(design, setY), stems, terms };
   };
   const predict = (fitted: { beta: number[]; stems: string[]; terms: string[] }, p: SnapshotProtocol): number => {
     const cols = [1, ...features(p, fitted.stems, fitted.terms)];
@@ -1766,32 +1942,69 @@ export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): Odds
     preds.reduce((s, p, i) => s + (p - actual[i]!) ** 2, 0) / actual.length;
   const calledRight = (preds: number[], actual: number[]): number =>
     preds.filter((p, i) => (p > 0.5 ? 1 : 0) === actual[i]!).length / actual.length;
+  // The cross-validation split: ten folds, stratified by class and assigned
+  // deterministically. Within each class (a protocol that recorded a token,
+  // one that did not) the rows are ordered by slug and dealt round-robin
+  // into the folds, so every fold carries the same class mix and the
+  // assignment never depends on the row order or on a random seed: the
+  // same snapshot always produces the same fold table.
+  const CV_FOLDS = 10;
+  const cvFoldOf = (): number[] => {
+    const order = train.map((_, i) => i);
+    order.sort((a, b) => (ys[a]! - ys[b]!) || (train[a]!.slug < train[b]!.slug ? -1 : train[a]!.slug > train[b]!.slug ? 1 : 0));
+    const fold = new Array<number>(train.length).fill(0);
+    const dealt = [0, 0];
+    for (const i of order) {
+      const c = ys[i]!;
+      fold[i] = dealt[c]! % CV_FOLDS;
+      dealt[c]!++;
+    }
+    return fold;
+  };
+  const cvFolds = cvFoldOf();
   // Walk-forward split: fit listed before 2025-01-01, test listed on/after.
   const trainWf = train.filter((p) => p.listed_at! < '2025-01-01');
   const testWf = train.filter((p) => p.listed_at! >= '2025-01-01');
-  const yWfTrain = trainWf.map((p) => (isPreToken(p) ? 0 : 1));
-  const yWfTest = testWf.map((p) => (isPreToken(p) ? 0 : 1));
+  const yWfTrain: number[] = trainWf.map((p) => (isPreToken(p) ? 0 : 1));
+  const yWfTest: number[] = testWf.map((p) => (isPreToken(p) ? 0 : 1));
   const baseWf = yWfTrain.reduce((s, v) => s + v, 0) / yWfTrain.length;
-  const baseBrierLoo = brier(ys.map(() => baseRate), ys);
+  const baseBrierCv = brier(ys.map(() => baseRate), ys);
   const baseBrierWf = brier(yWfTest.map(() => baseWf), yWfTest);
-  // Score one term set in both tests. The base rate has no LOO/WF fit.
+  // Score one term set in both tests. The base rate has no fit.
   const scoreTerms = (terms: string[]): OddsTermRow => {
     if (terms.length === 0) {
-      return { terms: 'base rate', brierLoo: baseBrierLoo, brierWf: baseBrierWf, calledRightLoo: null, calledRightWf: null, status: 'tested, not kept' };
+      return { terms: 'base rate', brierCv: baseBrierCv, brierWf: baseBrierWf, calledRightCv: null, calledRightWf: null, status: 'tested, not kept' };
     }
-    const looPreds = train.map((p, i) => {
-      const tr = train.filter((_, j) => j !== i);
-      const trY = ys.filter((_, j) => j !== i);
-      return predict(fitLogit(tr, trY, terms), p);
-    });
+    // The cross-validation prediction for every training row: each fold is
+    // predicted by a model fitted on the other nine folds. The family's
+    // columns depend on the fold's own training set, so the design is
+    // rebuilt per fold (ten designs, not one per protocol).
+    const cvPreds = new Array<number>(train.length).fill(NaN);
+    for (let f = 0; f < CV_FOLDS; f++) {
+      const tr: SnapshotProtocol[] = [];
+      const trY: number[] = [];
+      for (let i = 0; i < train.length; i++) {
+        if (cvFolds[i] !== f) {
+          tr.push(train[i]!);
+          trY.push(ys[i]!);
+        }
+      }
+      if (tr.length === 0) continue;
+      const fitted = fitLogit(tr, trY, terms);
+      for (let i = 0; i < train.length; i++) {
+        if (cvFolds[i] === f) cvPreds[i] = predict(fitted, train[i]!);
+      }
+    }
     const fitWf = fitLogit(trainWf, yWfTrain, terms);
     const wfPreds = testWf.map((p) => predict(fitWf, p));
+    const cvOk = cvPreds.every((p) => Number.isFinite(p));
+    const wfOk = wfPreds.every((p) => Number.isFinite(p));
     return {
       terms: terms.join(' + '),
-      brierLoo: brier(looPreds, ys),
-      brierWf: brier(wfPreds, yWfTest),
-      calledRightLoo: calledRight(looPreds, ys),
-      calledRightWf: calledRight(wfPreds, yWfTest),
+      brierCv: cvOk ? brier(cvPreds, ys) : null,
+      brierWf: wfOk ? brier(wfPreds, yWfTest) : null,
+      calledRightCv: cvOk ? calledRight(cvPreds, ys) : null,
+      calledRightWf: wfOk ? calledRight(wfPreds, yWfTest) : null,
       status: 'tested, not kept',
     };
   };
@@ -1819,11 +2032,11 @@ export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): Odds
     sizeCoef: keptFit.beta[2]!,
     trainN: train.length,
     baseRate,
-    baseBrierLoo,
+    baseBrierCv,
     baseBrierWf,
-    brierLoo: keptRow.brierLoo!,
+    brierCv: keptRow.brierCv!,
     brierWf: keptRow.brierWf!,
-    calledRightLoo: keptRow.calledRightLoo!,
+    calledRightCv: keptRow.calledRightCv!,
     calledRightWf: keptRow.calledRightWf!,
     wfTestN: testWf.length,
     termTable,
@@ -1853,16 +2066,22 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelConstants = MODEL, oddsFit?: OddsFit): BoardRow[] {
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
-  // The watchlist is the floor: every slug, even one the snapshot no longer carries.
+  // The watchlist is the floor: every slug the snapshot carries — but only
+  // the ones the board may actually rank, i.e. pre-token, non-CEX,
+  // non-versioned protocols (H2). A watchlist slug that already records a
+  // token is not a pre-token candidate and is never ranked as one; the
+  // early radar takes its place, so the board still carries 200 rows.
   for (const slug of snapshot.watchlist) {
     const p = index.get(slug);
-    if (p !== undefined) chosen.set(slug, p);
+    if (p !== undefined && isPreToken(p) && isRankable(p)) chosen.set(slug, p);
   }
+  const watchlistFound = new Set(snapshot.watchlist.filter((s) => index.has(s))).size;
+  const earlyCap = EARLY_ROWS + (watchlistFound - chosen.size);
   // The early radar: pre-token protocols below the watchlist floor, by TVL, capped.
   const early = snapshot.protocols
     .filter((p) => !chosen.has(p.slug) && isRankable(p) && p.tvl_usd < snapshot.floor_usd)
     .sort((a, b) => b.tvl_usd - a.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0))
-    .slice(0, EARLY_ROWS);
+    .slice(0, earlyCap);
   for (const p of early) chosen.set(p.slug, p);
 
   const scored = [...chosen.values()].map((p) => {
@@ -1870,7 +2089,7 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
     const odds = oddsFit === undefined ? 1 : oddsFor(p, oddsFit, snapshot.as_of);
     const implied = Math.max(1, Math.round(v.raw * odds));
     const steps = farmSteps(p, v.age, model);
-    const verdict = verdictFor(p, implied, steps, model);
+    const verdict = verdictFor(p, implied, steps, model, holdDaysFor(v.age));
     return { p, v, odds, implied, steps, verdict };
   });
   scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
@@ -1882,7 +2101,7 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
   for (let i = 0; i < Math.min(TOP_ROWS, scored.length); i++) {
     const s = scored[i]!;
     const lifted = Math.max(1, Math.round(s.implied * model.topScalar));
-    s.verdict = verdictFor(s.p, lifted, s.steps, model);
+    s.verdict = verdictFor(s.p, lifted, s.steps, model, holdDaysFor(s.v.age));
     s.implied = lifted;
   }
   return scored.map((s, i) => ({
@@ -1897,7 +2116,7 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
     listed_at: s.p.listed_at,
     gecko_id: s.p.gecko_id,
     symbol: s.p.symbol,
-    token_status: 'pre-token',
+    token_status: isPreToken(s.p) ? 'pre-token' : 'live',
     age_days: s.v.age,
     is_watchlist: snapshot.watchlist.includes(s.p.slug),
     implied_value_usd: s.implied,
@@ -1930,6 +2149,7 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
       netEv: Math.round(s.verdict.netEv * 100) / 100,
       netEvRatio: Math.round(s.verdict.netEvRatio * 100) / 100,
       feesHold: Math.round(s.verdict.feesHold * 100) / 100,
+      holdDays: s.verdict.holdDays,
     },
     farm_steps: s.steps.map(stepText),
   }));
@@ -1938,7 +2158,7 @@ export function buildBoard(snapshot: Snapshot, fit: FittedModel, model: ModelCon
 /** The live-token protocols, by market cap, for the dashboard's Live token view. */
 export function liveRows(snapshot: Snapshot): LiveRow[] {
   return snapshot.protocols
-    .filter((p) => !isPreToken(p) && p.category !== 'CEX')
+    .filter((p) => !isPreToken(p) && !isCex(p))
     .sort((a, b) => (b.mcap_usd ?? 0) - (a.mcap_usd ?? 0) || b.tvl_usd - a.tvl_usd)
     .slice(0, LIVE_ROWS)
     .map((p) => ({
@@ -1982,7 +2202,14 @@ export function peerPoints(peers: SnapshotProtocol[], snapshot: Snapshot, model:
     .sort((a, b) => a.tvl_usd - b.tvl_usd || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
 }
 
-/** The snapshot out of a file's text, refused unless it is the shape the model scores. */
+/** The snapshot out of a file's text, refused unless it is the shape the model scores.
+ *
+ * The boundary checks (H1, M8, L15): a protocol needs a non-empty slug, a
+ * TVL above zero and inside the safe-integer range, a market cap that is
+ * finite and not negative, and a listing date that parses; no two
+ * protocols may share a slug. Every one of them is refused here rather
+ * than carried into the model, where a zero TVL would divide by zero and
+ * a duplicate slug would silently drop one of the two rows. */
 export function parseSnapshot(text: string): Snapshot {
   let raw: unknown;
   try {
@@ -1997,11 +2224,33 @@ export function parseSnapshot(text: string): Snapshot {
   if (typeof o.floor_usd !== 'number' || !Number.isSafeInteger(o.floor_usd) || o.floor_usd <= 0) throw new SnapshotError('snapshot.json has no floor_usd');
   if (!Array.isArray(o.protocols)) throw new SnapshotError('snapshot.json has no protocols array');
   if (!Array.isArray(o.watchlist) || o.watchlist.some((s) => typeof s !== 'string')) throw new SnapshotError('snapshot.json has no watchlist of slugs');
+  const seenWatchlist = new Set<string>();
+  for (const s of o.watchlist as string[]) {
+    if (seenWatchlist.has(s)) throw new SnapshotError(`duplicate watchlist slug: ${s}`);
+    seenWatchlist.add(s);
+  }
+  const seenSlugs = new Set<string>();
   const protocols = o.protocols.map((v, i) => {
     if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new SnapshotError(`snapshot.json's protocol ${i} is not an object`);
     const p = v as Record<string, unknown>;
     if (typeof p.slug !== 'string' || typeof p.name !== 'string' || typeof p.tvl_usd !== 'number' || !Number.isFinite(p.tvl_usd)) {
       throw new SnapshotError(`snapshot.json's protocol ${i} lacks a slug, a name or a TVL`);
+    }
+    if (p.slug.trim() === '') throw new SnapshotError(`snapshot.json's protocol ${i} has an empty slug`);
+    if (seenSlugs.has(p.slug)) throw new SnapshotError(`duplicate protocol slug: ${p.slug}`);
+    seenSlugs.add(p.slug);
+    if (p.tvl_usd <= 0 || p.tvl_usd > Number.MAX_SAFE_INTEGER) {
+      throw new SnapshotError(`${p.slug} has invalid tvl_usd: ${p.tvl_usd}`);
+    }
+    if (p.mcap_usd !== null && p.mcap_usd !== undefined) {
+      if (typeof p.mcap_usd !== 'number' || !Number.isFinite(p.mcap_usd) || p.mcap_usd < 0) {
+        throw new SnapshotError(`${p.slug} has invalid mcap_usd: ${p.mcap_usd}`);
+      }
+    }
+    if (p.listed_at !== null && p.listed_at !== undefined) {
+      if (typeof p.listed_at !== 'string' || Number.isNaN(Date.parse(p.listed_at))) {
+        throw new SnapshotError(`${p.slug} has invalid listed_at: ${p.listed_at}`);
+      }
     }
     return {
       slug: p.slug,
@@ -2025,11 +2274,18 @@ export function parseSnapshot(text: string): Snapshot {
   };
 }
 
-/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied value, and farm steps. */
+/** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied value, and farm steps.
+ *
+ * The strengthened checks (H1, H2, M2): every row must be a pre-token
+ * protocol, every valuation and farm figure must be finite, and the
+ * board's watchlist rows must be exactly the watchlist protocols the
+ * board is allowed to rank — a live-token watchlist entry is excluded
+ * from the board, not ranked as a pre-token row. */
 export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null {
   const slugs = new Set(board.map((r) => r.slug));
-  const missing = snapshot.watchlist.filter((s) => !slugs.has(s));
-  if (missing.length > 0) return `the board misses ${missing.length} watchlist slug${missing.length === 1 ? '' : 's'}: ${missing.slice(0, 5).join(', ')}`;
+  const index = bySlug(snapshot.protocols);
+  const missing = snapshot.watchlist.filter((s) => index.get(s) === undefined);
+  if (missing.length > 0) return `the board misses ${missing.length} watchlist slug${missing.length === 1 ? '' : 's'} the snapshot does not carry: ${missing.slice(0, 5).join(', ')}`;
   const ranks = board.map((r) => r.rank).sort((a, b) => a - b);
   for (let i = 0; i < ranks.length; i++) if (ranks[i] !== i + 1) return `rank ${i + 1} is ${ranks[i]}`;
   for (let i = 1; i < board.length; i++) if (board[i]!.implied_value_usd > board[i - 1]!.implied_value_usd) return `row ${i + 1} outranks row ${i} on implied value`;
@@ -2037,6 +2293,9 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
     return `all ${board.length} rows share the same implied value $${board[0]!.implied_value_usd}: a board that ranks nothing by value is not a ranking`;
   }
   for (const r of board) {
+    if (r.mcap_usd !== null || r.gecko_id !== null || r.symbol !== null) return `${r.slug} is not pre-token`;
+    if (!Number.isFinite(r.implied_value_usd) || !Number.isFinite(r.multiple)) return `${r.slug} has non-finite valuation`;
+    if (r.farm && (!Number.isFinite(r.farm.pool) || !Number.isFinite(r.farm.share) || !Number.isFinite(r.farm.netEv))) return `${r.slug} has non-finite farm economics`;
     const steps = r.farm_steps;
     if (steps.length < 3 || steps.length > 12) return `${r.slug} has ${steps.length} farm steps`;
     for (const s of steps) if (s.length < 20 || s.length > 600) return `${r.slug} has a farm step of ${s.length} characters`;
@@ -2047,6 +2306,14 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
       return `${r.slug} has a band out of order: p10 ${u.p10}, p25 ${u.p25}, p75 ${u.p75}, p90 ${u.p90}`;
     }
     if (typeof r.mechanism !== 'string' || r.mechanism.length === 0) return `${r.slug} has no mechanism label`;
+  }
+  const expectedWl = new Set(snapshot.watchlist.filter((s) => {
+    const p = index.get(s);
+    return p !== undefined && isPreToken(p) && isRankable(p);
+  }));
+  const actualWl = board.filter((r) => r.is_watchlist).length;
+  if (actualWl !== expectedWl.size) {
+    return `watchlist coverage mismatch: ${actualWl}/${expectedWl.size}`;
   }
   return null;
 }
@@ -2126,6 +2393,18 @@ function round2(n: number): number {
 /** Bootstrap resamples per row for the predictive interval. Fixed, so two runs agree byte for byte. */
 export const BAND_BOOT = 200;
 
+/** The seed of the board's shared bootstrap fit set (fixed, so two runs agree byte for byte). */
+export const BAND_SEED = 4242000;
+
+/**
+ * The bootstrap resamples per peer in the LOO band-coverage cohort. The
+ * cohort rebuilds every peer's band out of fold, so it is the one place
+ * where the resamples cannot be shared; this count keeps the cohort's
+ * cost inside the build's time budget while keeping the construction the
+ * board ships (the cohort's coverage is a measured number either way).
+ */
+export const LOO_BAND_BOOT = 40;
+
 /** The leave-one-out log10 residuals (no-gm predictor) for a peer set: one residual per peer. */
 export function looLogResiduals(peers: SnapshotProtocol[], snapshot: Snapshot, model: ModelConstants = MODEL): number[] {
   const out: number[] = [];
@@ -2139,15 +2418,41 @@ export function looLogResiduals(peers: SnapshotProtocol[], snapshot: Snapshot, m
 }
 
 /**
- * One row's bootstrap predictive band (no growth/maturity): resample the fit's peer set BAND_BOOT
- * times with a seeded PRNG, refit, predict the row, and multiply by 10 to the power of one residual
- * drawn from the LOO log-residuals. The quantiles are the band: p10/p90 is the 80% band, p25/p75
- * the 50% band. Growth and maturity are deterministic per-row multipliers, so the caller scales
- * the band by them afterwards. Pure: the same peers, residuals and seed always give the same band.
+ * The bootstrap fits for a peer set: `bootCount` resamples of the peers
+ * (drawn with a seeded PRNG), each refitted (M11). The fits are computed
+ * ONCE for the whole peer set and then evaluated against every target,
+ * instead of refitting the model once per target row: the old per-row
+ * loop ran rows x bootCount fits (200 rows x 200 fits for the board
+ * alone) and took seconds. The resamples and the seed are fixed, so two
+ * runs write identical bands.
  */
-export function bootstrapBand(
+export function precomputeBootstrapFits(
+  peers: SnapshotProtocol[],
+  model: ModelConstants = MODEL,
+  bootCount: number = BAND_BOOT,
+  seed: number = BAND_SEED,
+): FittedModel[] {
+  const rng = mulberry32(seed);
+  const fits: FittedModel[] = [];
+  for (let b = 0; b < bootCount; b++) {
+    const sample: SnapshotProtocol[] = [];
+    for (let i = 0; i < peers.length; i++) sample.push(peers[Math.floor(rng() * peers.length)]!);
+    fits.push(fitModel(sample, model));
+  }
+  return fits;
+}
+
+/**
+ * One row's predictive band (no growth/maturity) from precomputed bootstrap
+ * fits: predict the row under every fit, multiply by one residual drawn
+ * from the leave-one-out residual distribution, and take the quantiles: the
+ * p10/p90 ends are the 80% band, p25/p75 the 50% band. The residual draw
+ * uses its own seeded PRNG (the seed of the row), so every row's band
+ * draws its own residuals from the same fit set.
+ */
+export function bandFromFits(
   target: SnapshotProtocol,
-  trainPeers: SnapshotProtocol[],
+  fits: FittedModel[],
   snapshot: Snapshot,
   looResid: number[],
   seed: number,
@@ -2155,11 +2460,8 @@ export function bootstrapBand(
 ): { p10: number; p25: number; p50: number; p75: number; p90: number } {
   const rng = mulberry32(seed);
   const vals: number[] = [];
-  for (let b = 0; b < BAND_BOOT; b++) {
-    const resample: SnapshotProtocol[] = [];
-    for (let k = 0; k < trainPeers.length; k++) resample.push(trainPeers[Math.floor(rng() * trainPeers.length)]!);
-    const f = fitModel(resample, model);
-    const pred = impliedValue(target, f, snapshot.as_of, model, false).raw;
+  for (let b = 0; b < fits.length; b++) {
+    const pred = impliedValue(target, fits[b]!, snapshot.as_of, model, false).raw;
     const resid = looResid[Math.floor(rng() * looResid.length)]!;
     vals.push(pred * 10 ** resid);
   }
@@ -2171,6 +2473,28 @@ export function bootstrapBand(
     p75: percentile(sorted, 0.75),
     p90: percentile(sorted, 0.9),
   };
+}
+
+/**
+ * One row's bootstrap predictive band (no growth/maturity): resample the fit's peer set BAND_BOOT
+ * times with a seeded PRNG, refit, predict the row, and multiply by 10 to the power of one residual
+ * drawn from the LOO log-residuals. The quantiles are the band: p10/p90 is the 80% band, p25/p75
+ * the 50% band. Growth and maturity are deterministic per-row multipliers, so the caller scales
+ * the band by them afterwards. Pure: the same peers, residuals and seed always give the same band.
+ *
+ * This is the per-target convenience wrapper around precomputeBootstrapFits
+ * and bandFromFits; the board and the calibration use the two pieces
+ * directly, so one set of fits serves every target.
+ */
+export function bootstrapBand(
+  target: SnapshotProtocol,
+  trainPeers: SnapshotProtocol[],
+  snapshot: Snapshot,
+  looResid: number[],
+  seed: number,
+  model: ModelConstants = MODEL,
+): { p10: number; p25: number; p50: number; p75: number; p90: number } {
+  return bandFromFits(target, precomputeBootstrapFits(trainPeers, model, BAND_BOOT, seed), snapshot, looResid, seed, model);
 }
 
 /** What the band calibration measured, on the frozen blind and time-split sets. */
@@ -2220,8 +2544,12 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
     const train = peers.filter((_, i) => !hold.has(i));
     const test = peers.filter((_, i) => hold.has(i));
     const resid = looLogResiduals(train, snapshot, model);
+    // One set of bootstrap fits for the split (M11): the train set is the
+    // same for every held-out peer, so the fits are computed once and each
+    // peer is predicted under them.
+    const bootFits = precomputeBootstrapFits(train, model, BAND_BOOT, seed * 100000);
     test.forEach((p, i) => {
-      const band = bootstrapBand(p, train, snapshot, resid, seed * 100000 + i, model);
+      const band = bandFromFits(p, bootFits, snapshot, resid, seed * 100000 + i, model);
       if (p.mcap_usd! >= band.p10 && p.mcap_usd! <= band.p90) in80++;
       if (p.mcap_usd! >= band.p25 && p.mcap_usd! <= band.p75) in50++;
       n++;
@@ -2233,8 +2561,9 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
   let tsIn50 = 0;
   if (trainTs.length > 0 && testTs.length > 0) {
     const residTs = looLogResiduals(trainTs, snapshot, model);
+    const bootFitsTs = precomputeBootstrapFits(trainTs, model, BAND_BOOT, 777000);
     testTs.forEach((p, i) => {
-      const band = bootstrapBand(p, trainTs, snapshot, residTs, 777000 + i, model);
+      const band = bandFromFits(p, bootFitsTs, snapshot, residTs, 777000 + i, model);
       if (p.mcap_usd! >= band.p10 && p.mcap_usd! <= band.p90) tsIn80++;
       if (p.mcap_usd! >= band.p25 && p.mcap_usd! <= band.p75) tsIn50++;
     });
@@ -2247,13 +2576,23 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
   // cohort: it checks the implemented band construction (bootstrap refits
   // plus residual draws), not just the residual quantiles the bands are
   // drawn from.
+  //
+  // The cohort's residuals are computed once, not once per peer: the
+  // residual of peer j inside the peer i's fold is the residual of j under
+  // the fit on the peers minus {i, j}, and every unordered pair gives two
+  // of them (j's residual in i's fold and i's residual in j's fold) from
+  // one fit. That is C(n,2) fits instead of n x (n - 1) — the same
+  // residuals, the same order, a third of the work.
+  const residOf = looResidualMatrix(peers, snapshot, model);
   let looIn80 = 0;
   let looIn50 = 0;
   for (let i = 0; i < peers.length; i++) {
     const p = peers[i]!;
     const trainLoo = peers.filter((_, j) => j !== i);
-    const residLoo = looLogResiduals(trainLoo, snapshot, model);
-    const bandLoo = bootstrapBand(p, trainLoo, snapshot, residLoo, 555000 + i, model);
+    const residLoo: number[] = [];
+    for (let j = 0; j < peers.length; j++) if (j !== i) residLoo.push(residOf[i]![j]!);
+    const bootFitsLoo = precomputeBootstrapFits(trainLoo, model, LOO_BAND_BOOT, 555000 + i);
+    const bandLoo = bandFromFits(p, bootFitsLoo, snapshot, residLoo, 555000 + i, model);
     if (p.mcap_usd! >= bandLoo.p10 && p.mcap_usd! <= bandLoo.p90) looIn80++;
     if (p.mcap_usd! >= bandLoo.p25 && p.mcap_usd! <= bandLoo.p75) looIn50++;
   }
@@ -2269,6 +2608,29 @@ export function bandCalibration(snapshot: Snapshot, model: ModelConstants = MODE
     looCov50: peers.length > 0 ? looIn50 / peers.length : 0,
     looN: peers.length,
   };
+}
+
+/**
+ * The leave-one-out residual matrix of a peer set: entry [i][j] is peer j's
+ * log10 residual under the fit on the peers minus {i, j} — the residual
+ * peer j would have inside peer i's leave-one-out fold (j = i is unused).
+ * One fit per unordered pair serves both folds.
+ */
+export function looResidualMatrix(peers: SnapshotProtocol[], snapshot: Snapshot, model: ModelConstants = MODEL): number[][] {
+  const n = peers.length;
+  const out: number[][] = [];
+  for (let i = 0; i < n; i++) out.push(new Array<number>(n).fill(0));
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const train = peers.filter((_, k) => k !== i && k !== j);
+      const fit = fitModel(train, model);
+      const pi = impliedValue(peers[i]!, fit, snapshot.as_of, model, false).raw;
+      const pj = impliedValue(peers[j]!, fit, snapshot.as_of, model, false).raw;
+      out[j]![i] = Math.log10(pi / peers[i]!.mcap_usd!);
+      out[i]![j] = Math.log10(pj / peers[j]!.mcap_usd!);
+    }
+  }
+  return out;
 }
 
 /**
@@ -2299,6 +2661,11 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
   const index = bySlug(snapshot.protocols);
   const widths80: number[] = [];
   const widths50: number[] = [];
+  // One set of bootstrap fits for the whole board (M11): the peer set is
+  // the same for every row, so the fits are computed once and every row is
+  // predicted under them. The old code refitted the model once per row
+  // (200 rows x 200 fits), which was the build's largest cost.
+  const bootFits = precomputeBootstrapFits(peers, model, BAND_BOOT, BAND_SEED);
   board.forEach((row, i) => {
     const target = row as unknown as SnapshotProtocol;
     const p = index.get(row.slug)!;
@@ -2307,7 +2674,7 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
     // maturity multipliers and by its token odds, so the band is the
     // predictive interval of the odds-weighted implied value the board
     // carries — the same scale as the point estimate.
-    const band = bootstrapBand(target, peers, snapshot, resid, 4242000 + i, model);
+    const band = bandFromFits(target, bootFits, snapshot, resid, BAND_SEED + i, model);
     const gm = impliedValue(target, fit, snapshot.as_of, model, true).raw / impliedValue(target, fit, snapshot.as_of, model, false).raw;
     const odds = oddsFit === undefined ? 1 : oddsFor(p, oddsFit, snapshot.as_of);
     // The top-10 lift (model.topScalar) is 1.00 in the post-audit round,
@@ -2323,8 +2690,8 @@ export function attachBands(board: BoardRow[], fit: FittedModel, snapshot: Snaps
     widths50.push(row.uncertainty.p75 / row.uncertainty.p25);
     // Post-band farm economics + P25-POSITIVE promotion (needs the band's p25/p75).
     const steps = farmSteps(p, row.age_days, model);
-    const vMed = verdictFor(p, row.implied_value_usd, steps, model);
-    const vP25 = verdictFor(p, row.uncertainty.p25, steps, model);
+    const vMed = verdictFor(p, row.implied_value_usd, steps, model, holdDaysFor(row.age_days));
+    const vP25 = verdictFor(p, row.uncertainty.p25, steps, model, holdDaysFor(row.age_days));
     const handsOn = steps.reduce((s, st) => s + st.handsOnMinutes, 0);
     const breakevenValue = (vMed.totalCost * p.tvl_usd) / (model.poolShare * vMed.capital);
     const sigma = (Math.log10(row.uncertainty.p75) - Math.log10(row.uncertainty.p25)) / 1.349;
@@ -2746,6 +3113,12 @@ export interface AccountingGroup {
 export interface Accounting {
   total: number;
   groups: AccountingGroup[];
+  /** The watchlist protocols the board is allowed to rank: pre-token, not an
+   * exchange, not a versioned pool. The board must hold exactly these. */
+  watchlist_rankable: number;
+  /** The watchlist protocols the board excludes by rule (live, exchange or
+   * versioned): they are in the snapshot's watchlist but never board rows. */
+  watchlist_excluded: number;
 }
 
 /**
@@ -2767,17 +3140,31 @@ export function computeAccounting(snapshot: Snapshot, board: BoardRow[]): Accoun
     { label: 'Live, fit peer', count: count((p) => isPeer(p) && p.listed_at !== null), note: 'live-token peers the size curve is fitted on' },
     { label: 'Live, set aside', count: count((p) => isPeer(p) && p.listed_at === null), note: 'live-token peers with no listing date — the fit cannot check their age' },
     { label: 'Live, no usable cap', count: count((p) => !isPreToken(p) && !isPeer(p)), note: 'record a token but carry no usable market cap' },
-    { label: 'Pre-token, CEX', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && p.category === 'CEX'), note: 'centralised exchanges — never board candidates' },
-    { label: 'Pre-token, versioned/wrapped', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && p.category !== 'CEX' && VERSIONED.test(p.name)), note: 'a version or wrapper of another protocol — never board candidates' },
-    { label: 'Pre-token, rankable, TVL at/above floor', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && p.category !== 'CEX' && !VERSIONED.test(p.name) && p.tvl_usd >= snapshot.floor_usd), note: 'too large for the early radar and not on the watchlist' },
-    { label: 'Pre-token, rankable, below early cap', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && p.category !== 'CEX' && !VERSIONED.test(p.name) && p.tvl_usd < snapshot.floor_usd), note: 'the early radar is capped at 160 by TVL' },
+    { label: 'Pre-token, CEX', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && isCex(p)), note: 'centralised exchanges — never board candidates' },
+    { label: 'Pre-token, versioned/wrapped', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && !isCex(p) && VERSIONED.test(p.name)), note: 'a version or wrapper of another protocol — never board candidates' },
+    { label: 'Pre-token, rankable, TVL at/above floor', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && !isCex(p) && !VERSIONED.test(p.name) && p.tvl_usd >= snapshot.floor_usd), note: 'too large for the early radar and not on the watchlist' },
+    { label: 'Pre-token, rankable, below early cap', count: count((p) => isPreToken(p) && !boardSlugs.has(p.slug) && !isCex(p) && !VERSIONED.test(p.name) && p.tvl_usd < snapshot.floor_usd), note: 'the early radar is capped at 160 by TVL' },
   ];
-  return { total: snapshot.protocols.length, groups };
+  const index = new Map(snapshot.protocols.map((p) => [p.slug, p]));
+  const watchlistRankable = snapshot.watchlist.filter((s) => {
+    const p = index.get(s);
+    return p !== undefined && isPreToken(p) && isRankable(p);
+  }).length;
+  return {
+    total: snapshot.protocols.length,
+    groups,
+    watchlist_rankable: watchlistRankable,
+    watchlist_excluded: snapshot.watchlist.length - watchlistRankable,
+  };
 }
 
 /** Everything the dashboard renders, from the snapshot. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
-  const fit = fitModel(fitPeersOf(snapshot), model, peersOf(snapshot));
+  const fitPeers = fitPeersOf(snapshot);
+  if (fitPeers.length === 0) {
+    throw new Error('the snapshot carries no live-token peers with a listing date: there is nothing to fit the size curve on');
+  }
+  const fit = fitModel(fitPeers, model, peersOf(snapshot));
   const odds = fitOdds(snapshot, model);
   const board = buildBoard(snapshot, fit, model, odds);
   const live = liveRows(snapshot);
@@ -2802,14 +3189,17 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     fit,
     odds,
     accounting: computeAccounting(snapshot, board),
+    band_boot: BAND_BOOT,
     validation: validateModel(snapshot, fit, model, { ...bandCal, ...bandWidths }, odds),
     rows: board,
     live,
     peers: peerPoints(fitPeersOf(snapshot), snapshot, model),
+    copy: null as unknown as DashboardCopy,
   };
+  // The page's HTML, built from the same numbers the board carries.
+  radar.copy = buildDashboard(radar);
   return { board, radar };
 }
-
 /** A compact data.js: the dashboard's whole dataset as one script, no fetch and no network. */
 export function dataScript(radar: RadarData): string {
   return `window.RADAR=${JSON.stringify(radar)};\n`;
