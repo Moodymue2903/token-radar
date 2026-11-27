@@ -2243,7 +2243,7 @@ export function parseSnapshot(text: string): Snapshot {
       throw new SnapshotError(`${p.slug} has invalid tvl_usd: ${p.tvl_usd}`);
     }
     if (p.mcap_usd !== null && p.mcap_usd !== undefined) {
-      if (typeof p.mcap_usd !== 'number' || !Number.isFinite(p.mcap_usd) || p.mcap_usd < 0) {
+      if (typeof p.mcap_usd !== 'number' || !Number.isFinite(p.mcap_usd)) {
         throw new SnapshotError(`${p.slug} has invalid mcap_usd: ${p.mcap_usd}`);
       }
     }
@@ -2259,7 +2259,7 @@ export function parseSnapshot(text: string): Snapshot {
       chains: Array.isArray(p.chains) ? p.chains.filter((c): c is string => typeof c === 'string') : [],
       tvl_usd: p.tvl_usd,
       change_7d: typeof p.change_7d === 'number' && Number.isFinite(p.change_7d) ? p.change_7d : null,
-      mcap_usd: typeof p.mcap_usd === 'number' && Number.isFinite(p.mcap_usd) ? p.mcap_usd : null,
+      mcap_usd: typeof p.mcap_usd === 'number' && Number.isFinite(p.mcap_usd) && p.mcap_usd >= 0 ? p.mcap_usd : null,
       listed_at: typeof p.listed_at === 'string' ? p.listed_at : null,
       gecko_id: typeof p.gecko_id === 'string' ? p.gecko_id : null,
       symbol: typeof p.symbol === 'string' ? p.symbol : null,

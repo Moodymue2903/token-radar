@@ -117,8 +117,9 @@ test('parseSnapshot refuses a TVL outside the safe-integer range', () => {
   assert.throws(() => parseSnapshot(rawSnapshot([{ slug: 'a', name: 'A', tvl_usd: 1e18 }])), SnapshotError);
 });
 
-test('parseSnapshot refuses a negative or infinite market cap', () => {
-  assert.throws(() => parseSnapshot(rawSnapshot([{ slug: 'a', name: 'A', tvl_usd: 1_000_000, mcap_usd: -1 }])), SnapshotError);
+test('parseSnapshot reads a negative market cap as missing, and refuses an infinite one', () => {
+  const snap = parseSnapshot(rawSnapshot([{ slug: 'a', name: 'A', tvl_usd: 1_000_000, mcap_usd: -1 }]));
+  assert.equal(snap.protocols[0]!.mcap_usd, null);
   // 1e999 is written into the text by hand: JSON.stringify turns Infinity
   // into null, which is a different case (a pre-token protocol).
   const infinite = '{"as_of":"2026-11-27","source":"test","floor_usd":50000000,"protocols":[' +
