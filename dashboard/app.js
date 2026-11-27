@@ -33,8 +33,8 @@
     chain: 'all',
     verdict: 'all',
     minImp: '',
-    sort: 'perhour',
-    dir: -1,
+    sort: 'rank',
+    dir: 1,
     selected: null,
     deposit: M.referenceCapital || 1000,
     drop: (M.poolShare || 0.08) * 100,
@@ -295,6 +295,7 @@
     app.removeAttribute('aria-busy');
     wireEvents();
     if (state.tab === 'board') applyScenario();
+    paintChecksum();
   }
 
   // Re-render the table and the count without taking the filter inputs away
@@ -450,6 +451,7 @@
         change_7d: r.change_7d,
         age_days: r.age_days,
         implied_value_usd: r.implied_value_usd,
+        value_if_launches_usd: r.model.value_if_launches,
         token_odds: r.odds,
         p25_usd: r.uncertainty ? r.uncertainty.p25 : null,
         p75_usd: r.uncertainty ? r.uncertainty.p75 : null,
@@ -562,9 +564,98 @@
     render();
   }
 
+  // ---- the board's checksum: the page recomputes the model's SHA-256 ----
+  // The model writes the first eight hex characters of the SHA-256 of the
+  // canonical rows (slug | rank | implied value | token odds, one line per
+  // row in rank order) into the data file. The page hashes the same text
+  // with its own SHA-256 and puts the two numbers side by side, so a
+  // screenshot that disagrees with the board is visible on the page itself.
+  var SHA_K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+  function sha256Hex(text) {
+    var bytes = [];
+    for (var i = 0; i < text.length; i++) {
+      var c = text.charCodeAt(i);
+      if (c < 0x80) bytes.push(c);
+      else if (c < 0x800) { bytes.push(0xc0 | (c >> 6), 0x80 | (c & 63)); }
+      else { bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63)); }
+    }
+    var len = bytes.length;
+    bytes.push(0x80);
+    while (bytes.length % 64 !== 56) bytes.push(0);
+    var bits = len * 8;
+    var hi = Math.floor(bits / 4294967296);
+    var lo = bits >>> 0;
+    bytes.push((hi >>> 24) & 255, (hi >>> 16) & 255, (hi >>> 8) & 255, hi & 255);
+    bytes.push((lo >>> 24) & 255, (lo >>> 16) & 255, (lo >>> 8) & 255, lo & 255);
+    var h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    var w = new Array(64);
+    for (var off = 0; off < bytes.length; off += 64) {
+      for (var t = 0; t < 16; t++) {
+        w[t] = (bytes[off + t * 4] << 24) | (bytes[off + t * 4 + 1] << 16) | (bytes[off + t * 4 + 2] << 8) | bytes[off + t * 4 + 3];
+      }
+      for (t = 16; t < 64; t++) {
+        var s0 = ((w[t - 15] >>> 7) | (w[t - 15] << 25)) ^ ((w[t - 15] >>> 18) | (w[t - 15] << 14)) ^ (w[t - 15] >>> 3);
+        var s1 = ((w[t - 2] >>> 17) | (w[t - 2] << 15)) ^ ((w[t - 2] >>> 19) | (w[t - 2] << 13)) ^ (w[t - 2] >>> 10);
+        w[t] = (w[t - 16] + s0 + w[t - 7] + s1) | 0;
+      }
+      var a = h[0], b = h[1], cc = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+      for (t = 0; t < 64; t++) {
+        var S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+        var ch = (e & f) ^ (~e & g);
+        var t1 = (hh + S1 + ch + SHA_K[t] + w[t]) | 0;
+        var S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+        var maj = (a & b) ^ (a & cc) ^ (b & cc);
+        var t2 = (S0 + maj) | 0;
+        hh = g; g = f; f = e; e = (d + t1) | 0;
+        d = cc; cc = b; b = a; a = (t1 + t2) | 0;
+      }
+      h[0] = (h[0] + a) | 0; h[1] = (h[1] + b) | 0; h[2] = (h[2] + cc) | 0; h[3] = (h[3] + d) | 0;
+      h[4] = (h[4] + e) | 0; h[5] = (h[5] + f) | 0; h[6] = (h[6] + g) | 0; h[7] = (h[7] + hh) | 0;
+    }
+    var hex = '';
+    for (i = 0; i < 8; i++) hex += ('00000000' + (h[i] >>> 0).toString(16)).slice(-8);
+    return hex;
+  }
+  // The canonical rows the checksum is taken over: the same text the model
+  // hashed, built from the rows the page was given.
+  function checksumText() {
+    return DATA.rows.slice().sort(function (a, b) { return a.rank - b.rank; })
+      .map(function (r) { return r.slug + '|' + r.rank + '|' + r.implied_value_usd + '|' + r.odds; })
+      .join('\n') + '\n';
+  }
+  function checksumCheck() {
+    var expected = DATA.board_checksum || '';
+    var got = sha256Hex(checksumText()).slice(0, 8);
+    return { expected: expected, got: got, ok: expected !== '' && expected === got };
+  }
+  // The strip on the first screen carries the model's checksum; the page
+  // adds its own verdict beside it.
+  function paintChecksum() {
+    var el = document.getElementById('acc-checksum');
+    if (!el) return;
+    var c = checksumCheck();
+    el.textContent = c.expected + (c.ok ? ' ✓' : ' ✗ (page: ' + c.got + ')');
+    el.title = c.ok
+      ? 'SHA-256 of the canonical rows (slug, rank, implied value, token odds), recomputed in this page.'
+      : 'This page hashed the rows it was given to ' + c.got + '; the board says ' + c.expected + '.';
+  }
+
   // The model's own consistency check, published for the page and for anyone
   // reading the console.
+  var checksum = checksumCheck();
   window.__CHECKS__ = COPY.checks || { recomputeMismatches: 0, playbookMismatches: 0, rows: DATA.rows.length };
+  window.__CHECKS__.checksum = checksum.expected;
+  window.__CHECKS__.checksumPage = checksum.got;
+  window.__CHECKS__.checksumOk = checksum.ok;
 
   window.addEventListener('hashchange', route);
   document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') closeDetail(); });

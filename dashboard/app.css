@@ -137,19 +137,22 @@ table.plain .p25full{white-space:normal;max-width:180px}
 
 /* Round 15: the 1024x1024 cover. The ranked table is the hero and has to
    reach the fold, so the cover's top band is one compact strip (header,
-   accounting, filters, sliders) and every table row is two lines tall. */
-table.bt{width:100%;border-collapse:collapse;font-size:12px;table-layout:auto}
-table.bt th,table.bt td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;line-height:1.25}
-table.bt th{padding:4px 6px;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;cursor:pointer}
+   accounting, filters, sliders) and every table row is two lines tall.
+   Round 16: the If-it-launches column joined the table, so the cells are
+   tighter (4px side padding, a 150px protocol column) and the numbers stay
+   on one line: the table must not be wider than the page. */
+table.bt{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:auto}
+table.bt th,table.bt td{padding:5px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;line-height:1.25}
+table.bt th{padding:4px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;cursor:pointer}
 table.bt th.num{text-align:right}
 table.bt td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-table.bt th.rk,table.bt td.rk{text-align:right;padding-left:2px;padding-right:4px;color:var(--dim)}
-table.bt td.proto{width:172px;padding-left:2px;padding-right:6px}
-table.bt .p1,table.bt .p2{width:172px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.bt th.rk,table.bt td.rk{text-align:right;padding-left:2px;padding-right:3px;color:var(--dim)}
+table.bt td.proto{width:150px;padding-left:2px;padding-right:4px}
+table.bt .p1,table.bt .p2{width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 table.bt .p1{font-size:12px}
 table.bt .p2{font-size:10.5px;color:var(--muted)}
-table.bt .wl{font-size:9.5px;padding:0 4px;margin:0 4px 0 0;border-radius:3px;vertical-align:1px}
-table.bt .badge{font-size:10.5px;padding:1px 6px;letter-spacing:.2px}
+table.bt .wl{font-size:9.5px;padding:0 3px;margin:0 3px 0 0;border-radius:3px;vertical-align:1px}
+table.bt .badge{font-size:10.5px;padding:1px 5px;letter-spacing:.2px}
 table.bt tbody tr:hover{background:var(--panel2)}
 table.bt td[data-c="net"]{font-weight:650}
 table.bt td[data-c="net"].neg{color:var(--red)}

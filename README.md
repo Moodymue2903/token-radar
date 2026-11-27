@@ -93,6 +93,29 @@ comps scatter chart, a live tab, and the methodology page. The page
 recomputes the model and the farm plans from the snapshot, so every
 number on screen is derived, not pasted.
 
+The board opens in **rank order** — rank #1 leads the cover — and every row
+carries the value **if it launches** (the implied value before the token-odds
+weighting) beside the implied value, so the reader sees the conditional and
+the expected number side by side. The **$/h** button re-sorts by net return
+per hour at the reader's own deposit, drop-share and horizon.
+
+The **token odds** are a logistic regression on the snapshot's own record
+(P(protocol ever records a token)), fitted on the peers that have a listing
+date and validated by Brier score in two tests — ten-fold cross-validation and
+walk-forward. A term ships only when it lowers the Brier score in **both**
+tests against the incumbent; the term table on the calibration tab shows
+every candidate (age, size, 7-day growth, family, chain count, the shrunk
+category token rate, the multi-chain flag and a placebo) with its scores and
+whether it was kept. The category rate is counted inside each training fold,
+never from the row being scored.
+
+The first screen carries the **accounting strip**: every snapshot protocol in
+exactly one group, the rows recomputed in the page, the ranks in order and
+the board's **checksum** — the first eight hex characters of the SHA-256 of
+the canonical rows (slug, rank, implied value, token odds). The page hashes
+the same text with its own SHA-256 and prints the two numbers side by side,
+so a screenshot that disagrees with the board is visible on the page itself.
+
 ## How it runs
 
 `main.ts` (Node 22, standard library only) reads the sealed snapshot at

@@ -260,12 +260,14 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. Round 13 keeps the round-8 value/odds models (winsorised ridge, age+size logistic) and changes only the farm cost model and the presentation. */
-export const MODEL_VERSION = 'radar-13-top10';
+export const MODEL_VERSION = 'radar-16-odds';
 
 // The dashboard's rendering: the model builds the page's HTML from the
 // snapshot and writes it into data.js, so the page's own source stays
 // small enough for the dossier to carry it whole.
 import { buildDashboard } from './render.js';
+// The board's checksum: the same SHA-256 the page recomputes.
+import { createHash } from 'node:crypto';
 
 /** The dashboard's HTML: the sections it shows, the board tab's parts, and
   * the cells of every row and every traded anchor. */
@@ -604,6 +606,10 @@ export interface RadarData {
   odds: OddsFit;
   /** The accounting of all 758 snapshot protocols, in exactly one group each. */
   accounting: Accounting;
+  /** The board's checksum: the first eight hex characters of the SHA-256 of
+   * the canonical rows (slug, rank, implied value, token odds). The page
+   * recomputes it and shows both numbers side by side. */
+  board_checksum: string;
   /** The bootstrap resamples behind every board row's band. The page reads
    * the count from here, so the number it shows is the number the model ran. */
   band_boot: number;
@@ -1727,8 +1733,8 @@ export interface OddsTermRow {
 }
 
 /** The token-odds model: P(protocol ever records a token), a logistic
-  * regression on the snapshot's own record. Kept terms (age + size) passed
-  * the two-test rule — each lowers the Brier score in BOTH ten-fold
+  * regression on the snapshot's own record. The kept terms passed the
+  * two-test rule — each lowers the Brier score in BOTH ten-fold
   * cross-validation and walk-forward. Family, growth, chain count and the
   * control term were tested and NOT kept. See benchmark/odds-test.ts for
   * the full term table. */
@@ -1737,6 +1743,15 @@ export interface OddsFit {
   intercept: number;
   ageCoef: number;
   sizeCoef: number;
+  /** The kept terms, in the canonical feature order (the order the
+   * coefficients are given in). */
+  terms: string[];
+  /** The coefficient of each kept term, in the same order as `terms`. */
+  coefs: number[];
+  /** The shrunk category token rate per category: a centred log-odds
+   * premium over the training set's base rate, computed from the training
+   * set alone (never from the rows being predicted). */
+  catRate: Record<string, number>;
   /** The training set: rankable-type protocols with a listing date. */
   trainN: number;
   /** The base rate (fraction recording a token) on the training set. */
@@ -1766,6 +1781,58 @@ export function ageYears(asOf: string, listedAt: string | null): number {
 function nameStem(p: SnapshotProtocol): string {
   const w = p.name.trim().toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   return w.length > 0 ? w[0]! : p.slug;
+}
+
+/** The odds model's terms, in the order the design columns are pushed. The
+  * shipped model's coefficients follow this order, so the page can rebuild
+  * the same logit from the same list. */
+const ODDS_TERM_ORDER = ['age', 'size', 'growth', 'chain', 'multi', 'catrate'] as const;
+
+/** The terms that can ship: every one of them can be scored for a protocol
+  * the model has never seen. 'family' (a ridge on the name stem) and
+  * 'control' (the placebo) are benchmark terms — they are scored, never
+  * shipped. */
+const ODDS_SHIPPABLE = ['age', 'size', 'growth', 'chain', 'multi', 'catrate'];
+
+/** The category a protocol's token rate is read from. */
+function categoryKey(p: SnapshotProtocol): string {
+  return p.category ?? '';
+}
+
+/** The shrunk category token rate: the share of the protocols in a
+  * category that recorded a token, shrunk toward the set's base rate
+  * (weight n/(n+5), so a category with five protocols counts half as much
+  * as its own record) and centred on the set's base log-odds, so the
+  * feature is a premium over the base rate and not a second copy of it.
+  * The counts come from the set passed in — the training fold in
+  * cross-validation, the pre-2025 rows in walk-forward, the whole training
+  * set for the shipped model — so a row's own outcome never reaches its
+  * own prediction. */
+function categoryTokenRates(set: SnapshotProtocol[], setY: number[]): Map<string, number> {
+  const counts = new Map<string, { n: number; k: number }>();
+  for (let i = 0; i < set.length; i++) {
+    const key = categoryKey(set[i]!);
+    const c = counts.get(key) ?? { n: 0, k: 0 };
+    c.n++;
+    c.k += setY[i]!;
+    counts.set(key, c);
+  }
+  const n = set.length;
+  let base = 0.5;
+  if (n > 0) {
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += setY[i]!;
+    base = sum / n;
+  }
+  base = Math.min(1 - 1e-6, Math.max(1e-6, base));
+  const baseLogit = Math.log(base / (1 - base));
+  const out = new Map<string, number>();
+  for (const [key, c] of counts) {
+    const w = c.n / (c.n + 5);
+    const p = Math.min(1 - 1e-6, Math.max(1e-6, w * (c.k / c.n) + (1 - w) * base));
+    out.set(key, Math.log(p / (1 - p)) - baseLogit);
+  }
+  return out;
 }
 
 /**
@@ -1804,13 +1871,20 @@ export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): Odds
   };
   // The design columns for one protocol under a term set (excluding the
   // intercept, always column 0). Family columns are one-hot dummies for
-  // stems with >= 3 members in the FIT set, ridge-shrunk at lambda 16.
-  const features = (p: SnapshotProtocol, stems: string[], terms: string[]): number[] => {
+  // stems with >= 3 members in the FIT set, ridge-shrunk at lambda 16. The
+  // category rate and the multi-chain flag come from the fit set's own
+  // counts, never from the row being scored.
+  const features = (p: SnapshotProtocol, stems: string[], terms: string[], catRate: Map<string, number>): number[] => {
     const cols: number[] = [];
-    if (terms.includes('age')) cols.push(ageYears(snapshot.as_of, p.listed_at));
-    if (terms.includes('size')) cols.push(Math.log(p.tvl_usd) - Math.log(1e8));
-    if (terms.includes('growth')) cols.push(clamp(p.change_7d ?? 0, -60, 120) / 100);
-    if (terms.includes('chain')) cols.push(Math.log(Math.max(1, p.chains.length)) - Math.log(2));
+    for (const term of ODDS_TERM_ORDER) {
+      if (!terms.includes(term)) continue;
+      if (term === 'age') cols.push(ageYears(snapshot.as_of, p.listed_at));
+      else if (term === 'size') cols.push(Math.log(p.tvl_usd) - Math.log(1e8));
+      else if (term === 'growth') cols.push(clamp(p.change_7d ?? 0, -60, 120) / 100);
+      else if (term === 'chain') cols.push(Math.log(Math.max(1, p.chains.length)) - Math.log(2));
+      else if (term === 'multi') cols.push(p.chains.length > 1 ? 1 : 0);
+      else if (term === 'catrate') cols.push(catRate.get(categoryKey(p)) ?? 0);
+    }
     if (terms.includes('control')) cols.push(controlGrowth.get(p.slug) ?? 0);
     if (terms.includes('family')) {
       const s = nameStem(p);
@@ -1828,13 +1902,13 @@ export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): Odds
     stems: string[];
     terms: string[];
   }
-  const buildDesign = (set: SnapshotProtocol[], stems: string[], terms: string[]): LogitDesign => {
+  const buildDesign = (set: SnapshotProtocol[], stems: string[], terms: string[], catRate: Map<string, number>): LogitDesign => {
     const nFam = stems.length;
-    const nMain = features(set[0]!, stems, terms).length - nFam;
+    const nMain = features(set[0]!, stems, terms, catRate).length - nFam;
     const d = 1 + nMain + nFam;
     const X = new Float64Array(set.length * d);
     for (let i = 0; i < set.length; i++) {
-      const cols = [1, ...features(set[i]!, stems, terms)];
+      const cols = [1, ...features(set[i]!, stems, terms, catRate)];
       for (let j = 0; j < d; j++) X[i * d + j] = cols[j]!;
     }
     return { X, d, nMain, stems, terms };
@@ -1929,13 +2003,18 @@ export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): Odds
     }
     return beta;
   };
-  const fitLogit = (set: SnapshotProtocol[], setY: number[], terms: string[]): { beta: number[]; stems: string[]; terms: string[] } => {
+  const fitLogit = (set: SnapshotProtocol[], setY: number[], terms: string[]): { beta: number[]; stems: string[]; terms: string[]; catRate: Map<string, number> } => {
     const stems = terms.includes('family') ? familyStems(set) : [];
-    const design = buildDesign(set, stems, terms);
-    return { beta: fitLogitDesign(design, setY), stems, terms };
+    // The category rate is counted on the fit set only: in cross-validation
+    // that is the fold's nine training folds, in walk-forward the rows
+    // listed before 2025. A held-out row's own outcome never reaches its
+    // own prediction.
+    const catRate = terms.includes('catrate') ? categoryTokenRates(set, setY) : new Map<string, number>();
+    const design = buildDesign(set, stems, terms, catRate);
+    return { beta: fitLogitDesign(design, setY), stems, terms, catRate };
   };
-  const predict = (fitted: { beta: number[]; stems: string[]; terms: string[] }, p: SnapshotProtocol): number => {
-    const cols = [1, ...features(p, fitted.stems, fitted.terms)];
+  const predict = (fitted: { beta: number[]; stems: string[]; terms: string[]; catRate: Map<string, number> }, p: SnapshotProtocol): number => {
+    const cols = [1, ...features(p, fitted.stems, fitted.terms, fitted.catRate)];
     return logit(cols.reduce((s, v, j) => s + v * fitted.beta[j]!, 0));
   };
   const brier = (preds: number[], actual: number[]): number =>
@@ -2008,49 +2087,98 @@ export function fitOdds(snapshot: Snapshot, model: ModelConstants = MODEL): Odds
       status: 'tested, not kept',
     };
   };
-  const keptTerms = ['age', 'size'];
+  // The candidate term sets. The incumbent (age + size) is the model the
+  // board has shipped; every other set is a candidate that must beat it in
+  // BOTH tests to be shipped instead.
+  const incumbentTerms = ['age', 'size'];
   const termSets: string[][] = [
     [],
     ['age'],
-    ['age', 'size'],
+    incumbentTerms,
     ['age', 'size', 'growth'],
     ['age', 'size', 'family'],
     ['age', 'size', 'chain'],
+    ['age', 'size', 'multi'],
+    ['age', 'size', 'catrate'],
+    ['age', 'size', 'catrate', 'multi'],
     ['age', 'size', 'control'],
   ];
-  const termTable = termSets.map((terms) => {
-    const row = scoreTerms(terms);
-    if (terms.join(' + ') === keptTerms.join(' + ')) row.status = 'kept';
-    if (terms.includes('control')) row.status = 'must not help';
-    return row;
+  const scored = termSets.map((terms) => ({ terms, row: scoreTerms(terms) }));
+  const incumbent = scored.find((s) => s.terms.join(' + ') === incumbentTerms.join(' + '))!;
+  // The two-test rule: a candidate ships only when it lowers the Brier
+  // score in BOTH the ten-fold cross-validation and the walk-forward test,
+  // measured against the incumbent. A term that helps in one test and not
+  // the other is not kept. The placebo never ships.
+  const qualifies = (s: { terms: string[]; row: OddsTermRow }): boolean =>
+    s.terms.length > 0 &&
+    s.terms.every((t) => ODDS_SHIPPABLE.includes(t)) &&
+    s.row.brierCv !== null && s.row.brierWf !== null &&
+    incumbent.row.brierCv !== null && incumbent.row.brierWf !== null &&
+    s.row.brierCv < incumbent.row.brierCv && s.row.brierWf < incumbent.row.brierWf;
+  const winners = scored.filter(qualifies).sort((a, b) =>
+    (a.row.brierWf! - b.row.brierWf!) || (a.row.brierCv! - b.row.brierCv!) || (a.terms.length - b.terms.length));
+  const keptTerms = winners.length > 0 ? winners[0]!.terms : incumbentTerms;
+  const termTable = scored.map((s) => {
+    if (s.terms.join(' + ') === keptTerms.join(' + ')) s.row.status = 'kept';
+    if (s.terms.includes('control')) s.row.status = 'must not help';
+    return s.row;
   });
   const keptRow = termTable.find((r) => r.status === 'kept')!;
   const keptFit = fitLogit(train, ys, keptTerms);
+  // The shipped model's coefficients, in the canonical feature order, so
+  // the page can rebuild the same logit from the same list.
+  const shippedTerms = ODDS_TERM_ORDER.filter((t) => keptTerms.includes(t));
+  const shippedCoefs = keptFit.beta.slice(1, 1 + shippedTerms.length);
+  const catRate: Record<string, number> = {};
+  for (const [key, value] of keptFit.catRate) catRate[key] = value;
+  const coefOf = (term: string): number => {
+    const at = shippedTerms.indexOf(term as (typeof ODDS_TERM_ORDER)[number]);
+    return at < 0 ? 0 : shippedCoefs[at]!;
+  };
   return {
     intercept: keptFit.beta[0]!,
-    ageCoef: keptFit.beta[1]!,
-    sizeCoef: keptFit.beta[2]!,
+    ageCoef: coefOf('age'),
+    sizeCoef: coefOf('size'),
+    terms: [...shippedTerms],
+    coefs: shippedCoefs,
+    catRate,
     trainN: train.length,
     baseRate,
     baseBrierCv,
     baseBrierWf,
     brierCv: keptRow.brierCv!,
     brierWf: keptRow.brierWf!,
-    calledRightCv: keptRow.calledRightCv!,
-    calledRightWf: keptRow.calledRightWf!,
+    calledRightCv: keptRow.calledRightCv ?? 0,
+    calledRightWf: keptRow.calledRightWf ?? 0,
     wfTestN: testWf.length,
     termTable,
   };
 }
 
+/** One term's value for one protocol, under the shipped model. */
+function oddsFeature(term: string, p: SnapshotProtocol, odds: OddsFit, asOf: string): number {
+  if (term === 'age') return ageYears(asOf, p.listed_at);
+  if (term === 'size') return Math.log(p.tvl_usd) - Math.log(1e8);
+  if (term === 'growth') return clamp(p.change_7d ?? 0, -60, 120) / 100;
+  if (term === 'chain') return Math.log(Math.max(1, p.chains.length)) - Math.log(2);
+  if (term === 'multi') return p.chains.length > 1 ? 1 : 0;
+  if (term === 'catrate') return odds.catRate[categoryKey(p)] ?? 0;
+  return 0;
+}
+
 /** P(protocol ever records a token) under the fitted odds model. Age is
- * the protocol's age in years at asOf (1.0 years when the listing date is
- * unknown — the odds model's unknown-age prior; the maturity term that used
- * the same prior is dropped in round 8). */
+  * the protocol's age in years at asOf (1.0 years when the listing date is
+  * unknown — the odds model's unknown-age prior; the maturity term that used
+  * the same prior is dropped in round 8). The kept terms and their
+  * coefficients come from the fit, so the logit is rebuilt term by term. */
 export function oddsFor(p: SnapshotProtocol, odds: OddsFit, asOf: string): number {
-  const z = odds.intercept + odds.ageCoef * ageYears(asOf, p.listed_at) + odds.sizeCoef * (Math.log(p.tvl_usd) - Math.log(1e8));
+  let z = odds.intercept;
+  for (let i = 0; i < odds.terms.length; i++) {
+    z += odds.coefs[i]! * oddsFeature(odds.terms[i]!, p, odds, asOf);
+  }
   return 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, z))));
 }
+
 
 /** The snapshot's protocol by slug. */
 function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
@@ -3189,6 +3317,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     fit,
     odds,
     accounting: computeAccounting(snapshot, board),
+    board_checksum: boardChecksum(board),
     band_boot: BAND_BOOT,
     validation: validateModel(snapshot, fit, model, { ...bandCal, ...bandWidths }, odds),
     rows: board,
@@ -3200,6 +3329,22 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   radar.copy = buildDashboard(radar);
   return { board, radar };
 }
+/** The canonical text the board's checksum is taken over: one line per row,
+ *  in rank order — slug, rank, implied value and token odds — so the same
+ *  board always gives the same checksum and a changed board does not. */
+export function checksumInput(board: BoardRow[]): string {
+  const rows = [...board].sort((a, b) => a.rank - b.rank);
+  return rows.map((r) => `${r.slug}|${r.rank}|${r.implied_value_usd}|${r.odds}`).join('\n') + '\n';
+}
+
+/** The board's checksum: the first eight hex characters of the SHA-256 of
+ *  the canonical rows. The page recomputes it from the data file and shows
+ *  its own number beside the model's, so a screenshot that disagrees with
+ *  the board is visible on the page itself. */
+export function boardChecksum(board: BoardRow[]): string {
+  return createHash('sha256').update(checksumInput(board), 'utf8').digest('hex').slice(0, 8);
+}
+
 /** A compact data.js: the dashboard's whole dataset as one script, no fetch and no network. */
 export function dataScript(radar: RadarData): string {
   return `window.RADAR=${JSON.stringify(radar)};\n`;

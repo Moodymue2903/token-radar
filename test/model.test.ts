@@ -7,10 +7,12 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 
 import {
   MODEL,
   SnapshotError,
+  boardChecksum,
   boardIssue,
   buildBoard,
   buildRadar,
@@ -287,6 +289,22 @@ function radarOf() {
   return buildRadar(snapshotOf(protocols, ['proto-2'])).radar;
 }
 
+// A snapshot whose odds model has both outcomes and overlapping features:
+// live-token peers and pre-token protocols, both with listing dates and the
+// same size range, so the logistic fits instead of separating the data.
+function oddsSnapshot(): Snapshot {
+  const protocols: SnapshotProtocol[] = [];
+  for (let i = 0; i < 12; i++) {
+    protocols.push(peer(i, { listed_at: i % 2 === 0 ? '2022-05-01' : '2024-05-01' }));
+    protocols.push(preToken(100 + i, { tvl_usd: 100_000_000 + i * 10_000_000, listed_at: i % 3 === 0 ? '2023-05-01' : null }));
+  }
+  for (let i = 0; i < 6; i++) {
+    protocols.push(peer(50 + i, { listed_at: '2025-06-01' }));
+    protocols.push(preToken(200 + i, { tvl_usd: 100_000_000 + i * 10_000_000, listed_at: '2025-06-01' }));
+  }
+  return snapshotOf(protocols, ['proto-100']);
+}
+
 test('an empty split prints n/a, never xNaN or NaN%', () => {
   const radar = radarOf();
   radar.validation.valueTermTable = [{
@@ -314,4 +332,40 @@ test('the peer counts in the copy are read from the data, not written down', () 
   assert.ok(!html.includes('Blind n=95'), 'the blind sample size must not be a literal');
   assert.ok(html.includes('the other ' + (radar.validation.peerCount - 1) + ' peers'), 'the copy must name the peer count it measured');
   assert.ok(html.includes('Blind n=' + radar.validation.bands.blindN), 'the copy must name the blind sample size it measured');
+});
+
+test('the board checksum is eight hex characters, stable, and changes with a row', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  assert.match(radar.board_checksum, /^[0-9a-f]{8}$/, 'the checksum must be eight hex characters');
+  const again = boardChecksum(radar.rows);
+  assert.equal(again, radar.board_checksum, 'the same board must give the same checksum');
+  const moved = radar.rows.map((r) => ({ ...r }));
+  moved[0] = { ...moved[0]!, implied_value_usd: moved[0]!.implied_value_usd + 1 };
+  assert.notEqual(boardChecksum(moved), radar.board_checksum, 'a changed row must change the checksum');
+  const html = JSON.stringify(buildDashboard(radar));
+  assert.ok(html.includes(radar.board_checksum), 'the accounting strip must carry the checksum');
+});
+
+test('the page can rebuild the checksum from the rows it was given', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  // The page hashes the canonical rows itself; this is the same text.
+  const canonical = radar.rows
+    .slice()
+    .sort((a, b) => a.rank - b.rank)
+    .map((r) => `${r.slug}|${r.rank}|${r.implied_value_usd}|${r.odds}`)
+    .join('\n') + '\n';
+  assert.equal(createHash('sha256').update(canonical, 'utf8').digest('hex').slice(0, 8), radar.board_checksum);
+});
+
+test('the odds model keeps exactly one term set, and only shippable terms', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  const kept = radar.odds.termTable.filter((r) => r.status === 'kept');
+  assert.equal(kept.length, 1, 'the term table must mark exactly one term set as kept');
+  assert.equal(kept[0]!.terms, radar.odds.terms.join(' + '), 'the kept row must be the shipped model');
+  assert.ok(!radar.odds.terms.includes('control'), 'the placebo must never ship');
+  assert.ok(!radar.odds.terms.includes('family'), 'the benchmark family term must never ship');
+  assert.equal(radar.odds.coefs.length, radar.odds.terms.length, 'every kept term needs a coefficient');
+  for (const c of radar.odds.coefs) assert.ok(Number.isFinite(c), 'the coefficients must be finite');
+  const placebo = radar.odds.termTable.find((r) => r.terms.includes('control'));
+  assert.equal(placebo?.status, 'must not help', 'the placebo is marked as such');
 });
