@@ -369,3 +369,35 @@ test('the odds model keeps exactly one term set, and only shippable terms', () =
   const placebo = radar.odds.termTable.find((r) => r.terms.includes('control'));
   assert.equal(placebo?.status, 'must not help', 'the placebo is marked as such');
 });
+
+test('the cover counts the farm rows the page filters on, and repaints them live', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  const board = buildDashboard(radar).board;
+  const evidence = board.evidence;
+  // The rows the page calls FARM at the model's settings: the strict FARM
+  // rows plus the Board P25-positive (pre-fee) rows, which are a subset of
+  // FARM and not a tier of their own.
+  const farm = radar.rows.filter((r) => r.farm.verdict === 'FARM' || r.farm.verdict === 'P25-POSITIVE').length;
+  assert.ok(evidence.includes('id="evb-farm-count"'), 'the cover tile must carry the farm count the page repaints');
+  assert.ok(evidence.includes('id="evb-farm-best"'), 'the cover tile must carry the best farm row');
+  assert.ok(evidence.includes('>' + farm + ' FARM<'), 'the cover tile must start at the same farm count the filter bar shows');
+  const strict = radar.rows.filter((r) => r.farm.verdict === 'FARM').length;
+  if (strict !== farm) {
+    assert.ok(!evidence.includes('>' + strict + ' FARM<'), 'the cover must not count the strict FARM rows alone');
+  }
+});
+
+test('the cover names the value terms short, and keeps the full name in the title', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  const evidence = buildDashboard(radar).board.evidence;
+  const table = radar.validation.valueTermTable;
+  assert.ok(table.length > 0, 'the value model must report its term table');
+  for (const row of table) {
+    const title = 'title="' + row.terms + ' ';
+    assert.ok(evidence.includes(title), 'the full term must stay in the cell title: ' + row.terms);
+  }
+  // The cover prints the short name, not the long one: the long strings must
+  // not appear as cell text.
+  assert.ok(!evidence.includes('>adopted + control: growth of another row<'), 'the long term must not be the cell text');
+  assert.ok(evidence.includes('>TVL + cat + placebo<'), 'the short term must be the cell text');
+});

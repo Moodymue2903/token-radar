@@ -109,6 +109,15 @@ the placebo, and the band coverage on the blind, leave-one-out and
 walk-forward splits beside the live checksum. Every number in the band is read
 from the model's own output on that run; none is written down in the page.
 
+The **FARM count** is one number, read from one place: the rows the FARM
+filter shows — the strict FARM rows plus the Board P25-positive (pre-fee)
+rows, which are a subset of FARM, not a tier of their own. The cover tile and
+the filter bar both print it, they are repainted together whenever a slider
+moves, and the page checks the two on-screen numbers against each other
+(`window.__CHECKS__.kpiFarmCount`, `.filterBarFarmCount`, `.farmCountMatch`).
+The cover's value-term cells carry the short name (`TVL + cat + name`); the
+full term stays in the cell's title.
+
 The **token odds** are a logistic regression on the snapshot's own record
 (P(protocol ever records a token)), fitted on the peers that have a listing
 date and validated by Brier score in two tests — ten-fold cross-validation and

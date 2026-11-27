@@ -213,6 +213,59 @@
     DATA.rows.forEach(function (r) { c[scenario(r).verdict]++; });
     return c;
   }
+  // The canonical FARM set: the rows the FARM filter shows, at the reader's
+  // settings, with the best of them by net per hour. The cover's KPI tile and
+  // the filter bar both read this, so the two numbers cannot diverge.
+  function liveFarm() {
+    var n = 0;
+    var best = null;
+    DATA.rows.forEach(function (r) {
+      var s = scenario(r);
+      if (s.verdict !== 'FARM') return;
+      n++;
+      if (best === null || s.perHour > best.perHour) best = { row: r, perHour: s.perHour };
+    });
+    return { count: n, best: best };
+  }
+  // Paint the verdict counts (the filter bar) and the cover's farm tile from
+  // one computation, then check that the two on-screen numbers agree.
+  function paintLiveCounts() {
+    var lc = liveCounts();
+    var live = document.getElementById('f-live');
+    if (live) {
+      live.innerHTML = 'FARM <b>' + lc.FARM + '</b> · MARGINAL <b>' + lc.THIN + '</b> · SKIP <b>' + lc.SKIP + '</b> at these settings';
+    }
+    var f = liveFarm();
+    var countEl = document.getElementById('evb-farm-count');
+    if (countEl) countEl.textContent = f.count + ' FARM';
+    var bestEl = document.getElementById('evb-farm-best');
+    if (bestEl) {
+      bestEl.textContent = f.best === null ? 'best n/a' : 'best ' + fmtPerHour(f.best.perHour) + ' ';
+      if (f.best !== null) {
+        var name = document.createElement('span');
+        name.className = 'evb-name';
+        name.textContent = '(' + f.best.row.name + ')';
+        bestEl.appendChild(name);
+      }
+    }
+    // The check: the number on the cover tile and the number in the filter
+    // bar are read back off the page, so a divergence is visible.
+    var kpiText = countEl ? countEl.textContent : '';
+    var barText = live ? live.textContent : '';
+    var km = /(\d+)\s+FARM/.exec(kpiText);
+    var bm = /FARM\s+(\d+)/.exec(barText);
+    var kpiFarmCount = km ? Number(km[1]) : null;
+    var filterBarFarmCount = bm ? Number(bm[1]) : null;
+    var match = kpiFarmCount !== null && kpiFarmCount === filterBarFarmCount;
+    window.__CHECKS__.kpiFarmCount = kpiFarmCount;
+    window.__CHECKS__.filterBarFarmCount = filterBarFarmCount;
+    window.__CHECKS__.farmCountMatch = match;
+    var warn = document.getElementById('farm-count-warn');
+    if (warn) {
+      warn.textContent = match ? '' : 'Warning: the cover counts ' + kpiFarmCount + ' FARM rows and the filter bar counts ' + filterBarFarmCount + '. The two must be the same rows.';
+      warn.style.display = match ? 'none' : '';
+    }
+  }
 
   // The board's filter bar and the reader's scenario controls.
   function filtersHtml() {
@@ -299,11 +352,12 @@
   }
 
   function render() {
-    var h = '<div class="wrap"><div class="toprow">' + COPY.header + tabsHtml() + '</div>' + warnHtml() + sectionHtml() + COPY.footer + '</div>';
+    var h = '<div class="wrap"><div class="toprow">' + COPY.header + tabsHtml() + '</div>' + warnHtml() + '<div class="warn" id="farm-count-warn" style="display:none"></div>' + sectionHtml() + COPY.footer + '</div>';
     app.innerHTML = h;
     app.removeAttribute('aria-busy');
     wireEvents();
     if (state.tab === 'board') applyScenario();
+    paintLiveCounts();
     paintChecksum();
   }
 
@@ -336,6 +390,7 @@
     wireFilterEvents();
     wireRowEvents();
     applyScenario();
+    paintLiveCounts();
   }
 
   // The table alone: the sliders keep their own element (and the reader's
@@ -348,11 +403,7 @@
     applyScenario();
     var count = document.getElementById('f-count');
     if (count) count.textContent = 'showing ' + filteredRows().length + ' of ' + DATA.rows.length;
-    var live = document.getElementById('f-live');
-    if (live) {
-      var lc = liveCounts();
-      live.innerHTML = 'FARM <b>' + lc.FARM + '</b> · MARGINAL <b>' + lc.THIN + '</b> · SKIP <b>' + lc.SKIP + '</b> at these settings';
-    }
+    paintLiveCounts();
   }
 
   function wireEvents() {

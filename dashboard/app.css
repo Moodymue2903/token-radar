@@ -138,6 +138,7 @@ table.plain .p25full{white-space:normal;max-width:180px}
 .evb-value{font-size:16px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:clip}
 .evb-tile.compact .evb-value{font-size:13px}
 .evb-sub{font-size:9.5px;line-height:1.2;color:var(--muted);font-variant-numeric:tabular-nums;overflow:hidden}
+.evb-name{font-size:8.5px}
 .evb-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .evb-card{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-height:100px;overflow:hidden}
 .evb-card h3{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:0 0 2px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
