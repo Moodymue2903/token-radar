@@ -401,3 +401,58 @@ test('the cover names the value terms short, and keeps the full name in the titl
   assert.ok(!evidence.includes('>adopted + control: growth of another row<'), 'the long term must not be the cell text');
   assert.ok(evidence.includes('>TVL + cat + placebo<'), 'the short term must be the cell text');
 });
+
+test('the ribbon above the table names the top farm calls and the rule', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  const ribbon = buildDashboard(radar).board.ribbon;
+  assert.ok(ribbon.includes('class="tfr"'), 'the board must carry the ribbon');
+  const calls = [...ribbon.matchAll(/<a class="tfr-call" data-slug="([^"]+)" href="#\/proto\/[^"]+"/g)];
+  const farm = radar.rows.filter((r) => r.farm.verdict === 'FARM' || r.farm.verdict === 'P25-POSITIVE');
+  assert.equal(calls.length, Math.min(3, farm.length), 'the ribbon must carry up to three calls');
+  if (farm.length > 0) {
+    const best = farm.slice().sort((a, b) => (b.farm.netPerHour ?? 0) - (a.farm.netPerHour ?? 0) || a.rank - b.rank)[0];
+    assert.ok(best !== undefined, 'the fixture must carry a farm row');
+    assert.equal(calls[0]![1], best.slug, 'the first call must be the best farm row by net per hour');
+    for (const c of calls) {
+      const row = radar.rows.find((r) => r.slug === c[1]);
+      assert.ok(row !== undefined, 'a ribbon call must name a board row');
+      assert.ok(ribbon.includes('#' + row.rank + ' '), 'the call must carry the row rank');
+    }
+  }
+  // The rule states the model's own gates and the reader's own settings.
+  assert.ok(ribbon.includes('Rule: $' + radar.model.referenceCapital.toLocaleString('en-US')), 'the rule must name the deposit');
+  assert.ok(ribbon.includes('net ≥ $' + radar.model.farmThreshold), 'the rule must name the net gate');
+  assert.ok(ribbon.includes(radar.model.farmRatio + '× cost'), 'the rule must name the cost-ratio gate');
+  assert.ok(ribbon.includes('$/h ') && ribbon.includes('hurdle'), 'the rule must name the hourly hurdle');
+});
+
+test('the cover adds the protocols up, bucket by bucket', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  const evidence = buildDashboard(radar).board.evidence;
+  const acc = radar.accounting;
+  assert.ok(evidence.includes('All protocols:'), 'the cover must itemise the accounting');
+  assert.ok(evidence.includes('= ' + acc.total), 'the accounting must add up to the snapshot total');
+  const buckets = acc.groups.map((g) => g.count);
+  const sum = buckets.reduce((a, b) => a + b, 0);
+  assert.equal(sum, acc.total, 'every protocol must be in exactly one bucket');
+  const ranked = acc.groups.filter((g) => g.label.startsWith('Ranked')).reduce((a, g) => a + g.count, 0);
+  assert.ok(evidence.includes('>' + ranked + ' ranked<'), 'the ranked bucket must be on the cover');
+  assert.ok(evidence.includes(' fit<'), 'the fit-peer bucket must be on the cover');
+  const cex = acc.groups.find((g) => g.label === 'Pre-token, CEX');
+  if (cex !== undefined && cex.count > 0) {
+    assert.ok(evidence.includes('>' + cex.count + ' CEX<'), 'the excluded CEX bucket must be on the cover');
+  }
+});
+
+test('the cover shows the fitted coefficients of both models', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  const evidence = buildDashboard(radar).board.evidence;
+  // The value model: log10(mcap) = a + b·log10(tvl) + the category's offset.
+  assert.ok(evidence.includes('β: '), 'the cover must print the fitted coefficients');
+  assert.ok(evidence.includes(radar.fit.sizeB.toFixed(2) + '·log10 TVL'), 'the size curve slope must be on the cover');
+  assert.ok(evidence.includes('R² ' + radar.fit.sizeR2.toFixed(2)), 'the size curve R² must be on the cover');
+  // The odds model: the intercept and every kept term's coefficient.
+  const coefs = radar.odds.terms.map((t, i) => radar.odds.coefs![i]!.toFixed(3));
+  for (const c of coefs) assert.ok(evidence.includes(c + '·'), 'the odds coefficient must be on the cover: ' + c);
+  assert.ok(evidence.includes(Math.abs(radar.odds.intercept).toFixed(3)), 'the odds intercept must be on the cover');
+});

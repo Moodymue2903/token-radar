@@ -227,6 +227,35 @@
     });
     return { count: n, best: best };
   }
+  // The farm rule, stated at the reader's settings: the three gates the
+  // verdict applies. The ribbon and the table read the same arithmetic.
+  function farmRuleText() {
+    return 'Rule: ' + fmtMoney0(state.deposit) + ' · ' + state.drop.toFixed(1) + '% drop · ' + state.horizon +
+      'd · FARM = net ≥ $' + M.farmThreshold + ', net ≥ ' + M.farmRatio + '× cost, $/h > hurdle (gas+swaps, time costed)';
+  }
+  // The ribbon above the table: the top FARM calls at the reader's settings
+  // and the rule they answer to. Both are painted from the same scenario the
+  // table and the cover tile use, so the ribbon cannot contradict them.
+  function paintFarmRibbon() {
+    var calls = [];
+    DATA.rows.forEach(function (r) {
+      var s = scenario(r);
+      if (s.verdict !== 'FARM') return;
+      calls.push({ row: r, s: s });
+    });
+    calls.sort(function (a, b) { return b.s.perHour - a.s.perHour || a.row.rank - b.row.rank; });
+    var el = document.getElementById('tfr-calls');
+    if (el) {
+      el.innerHTML = calls.slice(0, 3).map(function (c) {
+        var title = c.row.name + ' — ' + (c.row.category || 'uncategorised') + ' — net of fees ' +
+          fmtSigned(c.s.net) + ', ' + fmtPerHour(c.s.perHour) + ', ' + c.s.hold + '-day hold. Open the protocol.';
+        return '<a class="tfr-call" data-slug="' + esc(c.row.slug) + '" href="#/proto/' + esc(c.row.slug) + '" title="' + esc(title) + '">#' +
+          c.row.rank + ' ' + esc(c.row.name) + ' ' + fmtPerHour(c.s.perHour) + ' (' + fmtSigned(c.s.net) + ')</a>';
+      }).join('<span class="tfr-sep"> · </span>');
+    }
+    var rule = document.getElementById('tfr-rule');
+    if (rule) rule.textContent = farmRuleText();
+  }
   // Paint the verdict counts (the filter bar) and the cover's farm tile from
   // one computation, then check that the two on-screen numbers agree.
   function paintLiveCounts() {
@@ -240,14 +269,9 @@
     if (countEl) countEl.textContent = f.count + ' FARM';
     var bestEl = document.getElementById('evb-farm-best');
     if (bestEl) {
-      bestEl.textContent = f.best === null ? 'best n/a' : 'best ' + fmtPerHour(f.best.perHour) + ' ';
-      if (f.best !== null) {
-        var name = document.createElement('span');
-        name.className = 'evb-name';
-        name.textContent = '(' + f.best.row.name + ')';
-        bestEl.appendChild(name);
-      }
+      bestEl.textContent = f.best === null ? 'best n/a' : 'best ' + fmtPerHour(f.best.perHour);
     }
+    paintFarmRibbon();
     // The check: the number on the cover tile and the number in the filter
     // bar are read back off the page, so a divergence is visible.
     var kpiText = countEl ? countEl.textContent : '';
@@ -320,6 +344,7 @@
     return COPY.board.top +
       COPY.board.evidence +
       filtersHtml() +
+      COPY.board.ribbon +
       '<table class="bt">' + COPY.board.head + '<tbody id="board-body">' + boardRowsHtml() + '</tbody></table>' +
       COPY.board.mid + COPY.board.map + COPY.board.bottom;
   }

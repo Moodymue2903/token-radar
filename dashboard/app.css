@@ -131,14 +131,17 @@ table.plain .p25full{white-space:normal;max-width:180px}
 /* Round 18: the cover evidence band — six KPI tiles over three evidence
    cards, above the filters. Fixed six-column and three-column grids, so
    the cover never grows wider than the page. */
-.evb{display:grid;gap:6px;margin:0 0 6px}
+.evb{display:grid;gap:4px;margin:0 0 6px}
 .evb-tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
-.evb-tile{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-height:64px;display:flex;flex-direction:column;justify-content:center;gap:1px;overflow:hidden}
+.evb-tile{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-height:60px;display:flex;flex-direction:column;justify-content:center;gap:1px;overflow:hidden}
 .evb-label{font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .evb-value{font-size:16px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:clip}
 .evb-tile.compact .evb-value{font-size:13px}
 .evb-sub{font-size:9.5px;line-height:1.2;color:var(--muted);font-variant-numeric:tabular-nums;overflow:hidden}
 .evb-name{font-size:8.5px}
+.evb-beta{font-size:9px;color:var(--muted);border-bottom:none;border-top:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:clip}
+.evb-eq{font-size:9px;line-height:1.15;color:var(--muted);margin:2px 0 0}
+.evb-eqt{white-space:nowrap}
 .evb-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .evb-card{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-height:100px;overflow:hidden}
 .evb-card h3{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:0 0 2px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
@@ -153,6 +156,17 @@ table.evb-mini.vbands th:first-child,table.evb-mini.vbands td:first-child{width:
 table.evb-mini tr.kept td{color:var(--green);font-weight:650}
 .evb-foot{font-size:9.5px;color:var(--muted);margin:3px 0 0;line-height:1.15}
 .acccheck{margin-right:16px;white-space:nowrap}
+/* Round 20: the Top FARM ribbon, between the filters and the table. The
+   cover's actionability line: the top FARM calls at the reader's settings
+   (each one opens its protocol) and the rule those calls answer to. It
+   wraps to a second line rather than ever clipping. */
+.tfr{display:flex;flex-wrap:wrap;align-items:center;align-content:center;column-gap:8px;min-height:24px;margin:0 0 5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--panel2);font-size:9.5px;line-height:11px;white-space:nowrap;overflow:hidden}
+.tfr-label{color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+.tfr-calls{color:var(--text)}
+.tfr-call{color:var(--text);text-decoration:none;border-bottom:1px dotted var(--dim);cursor:pointer}
+.tfr-call:hover{color:var(--amber)}
+.tfr-sep{color:var(--dim)}
+.tfr-rule{margin-left:auto;color:var(--muted);font-size:9px;padding-left:8px;border-left:1px solid var(--line)}
 .bestline p{margin:0;font-size:14px}
 .bestline .bignum{font-size:20px;font-weight:700;color:var(--amber)}
 .bestplan{border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:6px;padding:12px 14px;margin:0 0 14px;background:var(--panel2)}

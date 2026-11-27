@@ -118,6 +118,23 @@ moves, and the page checks the two on-screen numbers against each other
 The cover's value-term cells carry the short name (`TVL + cat + name`); the
 full term stays in the cell's title.
 
+Between the filters and the table sits the **Top FARM ribbon**: the three best
+FARM calls at the reader's own settings — rank, name, net $/h and net of fees,
+each one a link that opens that protocol's detail view — and, on the right,
+the farm rule those calls answer to (the deposit, the drop-share and the
+horizon the reader has set, and the three gates: net of fees, net against
+cost, and net per hour above the T-bill hurdle). The ribbon is repainted from
+the same scenario the table and the cover tile use, so it can never contradict
+them.
+
+The evidence cards carry the fitted coefficients, not just the scores: the
+value card's footer prints the shipped size curve in logs
+(`log10(mcap) = a + b·log10(TVL) + the category's ridge offset`) with its R²,
+and the odds card's footer prints the logistic's intercept and each kept
+term's coefficient. The integrity card itemises the accounting — every
+snapshot protocol in exactly one bucket, and the buckets added up to the
+snapshot total — so the cover shows where every protocol went.
+
 The **token odds** are a logistic regression on the snapshot's own record
 (P(protocol ever records a token)), fitted on the peers that have a listing
 date and validated by Brier score in two tests — ten-fold cross-validation and
