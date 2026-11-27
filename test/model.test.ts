@@ -13,6 +13,7 @@ import {
   SnapshotError,
   boardIssue,
   buildBoard,
+  buildRadar,
   fitModel,
   fitOdds,
   parseSnapshot,
@@ -20,6 +21,7 @@ import {
   type Snapshot,
   type SnapshotProtocol,
 } from '../lib/model.ts';
+import { buildDashboard } from '../lib/render.js';
 
 // A snapshot with the given protocols and watchlist.
 function snapshotOf(protocols: SnapshotProtocol[], watchlist: string[] = []): Snapshot {
@@ -276,4 +278,39 @@ test('the board ranks the watchlist protocol and marks it', () => {
   assert.ok(row !== undefined, 'the watchlist protocol must be on the board');
   assert.equal(row.is_watchlist, true);
   assert.equal(row.token_status, 'pre-token');
+});
+
+// A small snapshot with enough live-token peers for the model to fit.
+function radarOf() {
+  const protocols = [peer(1), peer(2), peer(3), peer(4), peer(5), preToken(1), preToken(2), preToken(3)];
+  return buildRadar(snapshotOf(protocols, ['proto-2'])).radar;
+}
+
+test('an empty split prints n/a, never xNaN or NaN%', () => {
+  const radar = radarOf();
+  radar.validation.valueTermTable = [{
+    terms: 'growth',
+    missLoo: null,
+    within3Loo: null,
+    missWf: null,
+    within3Wf: null,
+    status: 'tested, not kept',
+  }];
+  const html = JSON.stringify(buildDashboard(radar));
+  assert.ok(!html.includes('xNaN'), 'the rendered dashboard must never carry xNaN');
+  // The value term table's own row: the empty split's four cells read n/a.
+  const at = html.indexOf('<td>growth</td>');
+  assert.ok(at > 0, 'the value term table must carry the emptied term');
+  const row = html.slice(at, html.indexOf('</tr>', at));
+  assert.ok(!row.includes('NaN'), `the emptied split must not print NaN, got: ${row}`);
+  assert.equal((row.match(/n\/a/g) || []).length, 4, 'the emptied split prints n/a in all four cells');
+});
+
+test('the peer counts in the copy are read from the data, not written down', () => {
+  const radar = radarOf();
+  const html = JSON.stringify(buildDashboard(radar));
+  assert.ok(!html.includes('the other 94 peers'), 'the leave-one-out peer count must not be a literal');
+  assert.ok(!html.includes('Blind n=95'), 'the blind sample size must not be a literal');
+  assert.ok(html.includes('the other ' + (radar.validation.peerCount - 1) + ' peers'), 'the copy must name the peer count it measured');
+  assert.ok(html.includes('Blind n=' + radar.validation.bands.blindN), 'the copy must name the blind sample size it measured');
 });

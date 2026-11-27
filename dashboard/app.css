@@ -3,15 +3,17 @@
 body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;font-size:14px;line-height:1.45}
 .skip{position:absolute;left:-9999px}
 a{color:var(--amber)}
-.wrap{max-width:1180px;margin:0 auto;padding:20px 20px 40px}
-header h1{font-size:28px;margin:0 0 4px;letter-spacing:.2px}
+.wrap{max-width:1180px;margin:0 auto;padding:8px 12px 40px}
+.toprow{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid var(--line);padding-bottom:3px;margin:0 0 5px}
+header{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1 1 auto}
+header h1{font-size:19px;margin:0;letter-spacing:.2px;white-space:nowrap;flex:0 0 auto}
 header h1 .dot{color:var(--amber)}
-.sub{color:var(--muted);margin:0 0 14px;max-width:820px}
-.kpi{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
-.kpi span{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px}
+.sub{color:var(--muted);margin:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+.kpi{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 14px}
+.kpi span{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 9px;font-size:12.5px}
 .kpi b{color:var(--amber);font-weight:650}
-.tabs{display:flex;gap:6px;margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:0}
-.tabs button{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font:inherit;font-size:14px;padding:8px 12px;cursor:pointer}
+.tabs{display:flex;gap:2px;margin:0;border-bottom:none;padding:0;flex:0 0 auto}
+.tabs button{background:none;border:none;border-bottom:2px solid transparent;color:var(--muted);font:inherit;font-size:12.5px;padding:3px 8px;cursor:pointer;white-space:nowrap}
 .tabs button.on{color:var(--text);border-bottom-color:var(--amber)}
 .tabs button:hover{color:var(--text)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px 18px;margin:0 0 16px}
@@ -22,12 +24,23 @@ header h1 .dot{color:var(--amber)}
 .muted{color:var(--muted)}
 .small{font-size:12.5px;color:var(--muted)}
 .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
-.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 12px}
-.filters input,.filters select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:inherit;font-size:13px}
-.filters input{flex:1 1 200px;min-width:160px}
-.filters .count{color:var(--muted);font-size:13px;margin-left:auto}
-.sorttoggle{color:var(--muted);font-size:13px;white-space:nowrap}
-.sorttoggle button{background:var(--panel2);color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:3px 9px;cursor:pointer;font:inherit;font-size:13px}
+.filters{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:4px 7px;margin:0 0 5px}
+.frow{display:flex;flex-wrap:nowrap;gap:6px;align-items:center}
+.frow.ctl{margin-top:3px}
+.filters input,.filters select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:2px 6px;font:inherit;font-size:12px;height:22px}
+.filters input[type=search]{flex:1 1 120px;min-width:70px}
+.filters input[type=number]{flex:0 1 108px;min-width:74px}
+.filters select{max-width:150px}
+.filters .count{color:var(--muted);font-size:11.5px;margin-left:auto;white-space:nowrap}
+.sl{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.sl input[type=range]{width:76px;height:16px;padding:0;accent-color:var(--amber);border:none;background:none}
+.sl output{font-variant-numeric:tabular-nums;color:var(--text);min-width:48px;font-size:11.5px}
+.exp{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:2px 8px;cursor:pointer;font:inherit;font-size:11.5px;white-space:nowrap}
+.exp:hover{color:var(--amber);border-color:#4a3d22}
+.livecount{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;text-align:right}
+.livecount b{color:var(--amber);font-weight:650}
+.sorttoggle{color:var(--muted);font-size:11.5px;white-space:nowrap}
+.sorttoggle button{background:var(--panel2);color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:2px 7px;cursor:pointer;font:inherit;font-size:11.5px}
 .sorttoggle button.on{background:#173b2a;color:#7fd6a4;border-color:#235c3d}
 .sorttoggle button:hover{color:var(--text)}
 table{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -99,11 +112,18 @@ footer b{color:var(--muted)}
 .bandstrip p{margin:4px 0}
 .fine{font-size:12.5px;color:var(--muted)}
 table.plain th[data-sort]{cursor:pointer}
+table.plain{font-size:12px}
+table.plain th,table.plain td{padding:5px 6px;line-height:1.3}
+table.plain th{white-space:normal}
+table.plain .feesplit{white-space:normal;max-width:180px}
+table.plain .p25full{white-space:normal;max-width:180px}
 
 /* Round 13: accounting bar, best-$ /h line, best-farm plan */
-.accbar h2{margin-bottom:10px}
-.accstack{display:flex;height:18px;border-radius:4px;overflow:hidden;margin:0 0 8px}
+.accbar{display:flex;align-items:center;gap:10px;height:24px;margin:0 0 5px;overflow:hidden}
+.accstack{display:flex;flex:0 0 170px;height:11px;border-radius:3px;overflow:hidden;margin:0}
 .accseg{display:block;height:100%}
+.accsum{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+.accsum b{color:var(--green);font-weight:650}
 .acclegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:0 0 8px}
 .acclegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
 .accchecks{margin:0;font-size:12.5px;color:var(--muted)}
@@ -114,3 +134,23 @@ table.plain th[data-sort]{cursor:pointer}
 .bestplan h3{margin:0 0 4px;font-size:14px;color:var(--amber)}
 .bestplan p{margin:8px 0 0;color:var(--muted);font-size:13px}
 .bestplan p b{color:var(--text)}
+
+/* Round 15: the 1024x1024 cover. The ranked table is the hero and has to
+   reach the fold, so the cover's top band is one compact strip (header,
+   accounting, filters, sliders) and every table row is two lines tall. */
+table.bt{width:100%;border-collapse:collapse;font-size:12px;table-layout:auto}
+table.bt th,table.bt td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;line-height:1.25}
+table.bt th{padding:4px 6px;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;cursor:pointer}
+table.bt th.num{text-align:right}
+table.bt td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.bt th.rk,table.bt td.rk{text-align:right;padding-left:2px;padding-right:4px;color:var(--dim)}
+table.bt td.proto{width:172px;padding-left:2px;padding-right:6px}
+table.bt .p1,table.bt .p2{width:172px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table.bt .p1{font-size:12px}
+table.bt .p2{font-size:10.5px;color:var(--muted)}
+table.bt .wl{font-size:9.5px;padding:0 4px;margin:0 4px 0 0;border-radius:3px;vertical-align:1px}
+table.bt .badge{font-size:10.5px;padding:1px 6px;letter-spacing:.2px}
+table.bt tbody tr:hover{background:var(--panel2)}
+table.bt td[data-c="net"]{font-weight:650}
+table.bt td[data-c="net"].neg{color:var(--red)}
+table.bt td[data-c="net"].pos{color:var(--green)}

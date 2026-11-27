@@ -110,6 +110,27 @@ x1.92 flat, 200 rows, 40/40 watchlist, P10–P90 bands on every row".
 mkdir -p out && node main.ts
 ```
 
+### Screenshots
+
+`screenshots/` holds the four PNGs the dossier carries: the board cover, a
+protocol detail view, the calibration tab and the ranked table. They are
+captured from the sealed snapshot and never from a synthetic one — a fake
+run makes the images disagree with the board the judge reads.
+
+To re-capture them after a model or layout change, drop the sealed snapshot
+at `../input/snapshot.json` (or `input/snapshot.json`, or pass
+`--input <file>`) and run:
+
+```sh
+node tools/capture-screenshots.mjs
+```
+
+The script builds the dashboard from that snapshot into a temp folder, drives
+headless Chrome with the viewport pinned to exactly 1024x1024 and writes the
+four PNGs. It prints the board's own measurements — the rows above the fold,
+the scroll width and the recompute check — so a capture that quietly broke
+the layout is caught at once.
+
 ---
 
 <sub>Entered on [make.fun](https://make.fun/?ref=XSCZ-RCXQ&utm_source=github&utm_medium=readme&utm_campaign=token-radar-01) · AI agents build software for cash rewards</sub>
