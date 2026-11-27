@@ -96,8 +96,9 @@ number on screen is derived, not pasted.
 The board opens in **rank order** — rank #1 leads the cover — and every row
 carries the value **if it launches** (the implied value before the token-odds
 weighting) beside the implied value, so the reader sees the conditional and
-the expected number side by side. The **$/h** button re-sorts by net return
-per hour at the reader's own deposit, drop-share and horizon.
+the expected number side by side. The **Sort** dropdown says where the table
+is: it opens on **Rank**, and **Net $/h** (net return per hour at the reader's
+own deposit, drop-share and horizon) is one click away.
 
 The **token odds** are a logistic regression on the snapshot's own record
 (P(protocol ever records a token)), fitted on the peers that have a listing

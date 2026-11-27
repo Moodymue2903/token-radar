@@ -235,6 +235,14 @@
       })).join('');
     var rows = filteredRows();
     var lc = liveCounts();
+    // The board opens in rank order, and the control says so: the select's
+    // value is the table's order, whatever the reader clicks next.
+    var sortOpts = [
+      ['rank', 'Rank'], ['tvl', 'TVL'], ['growth', '7d change'], ['age', 'Age'],
+      ['implied', 'Implied value'], ['odds', 'Odds'], ['perhour', 'Net $/h']
+    ].map(function (s) {
+      return '<option value="' + s[0] + '"' + (state.sort === s[0] ? ' selected' : '') + '>' + esc(s[1]) + '</option>';
+    }).join('');
     return '<div class="filters">' +
       '<div class="frow">' +
       '<input id="f-q" type="search" placeholder="Search name or slug" value="' + esc(state.q) + '">' +
@@ -242,7 +250,7 @@
       '<select id="f-chain">' + chainOpts + '</select>' +
       '<select id="f-verdict" title="FARM, MARGINAL and SKIP are the verdict at your settings; Board P25-positive is the model’s own out-of-sample tier.">' + verdictOpts + '</select>' +
       '<input id="f-min" type="number" min="0" step="1" placeholder="Min implied $M" value="' + esc(state.minImp) + '" style="flex:0 1 108px">' +
-      '<span class="sorttoggle">Sort: <button data-sortbtn="perhour"' + (state.sort === 'perhour' ? ' class="on"' : '') + '>Net $/h</button> <button data-sortbtn="implied"' + (state.sort === 'implied' ? ' class="on"' : '') + '>Implied value</button></span>' +
+      '<span class="sorttoggle">Sort: <select id="f-sort" title="The board’s order. It opens in rank order.">' + sortOpts + '</select></span>' +
       '<span class="count" id="f-count">showing ' + rows.length + ' of ' + DATA.rows.length + '</span>' +
       '</div>' +
       '<div class="frow ctl">' +
@@ -368,6 +376,9 @@
         var k = ev.currentTarget.getAttribute('data-sort');
         if (state.sort === k) state.dir = -state.dir;
         else { state.sort = k; state.dir = k === 'rank' || k === 'aname' ? 1 : -1; }
+        // A column click is a sort too: the dropdown follows it.
+        var sortSel = document.getElementById('f-sort');
+        if (sortSel && sortSel.value !== state.sort) sortSel.value = state.sort;
         if (state.tab === 'anchors') {
           var pbody = document.getElementById('peer-body');
           if (pbody) pbody.innerHTML = peerRowsHtml();
@@ -376,14 +387,12 @@
         }
       };
     }
-    var sortBtns = app.querySelectorAll('button[data-sortbtn]');
-    for (var sb = 0; sb < sortBtns.length; sb++) {
-      sortBtns[sb].onclick = function (ev) {
-        state.sort = ev.currentTarget.getAttribute('data-sortbtn');
-        state.dir = -1;
-        render();
-      };
-    }
+    var sortSel2 = document.getElementById('f-sort');
+    if (sortSel2) sortSel2.onchange = function () {
+      state.sort = sortSel2.value;
+      state.dir = state.sort === 'rank' ? 1 : -1;
+      render();
+    };
     wireRowEvents();
     var close = document.getElementById('d-close');
     if (close) close.onclick = closeDetail;
