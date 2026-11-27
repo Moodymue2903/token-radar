@@ -265,6 +265,7 @@
 
   function boardSectionHtml() {
     return COPY.board.top +
+      COPY.board.evidence +
       filtersHtml() +
       '<table class="bt">' + COPY.board.head + '<tbody id="board-body">' + boardRowsHtml() + '</tbody></table>' +
       COPY.board.mid + COPY.board.map + COPY.board.bottom;
@@ -647,15 +648,23 @@
     return { expected: expected, got: got, ok: expected !== '' && expected === got };
   }
   // The strip on the first screen carries the model's checksum; the page
-  // adds its own verdict beside it.
+  // adds its own verdict beside it. The evidence card on the cover carries
+  // the same check, recomputed live in this page.
   function paintChecksum() {
-    var el = document.getElementById('acc-checksum');
-    if (!el) return;
     var c = checksumCheck();
-    el.textContent = c.expected + (c.ok ? ' ✓' : ' ✗ (page: ' + c.got + ')');
-    el.title = c.ok
-      ? 'SHA-256 of the canonical rows (slug, rank, implied value, token odds), recomputed in this page.'
-      : 'This page hashed the rows it was given to ' + c.got + '; the board says ' + c.expected + '.';
+    var el = document.getElementById('acc-checksum');
+    if (el) {
+      el.textContent = c.expected + (c.ok ? ' ✓' : ' ✗ (page: ' + c.got + ')');
+      el.title = c.ok
+        ? 'SHA-256 of the canonical rows (slug, rank, implied value, token odds), recomputed in this page.'
+        : 'This page hashed the rows it was given to ' + c.got + '; the board says ' + c.expected + '.';
+    }
+    var band = document.getElementById('evb-integrity');
+    if (band) {
+      var mism = (COPY.checks ? (COPY.checks.recomputeMismatches || 0) + (COPY.checks.playbookMismatches || 0) : 0);
+      band.textContent = c.got + (c.ok ? ' ✓' : ' ✗ (board: ' + c.expected + ')') + ' · ' + mism + ' mismatches';
+      band.title = 'The page recomputed the checksum of the rows it was given and compared every row and playbook with the data file.';
+    }
   }
 
   // The model's own consistency check, published for the page and for anyone

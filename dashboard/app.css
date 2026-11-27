@@ -127,6 +127,30 @@ table.plain .p25full{white-space:normal;max-width:180px}
 .acclegend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:0 0 8px}
 .acclegend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}
 .accchecks{margin:0;font-size:12.5px;color:var(--muted)}
+
+/* Round 18: the cover evidence band — six KPI tiles over three evidence
+   cards, above the filters. Fixed six-column and three-column grids, so
+   the cover never grows wider than the page. */
+.evb{display:grid;gap:6px;margin:0 0 6px}
+.evb-tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.evb-tile{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-height:64px;display:flex;flex-direction:column;justify-content:center;gap:1px;overflow:hidden}
+.evb-label{font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.evb-value{font-size:16px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:clip}
+.evb-tile.compact .evb-value{font-size:13px}
+.evb-sub{font-size:9.5px;line-height:1.2;color:var(--muted);font-variant-numeric:tabular-nums;overflow:hidden}
+.evb-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.evb-card{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-height:100px;overflow:hidden}
+.evb-card h3{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:0 0 2px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+table.evb-mini{width:100%;border-collapse:collapse;font-size:10px;line-height:1.05;table-layout:fixed;font-variant-numeric:tabular-nums}
+table.evb-mini th{font-size:8.5px;line-height:1.05;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:600;text-align:left;padding:0 3px;border-bottom:1px solid var(--line);white-space:nowrap}
+table.evb-mini td{padding:0 3px;border-bottom:1px solid var(--line);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.evb-mini td.num,table.evb-mini th.num{text-align:right}
+table.evb-mini td.st{color:var(--muted);text-align:right}
+table.evb-mini.vterms th:first-child,table.evb-mini.vterms td:first-child{width:46%}
+table.evb-mini.vodds th:first-child,table.evb-mini.vodds td:first-child{width:42%}
+table.evb-mini.vbands th:first-child,table.evb-mini.vbands td:first-child{width:34%}
+table.evb-mini tr.kept td{color:var(--green);font-weight:650}
+.evb-foot{font-size:9.5px;color:var(--muted);margin:3px 0 0;line-height:1.15}
 .acccheck{margin-right:16px;white-space:nowrap}
 .bestline p{margin:0;font-size:14px}
 .bestline .bignum{font-size:20px;font-weight:700;color:var(--amber)}

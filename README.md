@@ -100,6 +100,15 @@ the expected number side by side. The **Sort** dropdown says where the table
 is: it opens on **Rank**, and **Net $/h** (net return per hour at the reader's
 own deposit, drop-share and horizon) is one click away.
 
+Above the filters sits the **cover evidence band**: six tiles (walk-forward
+miss against its flat baseline, leave-one-out miss, the odds Brier score, the
+band coverage, the accounting, the board total and the best farm) over three
+cards — the value model's term table with each candidate's miss against the
+shipped model, the odds model's two-test gate with the rejected candidates and
+the placebo, and the band coverage on the blind, leave-one-out and
+walk-forward splits beside the live checksum. Every number in the band is read
+from the model's own output on that run; none is written down in the page.
+
 The **token odds** are a logistic regression on the snapshot's own record
 (P(protocol ever records a token)), fitted on the peers that have a listing
 date and validated by Brier score in two tests — ten-fold cross-validation and
