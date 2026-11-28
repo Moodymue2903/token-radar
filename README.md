@@ -135,6 +135,21 @@ term's coefficient. The integrity card itemises the accounting — every
 snapshot protocol in exactly one bucket, and the buckets added up to the
 snapshot total — so the cover shows where every protocol went.
 
+The two term cards are deliberately **short**: each shows the shipped model
+plus the three comparisons that carry the argument — the baseline, the best
+runner-up and the placebo — and says how many candidates it left out. Every
+candidate is still scored and printed in full on the calibration tab, so the
+cover carries the conclusion without the clutter of the whole table.
+
+The cover is laid out for the 1024×1024 first screen: the bands — the
+accounting strip, the six tiles, the three cards, the filters, the ribbon and
+the table — are separated by 8–9px of air, the tiles and the cards carry a
+hairline border instead of a box, and the cards' body text is a shade larger
+(10.5px on a 1.35 line) so the numbers scan at a glance. The board's rows
+trade two or three of the sixteen that used to fit above the fold for a 7px
+padding above and below, so **13 rows** read cleanly at 1024×1024 instead of
+16 that read squished.
+
 The **token odds** are a logistic regression on the snapshot's own record
 (P(protocol ever records a token)), fitted on the peers that have a listing
 date and validated by Brier score in two tests — ten-fold cross-validation and

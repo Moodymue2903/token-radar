@@ -389,17 +389,53 @@ test('the cover counts the farm rows the page filters on, and repaints them live
 
 test('the cover names the value terms short, and keeps the full name in the title', () => {
   const radar = buildRadar(oddsSnapshot()).radar;
-  const evidence = buildDashboard(radar).board.evidence;
+  const dash = buildDashboard(radar);
+  const evidence = dash.board.evidence;
   const table = radar.validation.valueTermTable;
   assert.ok(table.length > 0, 'the value model must report its term table');
-  for (const row of table) {
-    const title = 'title="' + row.terms + ' ';
-    assert.ok(evidence.includes(title), 'the full term must stay in the cell title: ' + row.terms);
+  // The cover is trimmed: the shipped model and three key comparisons. Every
+  // row it shows keeps the full term in the cell's title.
+  const shown = table.filter((row) => evidence.includes('title="' + row.terms + ' '));
+  assert.ok(shown.length > 0, 'the cover must show at least one value term');
+  assert.ok(shown.length <= 4, 'the cover must show the shipped model and at most three comparisons');
+  for (const row of shown) {
+    assert.ok(evidence.includes('title="' + row.terms + ' '), 'the full term must stay in the cell title: ' + row.terms);
   }
   // The cover prints the short name, not the long one: the long strings must
   // not appear as cell text.
   assert.ok(!evidence.includes('>adopted + control: growth of another row<'), 'the long term must not be the cell text');
   assert.ok(evidence.includes('>TVL + cat + placebo<'), 'the short term must be the cell text');
+  // The full list of candidates stays on the calibration tab.
+  for (const row of table) {
+    assert.ok(dash.calibration.includes('>' + row.terms + '<'), 'every candidate must stay on the calibration tab: ' + row.terms);
+  }
+});
+
+test('the cover shows the shipped model and three key comparisons in each term card', () => {
+  const radar = buildRadar(oddsSnapshot()).radar;
+  const evidence = buildDashboard(radar).board.evidence;
+  // The value card: the shipped model first, then the baseline, the best
+  // runner-up and the placebo. The shipped row is the kept one.
+  const vt = radar.validation.valueTermTable;
+  const kept = vt.find((r) => r.status === 'kept');
+  assert.ok(kept !== undefined, 'the value model must keep one term set');
+  const shown = vt.filter((r) => evidence.includes('title="' + r.terms + ' '));
+  assert.ok(shown.includes(kept!), 'the shipped value model must be on the cover');
+  assert.ok(shown.some((r) => r.terms === 'size curve only'), 'the size-curve baseline must be on the cover');
+  assert.ok(shown.some((r) => r.terms.indexOf('control') >= 0), 'the placebo must be on the cover');
+  // The odds card: the shipped set, the baseline, the best runner-up and the
+  // placebo - never the whole ten-candidate table.
+  const ot = radar.odds.termTable;
+  const keptOdds = ot.find((r) => r.status === 'kept');
+  assert.ok(keptOdds !== undefined, 'the odds model must keep one term set');
+  const oddsShown = ot.filter((r) => evidence.includes('title="' + (r.terms === 'base rate' ? 'no terms (the base rate)' : r.terms) + '"'));
+  assert.ok(oddsShown.length > 0, 'the cover must show at least one odds term');
+  assert.ok(oddsShown.length <= 4, 'the odds card must show the shipped set and at most three comparisons');
+  assert.ok(oddsShown.includes(keptOdds!), 'the shipped odds model must be on the cover');
+  assert.ok(oddsShown.some((r) => r.status === 'must not help'), 'the odds placebo must be on the cover');
+  // The cards say how many candidates they leave out, and where the rest are.
+  assert.ok(evidence.includes('candidates shown'), 'the card must say how many candidates it shows');
+  assert.ok(evidence.includes('every candidate on the calibration tab'), 'the card must point at the calibration tab');
 });
 
 test('the ribbon above the table names the top farm calls and the rule', () => {

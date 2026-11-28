@@ -1,10 +1,10 @@
-:root{--bg:#0c0e12;--panel:#14171d;--panel2:#191d24;--line:#262b34;--text:#e8e6df;--muted:#9a978c;--dim:#6f6d66;--amber:#e8c478;--green:#4caf7d;--orange:#d9a441;--grey:#6b6f76;--red:#c96a5a;--blue:#7aa7c9}
+:root{--bg:#0c0e12;--panel:#14171d;--panel2:#191d24;--line:#262b34;--hair:#20242c;--text:#e8e6df;--muted:#9a978c;--dim:#6f6d66;--amber:#e8c478;--green:#4caf7d;--orange:#d9a441;--grey:#6b6f76;--red:#c96a5a;--blue:#7aa7c9}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0;font-size:14px;line-height:1.45}
 .skip{position:absolute;left:-9999px}
 a{color:var(--amber)}
 .wrap{max-width:1180px;margin:0 auto;padding:8px 12px 40px}
-.toprow{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid var(--line);padding-bottom:3px;margin:0 0 5px}
+.toprow{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid var(--line);padding-bottom:4px;margin:0 0 9px}
 header{display:flex;align-items:baseline;gap:10px;min-width:0;flex:1 1 auto}
 header h1{font-size:19px;margin:0;letter-spacing:.2px;white-space:nowrap;flex:0 0 auto}
 header h1 .dot{color:var(--amber)}
@@ -24,9 +24,9 @@ header h1 .dot{color:var(--amber)}
 .muted{color:var(--muted)}
 .small{font-size:12.5px;color:var(--muted)}
 .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
-.filters{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:4px 7px;margin:0 0 5px}
+.filters{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:5px 9px;margin:0 0 9px}
 .frow{display:flex;flex-wrap:nowrap;gap:6px;align-items:center}
-.frow.ctl{margin-top:3px}
+.frow.ctl{margin-top:2px}
 .filters input,.filters select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:2px 6px;font:inherit;font-size:12px;height:22px}
 .filters input[type=search]{flex:1 1 120px;min-width:70px}
 .filters input[type=number]{flex:0 1 108px;min-width:74px}
@@ -119,7 +119,7 @@ table.plain .p25full{white-space:normal;max-width:180px}
 /* Round 13: accounting bar, best-$ /h line, best-farm plan */
 /* Round 16: the strip wraps instead of clipping, so the checksum is
    readable at 1024px; the labels are short enough to stay on one line. */
-.accbar{display:flex;align-items:center;gap:10px;min-height:24px;margin:0 0 5px;overflow:hidden}
+.accbar{display:flex;align-items:center;gap:10px;min-height:24px;margin:0 0 8px;overflow:hidden}
 .accstack{display:flex;flex:0 0 170px;height:11px;border-radius:3px;overflow:hidden;margin:0}
 .accseg{display:block;height:100%}
 .accsum{font-size:12px;color:var(--muted);white-space:normal;line-height:1.3;overflow:visible;text-overflow:clip;flex:1 1 auto;min-width:0}
@@ -130,43 +130,51 @@ table.plain .p25full{white-space:normal;max-width:180px}
 
 /* Round 18: the cover evidence band — six KPI tiles over three evidence
    cards, above the filters. Fixed six-column and three-column grids, so
-   the cover never grows wider than the page. */
-.evb{display:grid;gap:4px;margin:0 0 6px}
-.evb-tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
-.evb-tile{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-height:60px;display:flex;flex-direction:column;justify-content:center;gap:1px;overflow:hidden}
-.evb-label{font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+   the cover never grows wider than the page.
+   Round 21: the band is given air — 10px between the tiles and the cards,
+   10px before the filters — the tiles and the cards lose their heavy
+   inner rules for a hairline and whitespace, and the cards' body text is a
+   shade larger so the numbers scan at a glance. */
+.evb{display:grid;gap:9px;margin:0 0 9px}
+.evb-tiles{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.evb-tile{background:var(--panel2);border:1px solid var(--hair);border-radius:6px;padding:8px;min-height:58px;display:flex;flex-direction:column;justify-content:center;gap:2px;overflow:hidden}
+.evb-label{font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .evb-value{font-size:16px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:clip}
 .evb-tile.compact .evb-value{font-size:13px}
-.evb-sub{font-size:9.5px;line-height:1.2;color:var(--muted);font-variant-numeric:tabular-nums;overflow:hidden}
+.evb-sub{font-size:10px;line-height:1.25;color:var(--muted);font-variant-numeric:tabular-nums;white-space:normal;overflow-wrap:break-word}
 .evb-name{font-size:8.5px}
-.evb-beta{font-size:9px;color:var(--muted);border-bottom:none;border-top:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:clip}
-.evb-eq{font-size:9px;line-height:1.15;color:var(--muted);margin:2px 0 0}
+.evb-beta{font-size:9.5px;line-height:1.3;color:var(--muted);border-bottom:none;border-top:1px solid var(--hair);padding-top:1px;margin-top:1px;white-space:normal;overflow-wrap:break-word}
+.evb-eq{font-size:10px;line-height:1.3;color:var(--muted);margin:3px 0 0}
 .evb-eqt{white-space:nowrap}
-.evb-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-.evb-card{background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:4px 7px;min-height:100px;overflow:hidden}
+.evb-note{font-size:9.5px;line-height:1.25;color:var(--dim);margin:2px 0 0}
+.evb-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.evb-card{background:var(--panel2);border:1px solid var(--hair);border-radius:6px;padding:8px 10px;min-height:104px;overflow:hidden}
 .evb-card h3{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin:0 0 2px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
-table.evb-mini{width:100%;border-collapse:collapse;font-size:10px;line-height:1.05;table-layout:fixed;font-variant-numeric:tabular-nums}
-table.evb-mini th{font-size:8.5px;line-height:1.05;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:600;text-align:left;padding:0 3px;border-bottom:1px solid var(--line);white-space:nowrap}
-table.evb-mini td{padding:0 3px;border-bottom:1px solid var(--line);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+table.evb-mini{width:100%;border-collapse:collapse;font-size:10.5px;line-height:1.35;table-layout:fixed;font-variant-numeric:tabular-nums}
+table.evb-mini th{font-size:9px;line-height:1.25;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:600;text-align:left;padding:0 4px 2px;border-bottom:1px solid var(--hair);white-space:nowrap}
+table.evb-mini td{padding:0 4px;border-bottom:1px solid var(--hair);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 table.evb-mini td.num,table.evb-mini th.num{text-align:right}
 table.evb-mini td.st{color:var(--muted);text-align:right}
-table.evb-mini.vterms th:first-child,table.evb-mini.vterms td:first-child{width:46%}
-table.evb-mini.vodds th:first-child,table.evb-mini.vodds td:first-child{width:42%}
+table.evb-mini.vterms th:first-child,table.evb-mini.vterms td:first-child{width:42%}
+table.evb-mini.vodds th:first-child,table.evb-mini.vodds td:first-child{width:46%;white-space:normal;overflow-wrap:break-word}
+table.evb-mini.vodds th:last-child,table.evb-mini.vodds td:last-child{width:16%}
 table.evb-mini.vbands th:first-child,table.evb-mini.vbands td:first-child{width:34%}
 table.evb-mini tr.kept td{color:var(--green);font-weight:650}
-.evb-foot{font-size:9.5px;color:var(--muted);margin:3px 0 0;line-height:1.15}
+.evb-foot{font-size:10px;color:var(--muted);margin:4px 0 0;line-height:1.3}
 .acccheck{margin-right:16px;white-space:nowrap}
 /* Round 20: the Top FARM ribbon, between the filters and the table. The
    cover's actionability line: the top FARM calls at the reader's settings
    (each one opens its protocol) and the rule those calls answer to. It
-   wraps to a second line rather than ever clipping. */
-.tfr{display:flex;flex-wrap:wrap;align-items:center;align-content:center;column-gap:8px;min-height:24px;margin:0 0 5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--panel2);font-size:9.5px;line-height:11px;white-space:nowrap;overflow:hidden}
-.tfr-label{color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600}
-.tfr-calls{color:var(--text)}
-.tfr-call{color:var(--text);text-decoration:none;border-bottom:1px dotted var(--dim);cursor:pointer}
+   wraps to a second line rather than ever clipping.
+   Round 21: the ribbon gets its own air — 9px below it before the table,
+   4px of padding — and its calls may wrap between links, never inside one. */
+.tfr{display:flex;flex-wrap:wrap;align-items:center;align-content:center;column-gap:8px;min-height:26px;margin:0 0 9px;padding:3px 9px;border:1px solid var(--hair);border-radius:6px;background:var(--panel2);font-size:10px;line-height:1.3;white-space:normal;overflow:hidden}
+.tfr-label{color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;white-space:nowrap}
+.tfr-calls{color:var(--text);white-space:normal}
+.tfr-call{color:var(--text);text-decoration:none;border-bottom:1px dotted var(--dim);cursor:pointer;white-space:nowrap}
 .tfr-call:hover{color:var(--amber)}
-.tfr-sep{color:var(--dim)}
-.tfr-rule{margin-left:auto;color:var(--muted);font-size:9px;padding-left:8px;border-left:1px solid var(--line)}
+.tfr-sep{color:var(--dim);white-space:nowrap}
+.tfr-rule{margin-left:auto;color:var(--muted);font-size:9.5px;padding-left:8px;border-left:1px solid var(--hair)}
 .bestline p{margin:0;font-size:14px}
 .bestline .bignum{font-size:20px;font-weight:700;color:var(--amber)}
 .bestplan{border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:6px;padding:12px 14px;margin:0 0 14px;background:var(--panel2)}
@@ -179,10 +187,13 @@ table.evb-mini tr.kept td{color:var(--green);font-weight:650}
    accounting, filters, sliders) and every table row is two lines tall.
    Round 16: the If-it-launches column joined the table, so the cells are
    tighter (4px side padding, a 150px protocol column) and the numbers stay
-   on one line: the table must not be wider than the page. */
-table.bt{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:auto}
-table.bt th,table.bt td{padding:5px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;line-height:1.25}
-table.bt th{padding:4px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;cursor:pointer}
+   on one line: the table must not be wider than the page.
+   Round 21: the rows are given room to breathe — 7px of padding above and
+   below, so a row reads as a line of its own and not as a packed strip —
+   and the columns are tabular, so the figures line up down the page. */
+table.bt{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:auto;font-variant-numeric:tabular-nums}
+table.bt th,table.bt td{padding:7px 4px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;line-height:1.25}
+table.bt th{padding:5px 4px;font-size:10px;text-transform:uppercase;letter-spacing:.2px;white-space:nowrap;cursor:pointer}
 table.bt th.num{text-align:right}
 table.bt td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 table.bt th.rk,table.bt td.rk{text-align:right;padding-left:2px;padding-right:3px;color:var(--dim)}
